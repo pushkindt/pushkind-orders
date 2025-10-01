@@ -1,12 +1,12 @@
-# pushkind-template
+# pushkind-order
 
-`pushkind-template` is a template repository for building Pushkind web services powered by Rust, Actix Web, Diesel, and Tera on top of Bootstrap 5.3 for the frontend.
+`pushkind-order` is a Pushkind service focused on uploading and editing product lists while creating, tracking, and managing orders. The project is powered by Rust, Actix Web, Diesel, and Tera on top of Bootstrap 5.3 for the frontend.
 
 ## Features
 
 - Actix Web server with identity and session management
 - SQLite database access via Diesel ORM
-- REST API endpoints for template management
+- REST API endpoints for managing products and orders
 - Tera templates for server-rendered pages
 
 ## Running locally
