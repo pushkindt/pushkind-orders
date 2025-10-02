@@ -2,9 +2,17 @@ use pushkind_common::db::{DbConnection, DbPool};
 use pushkind_common::pagination::Pagination;
 use pushkind_common::repository::errors::RepositoryResult;
 
-use crate::domain::template::{NewTemplate, Template, UpdateTemplate};
+use crate::domain::{
+    order::{NewOrder, Order, OrderListQuery, UpdateOrder},
+    product::{NewProduct, Product, ProductListQuery, UpdateProduct},
+    template::{NewTemplate, Template, UpdateTemplate},
+    user::{NewUser, UpdateUser, User},
+};
 
+pub mod order;
+pub mod product;
 pub mod template;
+pub mod user;
 
 #[cfg(test)]
 pub mod mock;
@@ -73,4 +81,90 @@ pub trait TemplateWriter {
         updates: &UpdateTemplate,
     ) -> RepositoryResult<Template>;
     fn delete_template(&self, template_id: i32, hub_id: i32) -> RepositoryResult<()>;
+}
+
+/// Read-only operations over product records.
+pub trait ProductReader {
+    fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Product>>;
+    fn list_products(&self, query: ProductListQuery) -> RepositoryResult<(usize, Vec<Product>)>;
+}
+
+/// Write operations over product records.
+pub trait ProductWriter {
+    fn create_product(&self, new_product: &NewProduct) -> RepositoryResult<Product>;
+    fn update_product(
+        &self,
+        product_id: i32,
+        hub_id: i32,
+        updates: &UpdateProduct,
+    ) -> RepositoryResult<Product>;
+    fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()>;
+}
+
+/// Read-only operations over order records including their products.
+pub trait OrderReader {
+    fn get_order_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Order>>;
+    fn list_orders(&self, query: OrderListQuery) -> RepositoryResult<(usize, Vec<Order>)>;
+}
+
+/// Write operations over order records.
+pub trait OrderWriter {
+    fn create_order(&self, new_order: &NewOrder) -> RepositoryResult<Order>;
+    fn update_order(
+        &self,
+        order_id: i32,
+        hub_id: i32,
+        updates: &UpdateOrder,
+    ) -> RepositoryResult<Order>;
+    fn delete_order(&self, order_id: i32, hub_id: i32) -> RepositoryResult<()>;
+}
+
+#[derive(Debug, Clone)]
+/// Query definition used to list users for a hub.
+pub struct UserListQuery {
+    pub hub_id: i32,
+    pub search: Option<String>,
+    pub pagination: Option<Pagination>,
+}
+
+impl UserListQuery {
+    /// Construct a query that targets all users belonging to `hub_id`.
+    pub fn new(hub_id: i32) -> Self {
+        Self {
+            hub_id,
+            search: None,
+            pagination: None,
+        }
+    }
+
+    /// Filter the results by a case-insensitive search on email or name fields.
+    pub fn search(mut self, term: impl Into<String>) -> Self {
+        self.search = Some(term.into());
+        self
+    }
+
+    /// Apply pagination to the query with the given page number and page size.
+    pub fn paginate(mut self, page: usize, per_page: usize) -> Self {
+        self.pagination = Some(Pagination { page, per_page });
+        self
+    }
+}
+
+/// Read-only operations over user records.
+pub trait UserReader {
+    fn get_user_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<User>>;
+    fn get_user_by_email(&self, email: &str, hub_id: i32) -> RepositoryResult<Option<User>>;
+    fn list_users(&self, query: UserListQuery) -> RepositoryResult<(usize, Vec<User>)>;
+}
+
+/// Write operations over user records.
+pub trait UserWriter {
+    fn create_user(&self, new_user: &NewUser) -> RepositoryResult<User>;
+    fn update_user(
+        &self,
+        user_id: i32,
+        hub_id: i32,
+        updates: &UpdateUser,
+    ) -> RepositoryResult<User>;
+    fn delete_user(&self, user_id: i32, hub_id: i32) -> RepositoryResult<()>;
 }

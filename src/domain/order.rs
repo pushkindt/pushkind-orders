@@ -43,6 +43,8 @@ pub struct Order {
     pub total_cents: i64,
     /// ISO 4217 currency code used for the order total.
     pub currency: String,
+    /// Product snapshots captured when the order was created.
+    pub products: Vec<OrderProduct>,
     /// Timestamp for when the order record was created.
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the order record.
@@ -64,10 +66,69 @@ pub struct NewOrder {
     pub total_cents: i64,
     /// ISO 4217 currency code used for the order total.
     pub currency: String,
+    /// Product snapshots captured when the order was created.
+    pub products: Vec<OrderProduct>,
     /// Current lifecycle status of the order.
     pub status: OrderStatus,
     /// Timestamp captured when the order payload was created.
     pub updated_at: NaiveDateTime,
+}
+
+/// Static snapshot of a product that was added to an order.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OrderProduct {
+    /// Identifier of the original product, if it still exists.
+    pub product_id: Option<i32>,
+    /// Human-readable name captured at the time of ordering.
+    pub name: String,
+    /// Stock keeping unit captured at the time of ordering.
+    pub sku: Option<String>,
+    /// Description captured at the time of ordering.
+    pub description: Option<String>,
+    /// Price represented in the smallest currency unit for the ordered quantity.
+    pub price_cents: i64,
+    /// ISO 4217 currency captured at the time of ordering.
+    pub currency: String,
+    /// Quantity of the product ordered.
+    pub quantity: i32,
+}
+
+impl OrderProduct {
+    /// Create a new ordered product snapshot using the supplied fields.
+    pub fn new(
+        name: impl Into<String>,
+        price_cents: i64,
+        currency: impl Into<String>,
+        quantity: i32,
+    ) -> Self {
+        Self {
+            product_id: None,
+            name: name.into(),
+            sku: None,
+            description: None,
+            price_cents,
+            currency: currency.into(),
+            quantity,
+        }
+    }
+
+    /// Associate the snapshot with the current product identifier.
+    pub fn with_product_id(mut self, product_id: i32) -> Self {
+        self.product_id = Some(product_id);
+        self
+    }
+
+    /// Capture the SKU value alongside the snapshot.
+    pub fn with_sku(mut self, sku: impl Into<String>) -> Self {
+        self.sku = Some(sku.into());
+        self
+    }
+
+    /// Capture the description value alongside the snapshot.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
 }
 
 impl NewOrder {
@@ -82,6 +143,7 @@ impl NewOrder {
             total_cents,
             currency: currency.into(),
             status: OrderStatus::default(),
+            products: Vec::new(),
             updated_at: now,
         }
     }
@@ -109,6 +171,12 @@ impl NewOrder {
         self.status = status;
         self
     }
+
+    /// Attach product snapshots to the order payload.
+    pub fn with_products(mut self, products: impl Into<Vec<OrderProduct>>) -> Self {
+        self.products = products.into();
+        self
+    }
 }
 
 /// Patch data applied when updating an existing order.
@@ -126,6 +194,8 @@ pub struct UpdateOrder {
     pub customer_id: Option<Option<i32>>,
     /// Optional external reference update.
     pub reference: Option<Option<String>>,
+    /// Optional product list update.
+    pub products: Option<Vec<OrderProduct>>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }
@@ -147,6 +217,7 @@ impl UpdateOrder {
             currency: None,
             customer_id: None,
             reference: None,
+            products: None,
             updated_at: now,
         }
     }
@@ -184,6 +255,12 @@ impl UpdateOrder {
     /// Update the external reference associated with the order.
     pub fn reference(mut self, reference: Option<impl Into<String>>) -> Self {
         self.reference = Some(reference.map(|value| value.into()));
+        self
+    }
+
+    /// Replace the collection of products associated with the order.
+    pub fn products(mut self, products: impl Into<Vec<OrderProduct>>) -> Self {
+        self.products = Some(products.into());
         self
     }
 }
