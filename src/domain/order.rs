@@ -130,6 +130,12 @@ pub struct UpdateOrder {
     pub updated_at: NaiveDateTime,
 }
 
+impl Default for UpdateOrder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UpdateOrder {
     /// Create a new patch object with no changes applied yet.
     pub fn new() -> Self {

@@ -98,6 +98,12 @@ pub struct UpdateProduct {
     pub updated_at: NaiveDateTime,
 }
 
+impl Default for UpdateProduct {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UpdateProduct {
     /// Create a new patch object with no changes applied yet.
     pub fn new() -> Self {
