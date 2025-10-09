@@ -68,8 +68,7 @@
         </div>
         {% endfor %}
     </div>
-    {% set items = templates %}
-    {% include 'components/pagination.html' %}
+    {{ macros::pagination(pages=templates.pages) }}
 </div>
 
 {% include 'main/add_template_modal.html' %}
