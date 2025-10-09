@@ -15,6 +15,7 @@ use tera::Tera;
 
 use pushkind_orders::repository::DieselRepository;
 use pushkind_orders::routes::main::show_index;
+use pushkind_orders::routes::price_levels::show_price_levels;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -86,6 +87,7 @@ async fn main() -> std::io::Result<()> {
                 web::scope("")
                     .wrap(RedirectUnauthorized)
                     .service(show_index)
+                    .service(show_price_levels)
                     .service(logout),
             )
             .app_data(web::Data::new(tera.clone()))
