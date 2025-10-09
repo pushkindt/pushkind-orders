@@ -1,35 +1,14 @@
 use mockall::mock;
 
 use super::{
-    OrderReader, OrderWriter, ProductReader, ProductWriter, TemplateListQuery, TemplateReader,
-    TemplateWriter, UserListQuery, UserReader, UserWriter,
+    OrderReader, OrderWriter, ProductReader, ProductWriter, UserListQuery, UserReader, UserWriter,
 };
 use crate::domain::{
     order::{NewOrder, Order, OrderListQuery, UpdateOrder},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
-    template::{NewTemplate, Template, UpdateTemplate},
     user::{NewUser, UpdateUser, User},
 };
 use pushkind_common::repository::errors::RepositoryResult;
-
-mock! {
-    pub TemplateReader {}
-
-    impl TemplateReader for TemplateReader {
-        fn get_template_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Template>>;
-        fn list_templates(&self, query: TemplateListQuery) -> RepositoryResult<(usize, Vec<Template>)>;
-    }
-}
-
-mock! {
-    pub TemplateWriter {}
-
-    impl TemplateWriter for TemplateWriter {
-        fn create_templates(&self, new_templates: &[NewTemplate]) -> RepositoryResult<usize>;
-        fn update_template(&self, template_id: i32, hub_id: i32, updates: &UpdateTemplate) -> RepositoryResult<Template>;
-        fn delete_template(&self, template_id: i32, hub_id: i32) -> RepositoryResult<()>;
-    }
-}
 
 mock! {
     pub ProductReader {}

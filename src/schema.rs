@@ -47,16 +47,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    templates (id) {
-        id -> Integer,
-        hub_id -> Integer,
-        value -> Nullable<Text>,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     users (id) {
         id -> Integer,
         hub_id -> Integer,
@@ -69,4 +59,4 @@ diesel::table! {
 
 diesel::joinable!(order_products -> orders (order_id));
 
-diesel::allow_tables_to_appear_in_same_query!(order_products, orders, products, templates, users,);
+diesel::allow_tables_to_appear_in_same_query!(order_products, orders, products, users,);

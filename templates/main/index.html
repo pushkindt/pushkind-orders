@@ -2,30 +2,17 @@
 
 {% block styles %}
 <style>
-    .add-template-container {
-        display: flex;
+    .order-row {
         align-items: center;
-        text-align: center;
     }
 
-    .add-template-container>button:hover {
-        opacity: 0.5;
+    .order-meta {
+        font-size: 0.875rem;
+        color: #6c757d;
     }
 
-    .add-template-container>button {
-        opacity: 1.0;
-    }
-
-    .add-template-container>button:active {
-        opacity: 1.0;
-    }
-
-    .add-template-container::before,
-    .add-template-container::after {
-        content: '';
-        flex: 1;
-        border-bottom: 1px solid #000;
-        margin: 0 10px;
+    .order-status {
+        font-weight: 600;
     }
 </style>
 {% endblock %}
@@ -34,53 +21,52 @@
 {% include 'components/navigation.html' %}
 
 <div class="container bg-white border rounded my-2">
-
-    <div class="row">
-        <div class="col text-center add-template-container">
-            <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">
-                <i class="bi bi-plus-circle"></i>
-            </button>
+    <div class="row py-3 border-bottom">
+        <div class="col">
+            <h5 class="mb-0">Заказы</h5>
+            {% if search %}
+            <p class="order-meta mb-0">Поиск: "{{ search }}"</p>
+            {% endif %}
         </div>
     </div>
 
-    <div class="row d-none d-sm-flex fw-bold">
-        <div class="col overflow-hidden">
-            Идентификатор
-        </div>
-        <div class="col overflow-hidden">
-            Значение
-        </div>
+    <div class="row d-none d-md-flex fw-bold text-uppercase small py-2">
+        <div class="col-md-2">Идентификатор</div>
+        <div class="col-md-3">Ссылка</div>
+        <div class="col-md-2">Статус</div>
+        <div class="col-md-2">Сумма</div>
+        <div class="col-md-3">Создан</div>
     </div>
-    <div id="templateList">
-        {% for template in templates.items %}
-        <div class="row my-1 py-1 border-top template selectable" data-id="{{template.id}}">
-            <div class="col-sm">
-                <strong>{{ template.id }}</strong>
+
+    <div id="orderList">
+        {% for order in orders.items %}
+        <div class="row order-row py-2 border-top">
+            <div class="col-md-2">
+                <strong>{{ order.id }}</strong>
+                <div class="d-md-none order-meta">Статус: {{ order.status }}</div>
+                <div class="d-md-none order-meta">Сумма: {{ order.total_cents }} {{ order.currency }}</div>
             </div>
-            <div class="col-sm">
-                <span class="d-sm-none fw-bold">Значение:</span>
-                {{ template.value }}
+            <div class="col-md-3">
+                <span class="d-md-none fw-bold">Ссылка:</span>
+                {{ order.reference | default(value="—") }}
+            </div>
+            <div class="col-md-2 d-none d-md-block">
+                <span class="order-status">{{ order.status }}</span>
+            </div>
+            <div class="col-md-2 d-none d-md-block">
+                {{ order.total_cents }} {{ order.currency }}
+            </div>
+            <div class="col-md-3">
+                <span class="d-md-none fw-bold">Создан:</span>
+                {{ order.created_at }}
             </div>
         </div>
         {% else %}
-        <div class="alert alert-warning my-2" role="alert">
-            Нет шаблонов для отображения.
+        <div class="alert alert-warning my-3" role="alert">
+            Нет заказов для отображения.
         </div>
         {% endfor %}
     </div>
-    {{ macros::pagination(pages=templates.pages) }}
+    {{ macros::pagination(pages=orders.pages) }}
 </div>
-
-{% include 'main/add_template_modal.html' %}
-
-{% endblock %}
-
-
-{% block scripts %}
-<script>
-    document.addEventListener("DOMContentLoaded", () => {
-
-    });
-</script>
-
 {% endblock %}
