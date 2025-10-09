@@ -1,0 +1,61 @@
+use chrono::NaiveDateTime;
+use diesel::prelude::*;
+
+use crate::domain::price_level::{
+    NewPriceLevel as DomainNewPriceLevel, PriceLevel as DomainPriceLevel,
+    UpdatePriceLevel as DomainUpdatePriceLevel,
+};
+
+#[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
+#[diesel(table_name = crate::schema::price_levels)]
+pub struct PriceLevel {
+    pub id: i32,
+    pub hub_id: i32,
+    pub name: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::price_levels)]
+pub struct NewPriceLevel<'a> {
+    pub hub_id: i32,
+    pub name: &'a str,
+}
+
+#[derive(AsChangeset)]
+#[diesel(table_name = crate::schema::price_levels)]
+pub struct UpdatePriceLevel<'a> {
+    pub name: Option<&'a str>,
+    pub updated_at: NaiveDateTime,
+}
+
+impl From<PriceLevel> for DomainPriceLevel {
+    fn from(value: PriceLevel) -> Self {
+        Self {
+            id: value.id,
+            hub_id: value.hub_id,
+            name: value.name,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+impl<'a> From<&'a DomainNewPriceLevel> for NewPriceLevel<'a> {
+    fn from(value: &'a DomainNewPriceLevel) -> Self {
+        Self {
+            hub_id: value.hub_id,
+            name: value.name.as_str(),
+        }
+    }
+}
+
+impl<'a> From<&'a DomainUpdatePriceLevel> for UpdatePriceLevel<'a> {
+    fn from(value: &'a DomainUpdatePriceLevel) -> Self {
+        Self {
+            name: value.name.as_deref(),
+            updated_at: value.updated_at,
+        }
+    }
+}

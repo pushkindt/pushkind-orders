@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+
+{% block styles %}
+<style>
+    .level-row {
+        align-items: center;
+    }
+
+    .level-meta {
+        font-size: 0.875rem;
+        color: #6c757d;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% include 'components/navigation.html' %}
+
+<div class="container bg-white border rounded my-2">
+    <div class="row py-3 border-bottom">
+        <div class="col">
+            <h5 class="mb-0">Уровни цен</h5>
+            {% if search %}
+            <p class="level-meta mb-0">Поиск: "{{ search }}"</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row d-none d-md-flex fw-bold text-uppercase small py-2">
+        <div class="col-md-2">Идентификатор</div>
+        <div class="col-md-5">Название</div>
+        <div class="col-md-2">Создан</div>
+        <div class="col-md-3">Обновлен</div>
+    </div>
+
+    <div id="priceLevelList">
+        {% for level in price_levels.items %}
+        <div class="row level-row py-2 border-top">
+            <div class="col-md-2">
+                <strong>{{ level.id }}</strong>
+                <div class="d-md-none level-meta">Создан: {{ level.created_at }}</div>
+                <div class="d-md-none level-meta">Обновлен: {{ level.updated_at }}</div>
+            </div>
+            <div class="col-md-5">
+                <span class="d-md-none fw-bold">Название:</span>
+                {{ level.name }}
+            </div>
+            <div class="col-md-2 d-none d-md-block">
+                {{ level.created_at }}
+            </div>
+            <div class="col-md-3 d-none d-md-block">
+                {{ level.updated_at }}
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-warning my-3" role="alert">
+            Уровни цен пока не созданы.
+        </div>
+        {% endfor %}
+    </div>
+    {{ macros::pagination(pages=price_levels.pages, search_query=search | default(value="")) }}
+</div>
+{% endblock %}

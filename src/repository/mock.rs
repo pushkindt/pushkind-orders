@@ -1,10 +1,12 @@
 use mockall::mock;
 
 use super::{
-    OrderReader, OrderWriter, ProductReader, ProductWriter, UserListQuery, UserReader, UserWriter,
+    OrderReader, OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter,
+    UserListQuery, UserReader, UserWriter,
 };
 use crate::domain::{
     order::{NewOrder, Order, OrderListQuery, UpdateOrder},
+    price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     user::{NewUser, UpdateUser, User},
 };
@@ -26,6 +28,25 @@ mock! {
         fn create_product(&self, new_product: &NewProduct) -> RepositoryResult<Product>;
         fn update_product(&self, product_id: i32, hub_id: i32, updates: &UpdateProduct) -> RepositoryResult<Product>;
         fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    }
+}
+
+mock! {
+    pub PriceLevelReader {}
+
+    impl PriceLevelReader for PriceLevelReader {
+        fn get_price_level_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<PriceLevel>>;
+        fn list_price_levels(&self, query: PriceLevelListQuery) -> RepositoryResult<(usize, Vec<PriceLevel>)>;
+    }
+}
+
+mock! {
+    pub PriceLevelWriter {}
+
+    impl PriceLevelWriter for PriceLevelWriter {
+        fn create_price_level(&self, new_price_level: &NewPriceLevel) -> RepositoryResult<PriceLevel>;
+        fn update_price_level(&self, price_level_id: i32, hub_id: i32, updates: &UpdatePriceLevel) -> RepositoryResult<PriceLevel>;
+        fn delete_price_level(&self, price_level_id: i32, hub_id: i32) -> RepositoryResult<()>;
     }
 }
 

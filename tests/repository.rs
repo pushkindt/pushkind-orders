@@ -1,12 +1,14 @@
 use pushkind_common::repository::errors::RepositoryError;
 use pushkind_orders::domain::{
     order::{NewOrder, OrderListQuery, OrderProduct, OrderStatus, UpdateOrder},
+    price_level::{NewPriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, ProductListQuery, UpdateProduct},
     user::{NewUser, UpdateUser},
 };
 use pushkind_orders::repository::DieselRepository;
 use pushkind_orders::repository::{
-    OrderReader, OrderWriter, ProductReader, ProductWriter, UserListQuery, UserReader, UserWriter,
+    OrderReader, OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter,
+    UserListQuery, UserReader, UserWriter,
 };
 
 mod common;
@@ -194,6 +196,81 @@ fn test_product_repository_crud() {
         .expect("failed final list");
     assert_eq!(total_final, 1);
     assert_eq!(products_final[0].id, banana.id);
+}
+
+#[test]
+fn test_price_level_repository_crud() {
+    let test_db = common::TestDb::new("test_price_level_repository_crud.db");
+    let repo = DieselRepository::new(test_db.pool());
+
+    let bronze_new = NewPriceLevel::new(1, " Bronze ");
+    let silver_new = NewPriceLevel::new(1, "Silver");
+
+    let bronze = repo
+        .create_price_level(&bronze_new)
+        .expect("failed to create bronze level");
+    let silver = repo
+        .create_price_level(&silver_new)
+        .expect("failed to create silver level");
+
+    assert_eq!(bronze.name, "Bronze");
+    assert_eq!(silver.name, "Silver");
+
+    let fetched = repo
+        .get_price_level_by_id(bronze.id, 1)
+        .expect("failed to fetch by id")
+        .expect("expected bronze price level");
+    assert_eq!(fetched.id, bronze.id);
+    assert_eq!(fetched.name, "Bronze");
+
+    assert!(
+        repo.get_price_level_by_id(bronze.id, 2)
+            .expect("failed to fetch cross-hub")
+            .is_none()
+    );
+
+    let (total_all, levels_all) = repo
+        .list_price_levels(PriceLevelListQuery::new(1))
+        .expect("failed to list price levels");
+    assert_eq!(total_all, 2);
+    assert_eq!(levels_all.len(), 2);
+
+    let (total_search, levels_search) = repo
+        .list_price_levels(PriceLevelListQuery::new(1).search("Sil"))
+        .expect("failed to search price levels");
+    assert_eq!(total_search, 1);
+    assert_eq!(levels_search[0].id, silver.id);
+
+    let updates = UpdatePriceLevel::new().name("Gold");
+
+    let updated = repo
+        .update_price_level(bronze.id, 1, &updates)
+        .expect("failed to update price level");
+    assert_eq!(updated.name, "Gold");
+
+    let err = repo
+        .update_price_level(bronze.id, 2, &UpdatePriceLevel::new().name("Intruder"))
+        .expect_err("expected cross-hub update failure");
+    assert!(matches!(err, RepositoryError::NotFound));
+
+    let err = repo
+        .delete_price_level(bronze.id, 2)
+        .expect_err("expected cross-hub delete failure");
+    assert!(matches!(err, RepositoryError::NotFound));
+
+    repo.delete_price_level(bronze.id, 1)
+        .expect("failed to delete price level");
+    assert!(
+        repo.get_price_level_by_id(bronze.id, 1)
+            .expect("failed to fetch after delete")
+            .is_none()
+    );
+
+    let (total_final, levels_final) = repo
+        .list_price_levels(PriceLevelListQuery::new(1))
+        .expect("failed to list after delete");
+    assert_eq!(total_final, 1);
+    assert_eq!(levels_final[0].id, silver.id);
 }
 
 #[test]
