@@ -1,5 +1,5 @@
 CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
+    id INTEGER NOT NULL PRIMARY KEY,
     hub_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     email TEXT NOT NULL,
@@ -11,7 +11,7 @@ CREATE UNIQUE INDEX users_hub_id_email_idx ON users(hub_id, email);
 CREATE INDEX users_hub_id_idx ON users(hub_id);
 
 CREATE TABLE products (
-    id INTEGER PRIMARY KEY,
+    id INTEGER NOT NULL PRIMARY KEY,
     hub_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     sku TEXT,
@@ -30,7 +30,7 @@ CREATE INDEX products_hub_id_idx ON products(hub_id);
 CREATE INDEX products_is_archived_idx ON products(is_archived);
 
 CREATE TABLE orders (
-    id INTEGER PRIMARY KEY,
+    id INTEGER NOT NULL PRIMARY KEY,
     hub_id INTEGER NOT NULL,
     customer_id INTEGER,
     reference TEXT,
@@ -42,11 +42,11 @@ CREATE TABLE orders (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (
         status IN (
-            'draft',
-            'pending',
-            'processing',
-            'completed',
-            'cancelled'
+            'Draft',
+            'Pending',
+            'Processing',
+            'Completed',
+            'Cancelled'
         )
     )
 );

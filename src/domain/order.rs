@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 /// Possible lifecycle states for an order managed by a hub.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
 pub enum OrderStatus {
     /// Order has been created but not yet submitted for processing.
     Draft,
@@ -24,6 +23,37 @@ impl Default for OrderStatus {
     }
 }
 
+impl From<&str> for OrderStatus {
+    fn from(value: &str) -> Self {
+        match value {
+            "Draft" => Self::Draft,
+            "Pending" => Self::Pending,
+            "Processing" => Self::Processing,
+            "Completed" => Self::Completed,
+            "Cancelled" => Self::Cancelled,
+            _ => Self::Draft,
+        }
+    }
+}
+
+impl From<OrderStatus> for &'static str {
+    fn from(value: OrderStatus) -> Self {
+        match value {
+            OrderStatus::Draft => "Draft",
+            OrderStatus::Pending => "Pending",
+            OrderStatus::Processing => "Processing",
+            OrderStatus::Completed => "Completed",
+            OrderStatus::Cancelled => "Cancelled",
+        }
+    }
+}
+
+impl From<OrderStatus> for String {
+    fn from(value: OrderStatus) -> Self {
+        <&'static str>::from(value).to_owned()
+    }
+}
+
 /// Domain representation of an order belonging to a hub.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Order {
@@ -40,7 +70,7 @@ pub struct Order {
     /// Optional notes supplied by the operator.
     pub notes: Option<String>,
     /// Total amount represented in the smallest currency unit (for example cents).
-    pub total_cents: i64,
+    pub total_cents: i32,
     /// ISO 4217 currency code used for the order total.
     pub currency: String,
     /// Product snapshots captured when the order was created.
@@ -63,7 +93,7 @@ pub struct NewOrder {
     /// Optional notes supplied by the operator.
     pub notes: Option<String>,
     /// Total amount represented in the smallest currency unit (for example cents).
-    pub total_cents: i64,
+    pub total_cents: i32,
     /// ISO 4217 currency code used for the order total.
     pub currency: String,
     /// Product snapshots captured when the order was created.
@@ -86,7 +116,7 @@ pub struct OrderProduct {
     /// Description captured at the time of ordering.
     pub description: Option<String>,
     /// Price represented in the smallest currency unit for the ordered quantity.
-    pub price_cents: i64,
+    pub price_cents: i32,
     /// ISO 4217 currency captured at the time of ordering.
     pub currency: String,
     /// Quantity of the product ordered.
@@ -97,7 +127,7 @@ impl OrderProduct {
     /// Create a new ordered product snapshot using the supplied fields.
     pub fn new(
         name: impl Into<String>,
-        price_cents: i64,
+        price_cents: i32,
         currency: impl Into<String>,
         quantity: i32,
     ) -> Self {
@@ -133,7 +163,7 @@ impl OrderProduct {
 
 impl NewOrder {
     /// Build a new order payload with the supplied details and current timestamp.
-    pub fn new(hub_id: i32, total_cents: i64, currency: impl Into<String>) -> Self {
+    pub fn new(hub_id: i32, total_cents: i32, currency: impl Into<String>) -> Self {
         let now = chrono::Local::now().naive_utc();
         Self {
             hub_id,
@@ -187,7 +217,7 @@ pub struct UpdateOrder {
     /// Optional notes update.
     pub notes: Option<Option<String>>,
     /// Optional total amount update.
-    pub total_cents: Option<i64>,
+    pub total_cents: Option<i32>,
     /// Optional currency update.
     pub currency: Option<String>,
     /// Optional customer reference update.
@@ -235,7 +265,7 @@ impl UpdateOrder {
     }
 
     /// Update the total amount of the order.
-    pub fn total_cents(mut self, total_cents: i64) -> Self {
+    pub fn total_cents(mut self, total_cents: i32) -> Self {
         self.total_cents = Some(total_cents);
         self
     }

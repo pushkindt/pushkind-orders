@@ -8,7 +8,7 @@ use crate::domain::user::{
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::users)]
 pub struct User {
-    pub id: Option<i32>,
+    pub id: i32,
     pub hub_id: i32,
     pub name: String,
     pub email: String,
@@ -33,12 +33,8 @@ pub struct UpdateUser<'a> {
 
 impl From<User> for DomainUser {
     fn from(value: User) -> Self {
-        let Some(id) = value.id else {
-            unreachable!("user id should always be present after fetch");
-        };
-
         Self {
-            id,
+            id: value.id,
             hub_id: value.hub_id,
             name: value.name,
             email: value.email,
