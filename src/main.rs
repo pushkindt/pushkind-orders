@@ -13,8 +13,8 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{logout, not_assigned};
 use tera::Tera;
 
-use pushkind_template::repository::DieselRepository;
-use pushkind_template::routes::main::{add_template, show_index, templates_upload};
+use pushkind_orders::repository::DieselRepository;
+use pushkind_orders::routes::main::{add_template, show_index, templates_upload};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {

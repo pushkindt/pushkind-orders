@@ -1,12 +1,12 @@
 use pushkind_common::repository::errors::RepositoryError;
-use pushkind_template::domain::{
+use pushkind_orders::domain::{
     order::{NewOrder, OrderListQuery, OrderProduct, OrderStatus, UpdateOrder},
     product::{NewProduct, ProductListQuery, UpdateProduct},
     template::{NewTemplate, UpdateTemplate},
     user::{NewUser, UpdateUser},
 };
-use pushkind_template::repository::DieselRepository;
-use pushkind_template::repository::{
+use pushkind_orders::repository::DieselRepository;
+use pushkind_orders::repository::{
     OrderReader, OrderWriter, ProductReader, ProductWriter, TemplateListQuery, TemplateReader,
     TemplateWriter, UserListQuery, UserReader, UserWriter,
 };

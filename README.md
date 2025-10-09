@@ -1,6 +1,6 @@
-# pushkind-order
+# pushkind-orders
 
-`pushkind-order` is a Pushkind service focused on uploading and editing product lists while creating, tracking, and managing orders. The project is powered by Rust, Actix Web, Diesel, and Tera on top of Bootstrap 5.3 for the frontend.
+`pushkind-orders` is a Pushkind service focused on uploading and editing product lists while creating, tracking, and managing orders. The project is powered by Rust, Actix Web, Diesel, and Tera on top of Bootstrap 5.3 for the frontend.
 
 ## Features
 
