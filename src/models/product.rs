@@ -8,12 +8,12 @@ use crate::domain::product::{
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::products)]
 pub struct Product {
-    pub id: Option<i32>,
+    pub id: i32,
     pub hub_id: i32,
     pub name: String,
     pub sku: Option<String>,
     pub description: Option<String>,
-    pub price_cents: i64,
+    pub price_cents: i32,
     pub currency: String,
     pub is_archived: bool,
     pub created_at: NaiveDateTime,
@@ -27,7 +27,7 @@ pub struct NewProduct<'a> {
     pub name: &'a str,
     pub sku: Option<&'a str>,
     pub description: Option<&'a str>,
-    pub price_cents: i64,
+    pub price_cents: i32,
     pub currency: &'a str,
     pub updated_at: NaiveDateTime,
 }
@@ -38,7 +38,7 @@ pub struct UpdateProduct<'a> {
     pub name: Option<&'a str>,
     pub sku: Option<Option<&'a str>>,
     pub description: Option<Option<&'a str>>,
-    pub price_cents: Option<i64>,
+    pub price_cents: Option<i32>,
     pub currency: Option<&'a str>,
     pub is_archived: Option<bool>,
     pub updated_at: NaiveDateTime,
@@ -46,12 +46,8 @@ pub struct UpdateProduct<'a> {
 
 impl From<Product> for DomainProduct {
     fn from(value: Product) -> Self {
-        let Some(id) = value.id else {
-            unreachable!("product id should always be present after fetch");
-        };
-
         Self {
-            id,
+            id: value.id,
             hub_id: value.hub_id,
             name: value.name,
             sku: value.sku,

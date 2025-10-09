@@ -13,7 +13,7 @@ impl UserReader for DieselRepository {
 
         let mut conn = self.conn()?;
         let user = users::table
-            .filter(users::id.eq(Some(id)))
+            .filter(users::id.eq(id))
             .filter(users::hub_id.eq(hub_id))
             .first::<DbUser>(&mut conn)
             .optional()?;
@@ -111,7 +111,7 @@ impl UserWriter for DieselRepository {
         let db_updates = DbUpdateUser::from(updates);
 
         let target = users::table
-            .filter(users::id.eq(Some(user_id)))
+            .filter(users::id.eq(user_id))
             .filter(users::hub_id.eq(hub_id));
 
         let updated = diesel::update(target)
@@ -127,7 +127,7 @@ impl UserWriter for DieselRepository {
         let mut conn = self.conn()?;
 
         let target = users::table
-            .filter(users::id.eq(Some(user_id)))
+            .filter(users::id.eq(user_id))
             .filter(users::hub_id.eq(hub_id));
 
         let deleted = diesel::delete(target).execute(&mut conn)?;

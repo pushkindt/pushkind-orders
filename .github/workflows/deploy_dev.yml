@@ -1,0 +1,50 @@
+name: Deploy development
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --all-features
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pushkind-orders
+          path: ./target/release/pushkind-orders
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: pushkind-orders
+          path: ./target/release/
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.CICD_PRIVATE_KEY }}
+          name: id_rsa # optional
+          known_hosts: ${{ secrets.CICD_KNOWN_HOSTS }}
+          if_key_exists: fail # replace / ignore / fail; optional (defaults to fail)
+      - name: Deploy
+        run: |
+          ssh cicd@docs.pushkind.com "supervisorctl stop orders"
+          scp ./target/release/pushkind-orders cicd@docs.pushkind.com:/var/www11/html/
+          scp -r ./assets/ cicd@docs.pushkind.com:/var/www11/html/
+          scp -r ./templates/ cicd@docs.pushkind.com:/var/www11/html/
+          scp -r ./migrations/ cicd@docs.pushkind.com:/var/www11/html/
+          ssh cicd@docs.pushkind.com "cd /var/www11/html/ && /home/cicd/.cargo/bin/diesel migration run"
+          ssh cicd@docs.pushkind.com "supervisorctl start orders"

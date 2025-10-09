@@ -18,7 +18,7 @@ impl ProductReader for DieselRepository {
 
         let mut conn = self.conn()?;
         let product = products::table
-            .filter(products::id.eq(Some(id)))
+            .filter(products::id.eq(id))
             .filter(products::hub_id.eq(hub_id))
             .first::<DbProduct>(&mut conn)
             .optional()?;
@@ -122,7 +122,7 @@ impl ProductWriter for DieselRepository {
         let db_updates = DbUpdateProduct::from(updates);
 
         let target = products::table
-            .filter(products::id.eq(Some(product_id)))
+            .filter(products::id.eq(product_id))
             .filter(products::hub_id.eq(hub_id));
 
         let updated = diesel::update(target)
@@ -138,7 +138,7 @@ impl ProductWriter for DieselRepository {
         let mut conn = self.conn()?;
 
         let target = products::table
-            .filter(products::id.eq(Some(product_id)))
+            .filter(products::id.eq(product_id))
             .filter(products::hub_id.eq(hub_id));
 
         let deleted = diesel::delete(target).execute(&mut conn)?;

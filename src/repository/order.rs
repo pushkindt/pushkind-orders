@@ -21,7 +21,7 @@ impl OrderReader for DieselRepository {
 
         let mut conn = self.conn()?;
         let order = orders::table
-            .filter(orders::id.eq(Some(id)))
+            .filter(orders::id.eq(id))
             .filter(orders::hub_id.eq(hub_id))
             .first::<DbOrder>(&mut conn)
             .optional()?;
@@ -30,9 +30,7 @@ impl OrderReader for DieselRepository {
             return Ok(None);
         };
 
-        let order_id = order
-            .id
-            .expect("order id should always be present after fetch");
+        let order_id = order.id;
 
         let products = order_products::table
             .filter(order_products::order_id.eq(order_id))
@@ -113,7 +111,7 @@ impl OrderReader for DieselRepository {
             return Ok((total, Vec::new()));
         }
 
-        let order_ids: Vec<i32> = db_orders.iter().filter_map(|order| order.id).collect();
+        let order_ids: Vec<i32> = db_orders.iter().map(|order| order.id).collect();
 
         let mut products_by_order: HashMap<i32, Vec<DbOrderProduct>> = HashMap::new();
 
@@ -134,9 +132,7 @@ impl OrderReader for DieselRepository {
         let orders = db_orders
             .into_iter()
             .map(|order| {
-                let order_id = order
-                    .id
-                    .expect("order id should always be present after fetch");
+                let order_id = order.id;
                 let products = products_by_order.remove(&order_id).unwrap_or_default();
                 DomainOrder::from((order, products))
             })
@@ -159,9 +155,7 @@ impl OrderWriter for DieselRepository {
                 .values(&db_new)
                 .get_result::<DbOrder>(conn)?;
 
-            let order_id = created
-                .id
-                .expect("order id should always be present after insert");
+            let order_id = created.id;
 
             if !new_order.products.is_empty() {
                 let payload: Vec<DbNewOrderProduct> = new_order
@@ -198,7 +192,7 @@ impl OrderWriter for DieselRepository {
             let db_updates = DbUpdateOrder::from(updates);
 
             let target = orders::table
-                .filter(orders::id.eq(Some(order_id)))
+                .filter(orders::id.eq(order_id))
                 .filter(orders::hub_id.eq(hub_id));
 
             let updated = diesel::update(target)
@@ -236,7 +230,7 @@ impl OrderWriter for DieselRepository {
         let mut conn = self.conn()?;
 
         let target = orders::table
-            .filter(orders::id.eq(Some(order_id)))
+            .filter(orders::id.eq(order_id))
             .filter(orders::hub_id.eq(hub_id));
 
         let deleted = diesel::delete(target).execute(&mut conn)?;

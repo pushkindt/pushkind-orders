@@ -16,7 +16,7 @@ pub struct Product {
     /// Optional longer description shown to users.
     pub description: Option<String>,
     /// Price represented in the smallest currency unit (for example cents).
-    pub price_cents: i64,
+    pub price_cents: i32,
     /// ISO 4217 currency code associated with the product price.
     pub currency: String,
     /// Flag indicating whether the product has been archived.
@@ -39,7 +39,7 @@ pub struct NewProduct {
     /// Optional longer description shown to users.
     pub description: Option<String>,
     /// Price represented in the smallest currency unit (for example cents).
-    pub price_cents: i64,
+    pub price_cents: i32,
     /// ISO 4217 currency code associated with the product price.
     pub currency: String,
     /// Timestamp captured when the product payload was created.
@@ -51,7 +51,7 @@ impl NewProduct {
     pub fn new(
         hub_id: i32,
         name: impl Into<String>,
-        price_cents: i64,
+        price_cents: i32,
         currency: impl Into<String>,
     ) -> Self {
         let now = chrono::Local::now().naive_utc();
@@ -89,7 +89,7 @@ pub struct UpdateProduct {
     /// Optional description update.
     pub description: Option<Option<String>>,
     /// Optional price update in the smallest currency unit.
-    pub price_cents: Option<i64>,
+    pub price_cents: Option<i32>,
     /// Optional currency update.
     pub currency: Option<String>,
     /// Whether the product should be archived or restored.
@@ -138,7 +138,7 @@ impl UpdateProduct {
     }
 
     /// Update the product price.
-    pub fn price_cents(mut self, price_cents: i64) -> Self {
+    pub fn price_cents(mut self, price_cents: i32) -> Self {
         self.price_cents = Some(price_cents);
         self
     }

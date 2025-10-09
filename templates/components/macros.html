@@ -1,0 +1,66 @@
+{% macro user_popover(user) %}
+    {% if user %}
+        <a  role="button"
+            tabindex="0"
+            data-bs-trigger="focus"
+            data-bs-toggle="popover"
+            title="{{user.name}}"
+            data-bs-content="{{user.email}}"
+            data-bs-original-title="{{user.name}}"
+            aria-label="{{user.name}}">
+            <i class="bi bi-person-circle"></i>&nbsp;{{user.name}}
+        </a>
+    {% else %}
+        <span class="text-muted">—</span>
+    {% endif %}
+{% endmacro user_popover %}
+
+{% macro pagination(pages, current_page=1, search_query="") %}
+    {% if pages | length > 1 %}
+        <nav aria-label="pagination">
+            <ul class="pagination justify-content-center flex-wrap" id="pagination">
+                {% for page in pages %}
+                    {% if page %}
+                        {% if page != current_page %}
+                            <li class="page-item">
+                            <a class="page-link" href="?page={{page}}{% if search_query %}&q={{search_query}}{% endif %}">
+                                    {{ page }}
+                                </a>
+                            </li>
+                        {% else %}
+                            <li class="page-item active" aria-current="page">
+                                <span class="page-link">{{ page }}</span>
+                            </li>
+                        {% endif %}
+                    {% else %}
+                        <li class="page-item">
+                            <span class="ellipsis">…</span>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+            </ul>
+        </nav>
+    {% endif %}
+{% endmacro pagination %}
+
+{% macro markdown(id, message="") %}
+    <ul class="nav nav-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="editor-tab{{id}}" data-bs-toggle="tab" data-bs-target="#editor-tab-pane{{id}}" type="button" role="tab" aria-controls="editor-tab-pane{{id}}" aria-selected="true">Маркдаун</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="preview-tab" data-bs-toggle="tab" data-bs-target="#preview-tab-pane{{id}}" type="button" role="tab" aria-controls="preview-tab-pane{{id}}" aria-selected="false">Превью</button>
+        </li>
+    </ul>
+    <div class="tab-content mb-1" data-markdown-editor>
+        <div class="tab-pane fade show active" id="editor-tab-pane{{id}}" role="tabpanel" aria-labelledby="editor-tab{{id}}" tabindex="0">
+            <textarea autofocus class="form-control border-top-0 rounded-top-0" rows="10" data-markdown-input required
+                placeholder="Содержание в формате markdown">{{message | default(value='') | safe}}</textarea>
+            <input type="hidden" name="message" required value="{{message | default(value='')}}"
+                data-markdown-output>
+        </div>
+        <div class="tab-pane fade" id="preview-tab-pane{{id}}" role="tabpanel" aria-labelledby="preview-tab{{id}}" tabindex="0" data-markdown-preview>
+            <div class="border border-top-0 rounded rounded-top-0 p-2" data-markdown-rendered style="min-height:240px"></div>
+        </div>
+    </div>
+{% endmacro markdown %}
