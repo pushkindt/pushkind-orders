@@ -4,11 +4,13 @@ use pushkind_common::repository::errors::RepositoryResult;
 
 use crate::domain::{
     order::{NewOrder, Order, OrderListQuery, UpdateOrder},
+    price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     user::{NewUser, UpdateUser, User},
 };
 
 pub mod order;
+pub mod price_level;
 pub mod product;
 pub mod user;
 
@@ -48,6 +50,27 @@ pub trait ProductWriter {
         updates: &UpdateProduct,
     ) -> RepositoryResult<Product>;
     fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()>;
+}
+
+/// Read-only operations over price level records.
+pub trait PriceLevelReader {
+    fn get_price_level_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<PriceLevel>>;
+    fn list_price_levels(
+        &self,
+        query: PriceLevelListQuery,
+    ) -> RepositoryResult<(usize, Vec<PriceLevel>)>;
+}
+
+/// Write operations over price level records.
+pub trait PriceLevelWriter {
+    fn create_price_level(&self, new_price_level: &NewPriceLevel) -> RepositoryResult<PriceLevel>;
+    fn update_price_level(
+        &self,
+        price_level_id: i32,
+        hub_id: i32,
+        updates: &UpdatePriceLevel,
+    ) -> RepositoryResult<PriceLevel>;
+    fn delete_price_level(&self, price_level_id: i32, hub_id: i32) -> RepositoryResult<()>;
 }
 
 /// Read-only operations over order records including their products.
