@@ -15,10 +15,13 @@
                         <a class="nav-link {%if current_page == 'index'%}active{%endif%}" href="/">Заказы</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {%if current_page == 'products'%}active{%endif%}" href="/products">Товары</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {%if current_page == 'price_levels'%}active{%endif%}" href="/price-levels">Цены</a>
                     </li>
                 </ul>
-                <form class="d-flex w-100" role="search" action="/">
+                <form class="d-flex w-100" role="search" action="{{search_action | default(value='/')}}">
                     <div class="input-group me-2">
                         <input required name="search" class="form-control" type="search" placeholder="Поиск"
                             aria-label="Search" value='{{search | default(value="")}}'>

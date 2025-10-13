@@ -5,8 +5,9 @@ use serde::Deserialize;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
-use crate::repository::PriceLevelReader;
-use crate::services::{ServiceError, ServiceResult};
+use crate::forms::price_levels::{AddPriceLevelForm, UploadPriceLevelsForm};
+use crate::repository::{PriceLevelReader, PriceLevelWriter};
+use crate::services::{RedirectSuccess, ServiceError, ServiceResult};
 
 /// Query parameters accepted by the price levels index page.
 #[derive(Debug, Default, Deserialize)]
@@ -60,14 +61,77 @@ where
     })
 }
 
+/// Creates a new price level for the authenticated user's hub.
+pub fn create_price_level<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    form: AddPriceLevelForm,
+) -> ServiceResult<RedirectSuccess>
+where
+    R: PriceLevelWriter + ?Sized,
+{
+    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    let new_price_level = form
+        .into_new_price_level(user.hub_id)
+        .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    let created = repo
+        .create_price_level(&new_price_level)
+        .map_err(ServiceError::from)?;
+
+    Ok(RedirectSuccess {
+        message: format!("Уровень «{}» добавлен.", created.name),
+        redirect_to: "/price-levels".to_string(),
+    })
+}
+
+/// Imports price levels from an uploaded CSV file.
+pub fn import_price_levels<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    mut form: UploadPriceLevelsForm,
+) -> ServiceResult<RedirectSuccess>
+where
+    R: PriceLevelWriter + ?Sized,
+{
+    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    let price_levels = form
+        .into_new_price_levels(user.hub_id)
+        .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    let count = price_levels.len();
+
+    for level in price_levels {
+        repo.create_price_level(&level)
+            .map_err(ServiceError::from)?;
+    }
+
+    Ok(RedirectSuccess {
+        message: format!("Загружено уровней цен: {count}."),
+        redirect_to: "/price-levels".to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
     use serde_json::Value;
+    use std::io::{Seek, SeekFrom, Write};
+    use std::sync::{Arc, Mutex};
+
+    use actix_multipart::form::tempfile::TempFile;
+    use tempfile::NamedTempFile;
 
     use crate::domain::price_level::PriceLevel;
-    use crate::repository::mock::MockPriceLevelReader;
+    use crate::forms::price_levels::{AddPriceLevelForm, UploadPriceLevelsForm};
+    use crate::repository::mock::{MockPriceLevelReader, MockPriceLevelWriter};
 
     fn fixed_datetime() -> NaiveDateTime {
         match NaiveDate::from_ymd_opt(2024, 1, 1) {
@@ -178,5 +242,130 @@ mod tests {
             .and_then(|map| map.get("name"))
             .and_then(Value::as_str);
         assert_eq!(first_name, Some("Silver"));
+    }
+
+    #[test]
+    fn create_price_level_requires_role() {
+        let repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[]);
+        let form = AddPriceLevelForm {
+            name: "Retail".to_string(),
+        };
+
+        let result = create_price_level(&repo, &user, form);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn create_price_level_persists_and_returns_redirect() {
+        let mut repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = AddPriceLevelForm {
+            name: "Retail".to_string(),
+        };
+
+        let expected_hub = user.hub_id;
+        repo.expect_create_price_level()
+            .times(1)
+            .withf(move |payload| payload.hub_id == expected_hub && payload.name == "Retail")
+            .returning(move |_| Ok(sample_level(5, expected_hub, "Retail")));
+
+        let result = create_price_level(&repo, &user, form).expect("expected success");
+
+        assert_eq!(result.redirect_to, "/price-levels");
+        assert!(result.message.contains("Retail"));
+    }
+
+    #[test]
+    fn create_price_level_propagates_form_errors() {
+        let repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = AddPriceLevelForm {
+            name: "   ".to_string(),
+        };
+
+        let result = create_price_level(&repo, &user, form);
+
+        match result {
+            Err(ServiceError::Form(message)) => {
+                assert!(
+                    message.contains("cannot be empty"),
+                    "unexpected message: {message}"
+                );
+            }
+            other => panic!("expected form error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn import_price_levels_requires_role() {
+        let repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[]);
+        let form = build_upload_form("name\nRetail\n");
+
+        let result = import_price_levels(&repo, &user, form);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn import_price_levels_creates_all_levels() {
+        let mut repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = build_upload_form("name\nRetail\nWholesale\n");
+
+        let captured_names: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let names_clone = Arc::clone(&captured_names);
+
+        repo.expect_create_price_level()
+            .times(2)
+            .returning(move |payload| {
+                let mut guard = names_clone.lock().expect("mutex poisoned");
+                guard.push(payload.name.clone());
+                Ok(sample_level(
+                    guard.len() as i32,
+                    payload.hub_id,
+                    &payload.name,
+                ))
+            });
+
+        let result = import_price_levels(&repo, &user, form).expect("expected success");
+
+        assert_eq!(result.redirect_to, "/price-levels");
+        assert!(result.message.contains('2'));
+
+        let stored = captured_names.lock().expect("mutex poisoned");
+        assert_eq!(stored.len(), 2);
+        assert!(stored.contains(&"Retail".to_string()));
+        assert!(stored.contains(&"Wholesale".to_string()));
+    }
+
+    #[test]
+    fn import_price_levels_handles_empty_upload() {
+        let repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = build_upload_form("name\n");
+
+        let result = import_price_levels(&repo, &user, form).expect("expected success");
+
+        assert!(result.message.contains('0'));
+    }
+
+    fn build_upload_form(csv: &str) -> UploadPriceLevelsForm {
+        let mut file = NamedTempFile::new().expect("create temp file");
+        file.write_all(csv.as_bytes()).expect("write csv file");
+        file.as_file_mut()
+            .seek(SeekFrom::Start(0))
+            .expect("seek to start");
+
+        UploadPriceLevelsForm {
+            csv: TempFile {
+                file,
+                content_type: None,
+                file_name: Some("levels.csv".to_string()),
+                size: csv.len(),
+            },
+        }
     }
 }

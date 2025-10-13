@@ -2,33 +2,33 @@
 
 {% block styles %}
 <style>
-    .add-order-container {
+    .add-product-container {
         display: flex;
         align-items: center;
         text-align: center;
     }
 
-    .add-order-container>button:hover {
+    .add-product-container>button:hover {
         opacity: 0.5;
     }
 
-    .add-order-container>button {
+    .add-product-container>button {
         opacity: 1.0;
     }
 
-    .add-order-container>button:active {
+    .add-product-container>button:active {
         opacity: 1.0;
     }
 
-    .add-order-container::before,
-    .add-order-container::after {
+    .add-product-container::before,
+    .add-product-container::after {
         content: '';
         flex: 1;
         border-bottom: 1px solid #000;
         margin: 0 10px;
     }
 
-    .order-recent {
+    .product-recent {
         background-color: rgba(255, 243, 205, 0.6);
     }
 </style>
@@ -40,8 +40,8 @@
 <div class="container bg-white border rounded my-2">
 
     <div class="row">
-        <div class="col text-center add-order-container">
-            <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#orderModal">
+        <div class="col text-center add-product-container">
+            <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#productModal">
                 <i class="bi bi-plus-circle"></i>
             </button>
         </div>
@@ -60,39 +60,42 @@
         <div class="col-sm overflow-hidden">Описание</div>
         <div class="col-sm-2 overflow-hidden">Статус</div>
     </div>
-    <div id="orderList">
-        {% for order in orders.items %}
-        <div class="row my-1 py-1 border-top selectable {% if order.id in recently_updated_order_ids %}order-recent{% endif %}" data-id="{{ order.id }}">
+    <div id="productList">
+        {% for product in products.items %}
+        <div class="row my-1 py-1 border-top selectable {% if product.id in recently_updated_product_ids %}product-recent{% endif %}" data-id="{{ product.id }}">
             <div class="col-sm-2">
-                <strong>{{ order.id }}</strong>
+                <strong>{{ product.id }}</strong>
                 <div class="text-muted small">
-                    <i class="bi bi-clock-history" aria-hidden="true"></i> {{ order.updated_at | date(format="%Y-%m-%d %H:%M") }}
+                    <i class="bi bi-clock-history" aria-hidden="true"></i> {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
                 </div>
             </div>
             <div class="col-sm">
                 <span class="d-sm-none fw-bold">Название:</span>
-                {{ order.title }}
+                {{ product.title }}
             </div>
             <div class="col-sm">
                 <span class="d-sm-none fw-bold">Описание:</span>
-                {{ macros::order_description(description=order.description) }}
+                {{ macros::product_description(description=product.description) }}
             </div>
             <div class="col-sm-2">
                 <span class="d-sm-none fw-bold">Статус:</span>
-                {{ macros::order_status(value=order.status) }}
+                {{ macros::product_status(value=product.status) }}
             </div>
         </div>
         {% else %}
         <div class="alert alert-warning my-2" role="alert">
-            Нет заказов для отображения.
+            Нет задач для отображения.
         </div>
         {% endfor %}
     </div>
 
     {{ macros::pagination(
-        pages=orders.pages,
-        current_page=orders.page,
+        pages=products.pages,
+        current_page=products.page,
         search=search | default(value=""),
+        status=status_filter | default(value=""),
+        updated_after=updated_after | default(value=""),
+        updated_before=updated_before | default(value="")
     ) }}
 </div>
 
@@ -100,7 +103,7 @@
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h1 class="modal-title fs-5" id="filtersModalLabel">Фильтры заказов</h1>
+                <h1 class="modal-title fs-5" id="filtersModalLabel">Фильтры задач</h1>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
             </div>
             <form id="filtersForm" class="modal-body row g-3" method="get" action="/">
@@ -138,6 +141,8 @@
     </div>
 </div>
 
+{% include 'products/add_product_modal.html' %}
+
 {% endblock %}
 
 
@@ -147,8 +152,8 @@
         var selectableList = document.querySelectorAll(".selectable");
         selectableList.forEach((selectable) => {
             selectable.addEventListener("click", () => {
-                const orderId = selectable.dataset.id;
-                document.location.href = `/order/${orderId}`;
+                const productId = selectable.dataset.id;
+                document.location.href = `/product/${productId}`;
             });
         });
 

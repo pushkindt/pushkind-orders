@@ -41,10 +41,10 @@ jobs:
           if_key_exists: fail # replace / ignore / fail; optional (defaults to fail)
       - name: Deploy
         run: |
-          ssh cicd@orders.pushkind.com "supervisorctl stop orders"
+          ssh cicd@orders.pushkind.com "sudo /usr/bin/systemctl stop pushkind-orders"
           scp ./target/release/pushkind-orders cicd@orders.pushkind.com:/var/www11/html/
           scp -r ./assets/ cicd@orders.pushkind.com:/var/www11/html/
           scp -r ./templates/ cicd@orders.pushkind.com:/var/www11/html/
           scp -r ./migrations/ cicd@orders.pushkind.com:/var/www11/html/
           ssh cicd@orders.pushkind.com "cd /var/www11/html/ && /home/cicd/.cargo/bin/diesel migration run"
-          ssh cicd@orders.pushkind.com "supervisorctl start orders"
+          ssh cicd@orders.pushkind.com "sudo /usr/bin/systemctl start pushkind-orders"

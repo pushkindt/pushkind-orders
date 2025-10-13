@@ -1,0 +1,48 @@
+<div class="modal fade" id="priceModal" tabindex="-1" aria-labelledby="priceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="priceModalLabel">Добавить уровень цен</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form action="/price-levels/add" method="POST">
+                    <div class="row mb-3">
+                        <label for="priceLevelName" class="col-md-3 col-form-label">Название</label>
+                        <div class="col-md-9">
+                            <input name="name" type="text" class="form-control" id="priceLevelName"
+                                placeholder="Например: «Розница»" maxlength="128" required>
+                        </div>
+                        <div class="form-text">
+                            Уровень цен будет создан для текущего хаба. Длина названия до 128 символов.
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col">
+                            <button class="btn btn-primary" type="submit">Сохранить</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <form class="w-100" action="/price-levels/upload" method="POST" enctype="multipart/form-data">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <input class="form-control" type="file" name="csv" accept=".csv" required>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-success" type="submit">Загрузить CSV</button>
+                        </div>
+                    </div>
+                    <div class="form-text">
+                        <sup>
+                            <small class="text-muted">
+                                Ожидается столбец <code>name</code>. Пустые строки будут отклонены.
+                            </small>
+                        </sup>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
