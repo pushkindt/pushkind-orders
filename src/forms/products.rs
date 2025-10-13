@@ -34,26 +34,15 @@ pub enum ProductFormError {
     /// The provided currency code is invalid.
     #[error("invalid currency code `{value}`")]
     InvalidCurrency { value: String },
-    /// The provided price could not be parsed.
-    #[error("invalid price `{value}`")]
-    InvalidPrice { value: String },
     /// The uploaded CSV is missing required columns.
-    #[error(
-        "upload is missing the required `name`/`title`, `price`/`price_cents`, or `currency` headers"
-    )]
+    #[error("upload is missing the required `name`/`title` or `currency` headers")]
     MissingRequiredHeaders,
     /// A CSV row did not include a product name.
     #[error("row {row} is missing a product name")]
     UploadMissingName { row: usize },
-    /// A CSV row did not include a price.
-    #[error("row {row} is missing a price value")]
-    UploadMissingPrice { row: usize },
     /// A CSV row did not include a currency code.
     #[error("row {row} is missing a currency code")]
     UploadMissingCurrency { row: usize },
-    /// A CSV row contained an invalid price.
-    #[error("row {row} has invalid price `{value}`")]
-    UploadInvalidPrice { row: usize, value: String },
     /// A CSV row contained an invalid currency code.
     #[error("row {row} has invalid currency `{value}`")]
     UploadInvalidCurrency { row: usize, value: String },
@@ -76,9 +65,6 @@ pub struct AddProductForm {
     pub sku: Option<String>,
     /// Optional longer description.
     pub description: Option<String>,
-    /// Price entered as a decimal number (e.g. `12.50`).
-    #[validate(length(min = 1))]
-    pub price: String,
     /// ISO 4217 currency code (e.g. `USD`).
     #[validate(length(equal = CURRENCY_CODE_LEN_VALIDATOR))]
     pub currency: String,
@@ -106,14 +92,6 @@ impl AddProductForm {
             .map(sanitize_multiline_text)
             .filter(|value| !value.is_empty());
 
-        let price_cents = match parse_price_to_cents(&self.price) {
-            Ok(value) => value,
-            Err(ProductFormError::InvalidPrice { value }) => {
-                return Err(ProductFormError::InvalidPrice { value });
-            }
-            Err(other) => return Err(other),
-        };
-
         let currency = match sanitize_currency(&self.currency) {
             Ok(value) => value,
             Err(ProductFormError::InvalidCurrency { value }) => {
@@ -122,7 +100,7 @@ impl AddProductForm {
             Err(other) => return Err(other),
         };
 
-        let mut new_product = NewProduct::new(hub_id, sanitized_name, price_cents, currency);
+        let mut new_product = NewProduct::new(hub_id, sanitized_name, currency);
 
         if let Some(sku) = sanitized_sku {
             new_product = new_product.with_sku(sku);
@@ -168,10 +146,6 @@ impl UploadProductsForm {
             return Err(ProductFormError::MissingRequiredHeaders);
         }
 
-        if header_indexes.price_index.is_none() && header_indexes.price_cents_index.is_none() {
-            return Err(ProductFormError::MissingRequiredHeaders);
-        }
-
         if header_indexes.currency_index.is_none() {
             return Err(ProductFormError::MissingRequiredHeaders);
         }
@@ -193,42 +167,6 @@ impl UploadProductsForm {
             if sanitized_name.is_empty() {
                 return Err(ProductFormError::UploadMissingName { row: row_number });
             }
-
-            let price_cents = if let Some(idx) = header_indexes.price_cents_index {
-                let raw = record.get(idx).unwrap_or("").trim();
-                if raw.is_empty() {
-                    return Err(ProductFormError::UploadMissingPrice { row: row_number });
-                }
-
-                match parse_price_cents_value(raw) {
-                    Ok(value) => value,
-                    Err(ProductFormError::InvalidPrice { value }) => {
-                        return Err(ProductFormError::UploadInvalidPrice {
-                            row: row_number,
-                            value,
-                        });
-                    }
-                    Err(other) => return Err(other),
-                }
-            } else if let Some(idx) = header_indexes.price_index {
-                let raw = record.get(idx).unwrap_or("").trim();
-                if raw.is_empty() {
-                    return Err(ProductFormError::UploadMissingPrice { row: row_number });
-                }
-
-                match parse_price_to_cents(raw) {
-                    Ok(value) => value,
-                    Err(ProductFormError::InvalidPrice { value }) => {
-                        return Err(ProductFormError::UploadInvalidPrice {
-                            row: row_number,
-                            value,
-                        });
-                    }
-                    Err(other) => return Err(other),
-                }
-            } else {
-                return Err(ProductFormError::MissingRequiredHeaders);
-            };
 
             let currency_raw = record
                 .get(
@@ -265,7 +203,7 @@ impl UploadProductsForm {
                 .map(sanitize_multiline_text)
                 .filter(|value| !value.is_empty());
 
-            let mut product = NewProduct::new(hub_id, sanitized_name, price_cents, currency);
+            let mut product = NewProduct::new(hub_id, sanitized_name, currency);
 
             if let Some(sku) = sku {
                 product = product.with_sku(sku);
@@ -297,10 +235,7 @@ pub struct EditProductForm {
     pub sku: Option<String>,
     /// Optional description update (empty string clears the existing description).
     pub description: Option<String>,
-    /// Optional price update entered as a decimal number.
-    pub price: Option<String>,
     /// Optional currency update.
-    #[validate(length(equal = CURRENCY_CODE_LEN_VALIDATOR))]
     pub currency: Option<String>,
     /// Optional archive flag toggle.
     pub is_archived: Option<bool>,
@@ -339,25 +274,6 @@ impl EditProductForm {
             }
         }
 
-        if let Some(price) = self.price {
-            let trimmed = price.trim();
-            if trimmed.is_empty() {
-                return Err(ProductFormError::InvalidPrice {
-                    value: price.to_string(),
-                });
-            }
-
-            match parse_price_to_cents(trimmed) {
-                Ok(value) => {
-                    updates = updates.price_cents(value);
-                }
-                Err(ProductFormError::InvalidPrice { value }) => {
-                    return Err(ProductFormError::InvalidPrice { value });
-                }
-                Err(other) => return Err(other),
-            }
-        }
-
         if let Some(currency) = self.currency {
             let trimmed = currency.trim();
             if trimmed.is_empty() {
@@ -390,8 +306,6 @@ struct ProductHeaderIndexes {
     title_index: Option<usize>,
     sku_index: Option<usize>,
     description_index: Option<usize>,
-    price_index: Option<usize>,
-    price_cents_index: Option<usize>,
     currency_index: Option<usize>,
 }
 
@@ -401,8 +315,6 @@ fn locate_product_headers(headers: &StringRecord) -> ProductHeaderIndexes {
         title_index: locate_header(headers, "title"),
         sku_index: locate_header(headers, "sku"),
         description_index: locate_header(headers, "description"),
-        price_index: locate_header(headers, "price"),
-        price_cents_index: locate_header(headers, "price_cents"),
         currency_index: locate_header(headers, "currency"),
     }
 }
@@ -515,121 +427,6 @@ fn sanitize_currency(input: &str) -> ProductFormResult<String> {
     Ok(trimmed.to_ascii_uppercase())
 }
 
-fn parse_price_to_cents(input: &str) -> ProductFormResult<i32> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return Err(ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        });
-    }
-
-    let normalized_owned = trimmed.replace(',', ".");
-    let normalized = normalized_owned.trim();
-
-    if normalized.starts_with('-') {
-        return Err(ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        });
-    }
-
-    let normalized = normalized.trim_start_matches('+');
-    let parts: Vec<&str> = normalized.split('.').collect();
-    if parts.len() > 2 {
-        return Err(ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        });
-    }
-
-    let whole_part = parts.first().copied().unwrap_or_default();
-    let whole_value = if whole_part.is_empty() {
-        0i64
-    } else if whole_part.chars().all(|ch| ch.is_ascii_digit()) {
-        whole_part
-            .parse::<i64>()
-            .map_err(|_| ProductFormError::InvalidPrice {
-                value: trimmed.to_string(),
-            })?
-    } else {
-        return Err(ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        });
-    };
-
-    let fractional_part = if parts.len() == 2 { parts[1] } else { "" };
-
-    if fractional_part.chars().any(|ch| !ch.is_ascii_digit()) {
-        return Err(ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        });
-    }
-
-    let fractional_value = match fractional_part.len() {
-        0 => 0i64,
-        1 => fractional_part
-            .chars()
-            .next()
-            .and_then(|ch| ch.to_digit(10))
-            .map(|digit| (digit * 10) as i64)
-            .ok_or_else(|| ProductFormError::InvalidPrice {
-                value: trimmed.to_string(),
-            })?,
-        2 => fractional_part
-            .parse::<i64>()
-            .map_err(|_| ProductFormError::InvalidPrice {
-                value: trimmed.to_string(),
-            })?,
-        _ => {
-            return Err(ProductFormError::InvalidPrice {
-                value: trimmed.to_string(),
-            });
-        }
-    };
-
-    let total = whole_value
-        .checked_mul(100)
-        .and_then(|value| value.checked_add(fractional_value))
-        .ok_or_else(|| ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        })?;
-
-    if total > i32::MAX as i64 {
-        return Err(ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        });
-    }
-
-    Ok(total as i32)
-}
-
-fn parse_price_cents_value(input: &str) -> ProductFormResult<i32> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return Err(ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        });
-    }
-
-    if !trimmed.chars().all(|ch| ch.is_ascii_digit()) {
-        return Err(ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        });
-    }
-
-    let value = trimmed
-        .parse::<i64>()
-        .map_err(|_| ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        })?;
-
-    if value > i32::MAX as i64 {
-        return Err(ProductFormError::InvalidPrice {
-            value: trimmed.to_string(),
-        });
-    }
-
-    Ok(value as i32)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,7 +437,6 @@ mod tests {
             name: "  Deluxe  Product  ".to_string(),
             sku: Some(" sku-001 ".to_string()),
             description: Some(" First line.\n\n Second line.  ".to_string()),
-            price: "19.95".to_string(),
             currency: "usd".to_string(),
         };
 
@@ -653,7 +449,6 @@ mod tests {
             new_product.description.as_deref(),
             Some("First line.\n\nSecond line.")
         );
-        assert_eq!(new_product.price_cents, 1995);
         assert_eq!(new_product.currency, "USD");
     }
 
@@ -663,7 +458,6 @@ mod tests {
             name: "   ".to_string(),
             sku: None,
             description: None,
-            price: "10".to_string(),
             currency: "USD".to_string(),
         };
 
@@ -673,26 +467,25 @@ mod tests {
     }
 
     #[test]
-    fn add_product_form_rejects_invalid_price() {
+    fn add_product_form_rejects_invalid_currency() {
         let form = AddProductForm {
             name: "Widget".to_string(),
             sku: None,
             description: None,
-            price: "abc".to_string(),
-            currency: "USD".to_string(),
+            currency: "US!".to_string(),
         };
 
         let result = form.into_new_product(1);
 
         assert!(matches!(
             result,
-            Err(ProductFormError::InvalidPrice { value }) if value == "abc"
+            Err(ProductFormError::InvalidCurrency { value }) if value == "US!"
         ));
     }
 
     #[test]
     fn upload_products_form_converts_rows() {
-        let csv = b"name,price,currency,sku,description\nApple,1.50,usd,APL-1,Fresh apple\nBanana,0.99,usd,,Ripe banana\n".to_vec();
+        let csv = b"name,currency,sku,description\nApple,usd,APL-1,Fresh apple\nBanana,usd,,Ripe banana\n".to_vec();
         let form = UploadProductsForm::new(Some("products.csv".into()), csv);
 
         let products = form
@@ -702,17 +495,16 @@ mod tests {
         assert_eq!(products.len(), 2);
         assert_eq!(products[0].name, "Apple");
         assert_eq!(products[0].sku.as_deref(), Some("APL-1"));
-        assert_eq!(products[0].price_cents, 150);
         assert_eq!(products[0].currency, "USD");
 
         assert_eq!(products[1].name, "Banana");
         assert!(products[1].sku.is_none());
-        assert_eq!(products[1].price_cents, 99);
+        assert_eq!(products[1].currency, "USD");
     }
 
     #[test]
-    fn upload_products_form_rejects_missing_header() {
-        let csv = b"name,currency\nApple,USD\n".to_vec();
+    fn upload_products_form_rejects_missing_currency_header() {
+        let csv = b"name,sku\nApple,APL-1\n".to_vec();
         let form = UploadProductsForm::new(None, csv);
 
         let result = form.into_new_products(5);
@@ -724,21 +516,8 @@ mod tests {
     }
 
     #[test]
-    fn upload_products_form_rejects_invalid_price() {
-        let csv = b"name,price,currency\nApple,abc,USD\n".to_vec();
-        let form = UploadProductsForm::new(None, csv);
-
-        let result = form.into_new_products(5);
-
-        assert!(matches!(
-            result,
-            Err(ProductFormError::UploadInvalidPrice { row: 2, value }) if value == "abc"
-        ));
-    }
-
-    #[test]
-    fn upload_products_form_rejects_missing_currency() {
-        let csv = b"name,price,currency\nApple,1.00,\n".to_vec();
+    fn upload_products_form_rejects_missing_currency_value() {
+        let csv = b"name,currency\nApple,\n".to_vec();
         let form = UploadProductsForm::new(None, csv);
 
         let result = form.into_new_products(5);
@@ -755,7 +534,6 @@ mod tests {
             name: Some("  Premium  Widget ".to_string()),
             sku: Some("  ".to_string()),
             description: Some(" Updated description. \n\n ".to_string()),
-            price: Some("25".to_string()),
             currency: Some("eur".to_string()),
             is_archived: Some(true),
         };
@@ -771,19 +549,17 @@ mod tests {
                 .and_then(|value| value.as_deref()),
             Some("Updated description.")
         );
-        assert_eq!(updates.price_cents, Some(2500));
         assert_eq!(updates.currency.as_deref(), Some("EUR"));
         assert_eq!(updates.is_archived, Some(true));
     }
 
     #[test]
-    fn edit_product_form_rejects_invalid_price() {
+    fn edit_product_form_rejects_invalid_currency() {
         let form = EditProductForm {
             name: None,
             sku: None,
             description: None,
-            price: Some("oops".to_string()),
-            currency: None,
+            currency: Some("1".to_string()),
             is_archived: None,
         };
 
@@ -791,7 +567,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(ProductFormError::InvalidPrice { value }) if value == "oops"
+            Err(ProductFormError::InvalidCurrency { value }) if value == "1"
         ));
     }
 }

@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use diesel::prelude::*;
+use diesel::sqlite::SqliteConnection;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
@@ -6,9 +9,11 @@ use crate::{
         NewProduct as DomainNewProduct, Product as DomainProduct, ProductListQuery,
         UpdateProduct as DomainUpdateProduct,
     },
+    domain::product_price_level::ProductPriceLevelRate as DomainProductPriceLevelRate,
     models::product::{
         NewProduct as DbNewProduct, Product as DbProduct, UpdateProduct as DbUpdateProduct,
     },
+    models::product_price_level::ProductPriceLevel as DbProductPriceLevel,
     repository::{DieselRepository, ProductReader, ProductWriter},
 };
 
@@ -23,7 +28,14 @@ impl ProductReader for DieselRepository {
             .first::<DbProduct>(&mut conn)
             .optional()?;
 
-        Ok(product.map(Into::into))
+        if let Some(db_product) = product {
+            let mut domain: DomainProduct = db_product.into();
+            let mut price_levels = load_price_levels_for_products(&mut conn, &[domain.id])?;
+            domain.price_levels = price_levels.remove(&domain.id).unwrap_or_default();
+            Ok(Some(domain))
+        } else {
+            Ok(None)
+        }
     }
 
     fn list_products(
@@ -92,7 +104,17 @@ impl ProductReader for DieselRepository {
             return Ok((total, Vec::new()));
         }
 
-        Ok((total, db_products.into_iter().map(Into::into).collect()))
+        let product_ids: Vec<i32> = db_products.iter().map(|product| product.id).collect();
+        let mut price_level_map = load_price_levels_for_products(&mut conn, &product_ids)?;
+
+        let mut domain_products = Vec::with_capacity(db_products.len());
+        for db_product in db_products {
+            let mut domain: DomainProduct = db_product.into();
+            domain.price_levels = price_level_map.remove(&domain.id).unwrap_or_default();
+            domain_products.push(domain);
+        }
+
+        Ok((total, domain_products))
     }
 }
 
@@ -107,7 +129,11 @@ impl ProductWriter for DieselRepository {
             .values(&db_new)
             .get_result::<DbProduct>(&mut conn)?;
 
-        Ok(created.into())
+        let mut domain: DomainProduct = created.into();
+        let mut price_levels = load_price_levels_for_products(&mut conn, &[domain.id])?;
+        domain.price_levels = price_levels.remove(&domain.id).unwrap_or_default();
+
+        Ok(domain)
     }
 
     fn update_product(
@@ -129,7 +155,11 @@ impl ProductWriter for DieselRepository {
             .set(&db_updates)
             .get_result::<DbProduct>(&mut conn)?;
 
-        Ok(updated.into())
+        let mut domain: DomainProduct = updated.into();
+        let mut price_levels = load_price_levels_for_products(&mut conn, &[domain.id])?;
+        domain.price_levels = price_levels.remove(&domain.id).unwrap_or_default();
+
+        Ok(domain)
     }
 
     fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()> {
@@ -148,4 +178,27 @@ impl ProductWriter for DieselRepository {
 
         Ok(())
     }
+}
+
+fn load_price_levels_for_products(
+    conn: &mut SqliteConnection,
+    product_ids: &[i32],
+) -> RepositoryResult<HashMap<i32, Vec<DomainProductPriceLevelRate>>> {
+    use crate::schema::product_price_levels;
+
+    if product_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = product_price_levels::table
+        .filter(product_price_levels::product_id.eq_any(product_ids))
+        .order(product_price_levels::created_at.asc())
+        .load::<DbProductPriceLevel>(conn)?;
+
+    let mut map: HashMap<i32, Vec<DomainProductPriceLevelRate>> = HashMap::new();
+    for row in rows {
+        map.entry(row.product_id).or_default().push(row.into());
+    }
+
+    Ok(map)
 }
