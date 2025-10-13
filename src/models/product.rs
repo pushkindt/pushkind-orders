@@ -13,7 +13,6 @@ pub struct Product {
     pub name: String,
     pub sku: Option<String>,
     pub description: Option<String>,
-    pub price_cents: i32,
     pub currency: String,
     pub is_archived: bool,
     pub created_at: NaiveDateTime,
@@ -27,7 +26,6 @@ pub struct NewProduct<'a> {
     pub name: &'a str,
     pub sku: Option<&'a str>,
     pub description: Option<&'a str>,
-    pub price_cents: i32,
     pub currency: &'a str,
     pub updated_at: NaiveDateTime,
 }
@@ -38,7 +36,6 @@ pub struct UpdateProduct<'a> {
     pub name: Option<&'a str>,
     pub sku: Option<Option<&'a str>>,
     pub description: Option<Option<&'a str>>,
-    pub price_cents: Option<i32>,
     pub currency: Option<&'a str>,
     pub is_archived: Option<bool>,
     pub updated_at: NaiveDateTime,
@@ -52,9 +49,9 @@ impl From<Product> for DomainProduct {
             name: value.name,
             sku: value.sku,
             description: value.description,
-            price_cents: value.price_cents,
             currency: value.currency,
             is_archived: value.is_archived,
+            price_levels: Vec::new(),
             created_at: value.created_at,
             updated_at: value.updated_at,
         }
@@ -68,7 +65,6 @@ impl<'a> From<&'a DomainNewProduct> for NewProduct<'a> {
             name: value.name.as_str(),
             sku: value.sku.as_deref(),
             description: value.description.as_deref(),
-            price_cents: value.price_cents,
             currency: value.currency.as_str(),
             updated_at: value.updated_at,
         }
@@ -87,7 +83,6 @@ impl<'a> From<&'a DomainUpdateProduct> for UpdateProduct<'a> {
                 .description
                 .as_ref()
                 .map(|description| description.as_ref().map(String::as_str)),
-            price_cents: value.price_cents,
             currency: value.currency.as_deref(),
             is_archived: value.is_archived,
             updated_at: value.updated_at,

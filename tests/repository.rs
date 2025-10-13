@@ -104,10 +104,10 @@ fn test_product_repository_crud() {
     let test_db = common::TestDb::new("test_product_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    let apple_new = NewProduct::new(1, "Apple", 100, "USD")
+    let apple_new = NewProduct::new(1, "Apple", "USD")
         .with_sku("APL-1")
         .with_description("Fresh apple");
-    let banana_new = NewProduct::new(1, "Banana", 120, "USD");
+    let banana_new = NewProduct::new(1, "Banana", "USD");
 
     let apple = repo
         .create_product(&apple_new)
@@ -118,12 +118,15 @@ fn test_product_repository_crud() {
 
     assert_eq!(apple.name, "Apple");
     assert_eq!(apple.sku.as_deref(), Some("APL-1"));
+    assert!(apple.price_levels.is_empty());
+    assert!(banana.price_levels.is_empty());
 
     let fetched = repo
         .get_product_by_id(apple.id, 1)
         .expect("failed to fetch by id")
         .expect("expected apple product");
     assert_eq!(fetched.id, apple.id);
+    assert!(fetched.price_levels.is_empty());
 
     assert!(
         repo.get_product_by_id(apple.id, 2)
@@ -136,12 +139,18 @@ fn test_product_repository_crud() {
         .expect("failed to list products");
     assert_eq!(total_all, 2);
     assert_eq!(products_all.len(), 2);
+    assert!(
+        products_all
+            .iter()
+            .all(|product| product.price_levels.is_empty())
+    );
 
     let (total_search, products_search) = repo
         .list_products(ProductListQuery::new(1).search("apple"))
         .expect("failed to search products");
     assert_eq!(total_search, 1);
     assert_eq!(products_search[0].id, apple.id);
+    assert!(products_search[0].price_levels.is_empty());
 
     let (total_sku, products_sku) = repo
         .list_products(ProductListQuery::new(1).sku("APL-1"))
@@ -149,17 +158,14 @@ fn test_product_repository_crud() {
     assert_eq!(total_sku, 1);
     assert_eq!(products_sku[0].id, apple.id);
 
-    let updates = UpdateProduct::new()
-        .price_cents(150)
-        .archived(true)
-        .name("Apple Premium");
+    let updates = UpdateProduct::new().archived(true).name("Apple Premium");
 
     let updated = repo
         .update_product(apple.id, 1, &updates)
         .expect("failed to update product");
-    assert_eq!(updated.price_cents, 150);
     assert!(updated.is_archived);
     assert_eq!(updated.name, "Apple Premium");
+    assert!(updated.price_levels.is_empty());
 
     let err = repo
         .update_product(apple.id, 2, &UpdateProduct::new().name("Intruder"))
