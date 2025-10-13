@@ -1,0 +1,46 @@
+<div class="modal fade" id="productModal" tabindex="-1" aria-labelledby="productModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="productModalLabel">Добавить задачу</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form action="/product/add" method="POST">
+                    <div class="row mb-3">
+                        <label for="productModalTitle" class="col-md-2 col-form-label">Название</label>
+                        <div class="col-md-10">
+                            <input name="title" type="text" class="form-control" id="productModalTitle"
+                                placeholder="Название" required>
+                        </div>
+                    </div>
+                    {{ macros::markdown(id=0) }}
+                    <div class="row mb-3">
+                        <div class="col">
+                            <button class="btn btn-primary" type="submit">Сохранить</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <form class="w-100" action="/products/upload" method="POST" enctype="multipart/form-data">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <input class="form-control" type="file" name="csv" accept=".csv" required>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-success" type="submit">Загрузить CSV</button>
+                        </div>
+                    </div>
+                    <div class="form-text">
+                        <sup>
+                            <small class="text-muted">
+                                Ожидаются столбцы <code>title</code> и опционально <code>description</code>
+                            </small>
+                        </sup>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

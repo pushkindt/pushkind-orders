@@ -2,13 +2,30 @@
 
 {% block styles %}
 <style>
-    .level-row {
+    .add-price-container {
+        display: flex;
         align-items: center;
+        text-align: center;
     }
 
-    .level-meta {
-        font-size: 0.875rem;
-        color: #6c757d;
+    .add-price-container>button:hover {
+        opacity: 0.5;
+    }
+
+    .add-price-container>button {
+        opacity: 1.0;
+    }
+
+    .add-price-container>button:active {
+        opacity: 1.0;
+    }
+
+    .add-price-container::before,
+    .add-price-container::after {
+        content: '';
+        flex: 1;
+        border-bottom: 1px solid #000;
+        margin: 0 10px;
     }
 </style>
 {% endblock %}
@@ -17,47 +34,45 @@
 {% include 'components/navigation.html' %}
 
 <div class="container bg-white border rounded my-2">
-    <div class="row py-3 border-bottom">
-        <div class="col">
-            <h5 class="mb-0">Уровни цен</h5>
-            {% if search %}
-            <p class="level-meta mb-0">Поиск: "{{ search }}"</p>
-            {% endif %}
+
+    <div class="row">
+        <div class="col text-center add-price-container">
+            <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#priceModal">
+                <i class="bi bi-plus-circle"></i>
+            </button>
         </div>
     </div>
 
-    <div class="row d-none d-md-flex fw-bold text-uppercase small py-2">
-        <div class="col-md-2">Идентификатор</div>
-        <div class="col-md-5">Название</div>
-        <div class="col-md-2">Создан</div>
-        <div class="col-md-3">Обновлен</div>
+    <div class="row d-none d-sm-flex fw-bold">
+        <div class="col-sm-2 overflow-hidden">Идентификатор</div>
+        <div class="col-sm overflow-hidden">Название</div>
     </div>
-
-    <div id="priceLevelList">
-        {% for level in price_levels.items %}
-        <div class="row level-row py-2 border-top">
-            <div class="col-md-2">
-                <strong>{{ level.id }}</strong>
-                <div class="d-md-none level-meta">Создан: {{ level.created_at }}</div>
-                <div class="d-md-none level-meta">Обновлен: {{ level.updated_at }}</div>
+    <div id="priceList">
+        {% for price in price_levels.items %}
+        <div class="row my-1 py-1 border-top" data-id="{{ price.id }}">
+            <div class="col-sm-2">
+                <strong>{{ price.id }}</strong>
             </div>
-            <div class="col-md-5">
-                <span class="d-md-none fw-bold">Название:</span>
-                {{ level.name }}
-            </div>
-            <div class="col-md-2 d-none d-md-block">
-                {{ level.created_at }}
-            </div>
-            <div class="col-md-3 d-none d-md-block">
-                {{ level.updated_at }}
+            <div class="col-sm">
+                <span class="d-sm-none fw-bold">Название:</span>
+                {{ price.name }}
             </div>
         </div>
         {% else %}
-        <div class="alert alert-warning my-3" role="alert">
-            Уровни цен пока не созданы.
-        </div>
+            <div class="alert alert-warning my-2" role="alert">
+                Нет уровней цен для отображения.
+            </div>
         {% endfor %}
     </div>
-    {{ macros::pagination(pages=price_levels.pages, search_query=search | default(value="")) }}
+
+    {{ macros::pagination(
+        pages=price_levels.pages,
+        current_page=price_levels.page,
+        search=search | default(value=""),
+    ) }}
 </div>
+
+{% include 'price_levels/add_price_modal.html' %}
+
 {% endblock %}
+
