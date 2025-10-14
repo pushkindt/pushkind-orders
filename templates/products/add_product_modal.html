@@ -2,19 +2,63 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h1 class="modal-title fs-5" id="productModalLabel">Добавить задачу</h1>
+                <h1 class="modal-title fs-5" id="productModalLabel">Добавить товар</h1>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form action="/product/add" method="POST">
+                <form action="/products" method="POST">
                     <div class="row mb-3">
-                        <label for="productModalTitle" class="col-md-2 col-form-label">Название</label>
-                        <div class="col-md-10">
-                            <input name="title" type="text" class="form-control" id="productModalTitle"
-                                placeholder="Название" required>
+                        <label for="productName" class="col-md-3 col-form-label">Название</label>
+                        <div class="col-md-9">
+                            <input name="name" type="text" class="form-control" id="productName"
+                                placeholder="Например: «Кофе арабика»" maxlength="128" required>
                         </div>
                     </div>
-                    {{ macros::markdown(id=0) }}
+                    <div class="row mb-3">
+                        <label for="productSku" class="col-md-3 col-form-label">Артикул</label>
+                        <div class="col-md-9">
+                            <input name="sku" type="text" class="form-control" id="productSku"
+                                placeholder="Необязательно" maxlength="64">
+                            <div class="form-text">Если не задано, SKU останется пустым.</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="productDescription" class="col-md-3 col-form-label">Описание</label>
+                        <div class="col-md-9">
+                            <textarea name="description" class="form-control" id="productDescription" rows="4"
+                                placeholder="Краткое описание товара"></textarea>
+                            <div class="form-text">Дополнительная информация, отображаемая покупателю.</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="productCurrency" class="col-md-3 col-form-label">Валюта</label>
+                        <div class="col-md-5 col-lg-4">
+                            <input name="currency" type="text" class="form-control" id="productCurrency"
+                                placeholder="Например: USD" maxlength="3" required>
+                            <div class="form-text">Трёхсимвольный код ISO&nbsp;4217.</div>
+                        </div>
+                    </div>
+                    {% if price_levels is defined and price_levels | length > 0 %}
+                    <div class="mb-3">
+                        <label class="form-label">Цены по уровням</label>
+                        <div class="row g-2">
+                            {% for level in price_levels %}
+                            <div class="col-12 col-lg-6">
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">{{ level.name }}</span>
+                                    <input type="hidden" name="price_levels[{{ loop.index0 }}][price_level_id]" value="{{ level.id }}">
+                                    <input type="text" class="form-control"
+                                        name="price_levels[{{ loop.index0 }}][price]"
+                                        placeholder="Например: 9.99">
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <div class="form-text">
+                            Укажите цену в валюте товара для каждого уровня. Оставьте поле пустым, чтобы пропустить уровень.
+                        </div>
+                    </div>
+                    {% endif %}
                     <div class="row mb-3">
                         <div class="col">
                             <button class="btn btn-primary" type="submit">Сохранить</button>
@@ -35,7 +79,8 @@
                     <div class="form-text">
                         <sup>
                             <small class="text-muted">
-                                Ожидаются столбцы <code>title</code> и опционально <code>description</code>
+                                Ожидаются столбцы <code>name</code>, <code>currency</code>, опционально
+                                <code>sku</code>, <code>description</code> и цены по именам уровней.
                             </small>
                         </sup>
                     </div>

@@ -1,11 +1,15 @@
-use std::io::Cursor;
+use std::{collections::HashMap, io::Seek};
 
+use actix_multipart::form::{MultipartForm, tempfile::TempFile};
 use csv::{StringRecord, Trim};
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
-use crate::domain::product::{NewProduct, UpdateProduct};
+use crate::domain::{
+    price_level::PriceLevel,
+    product::{NewProduct, UpdateProduct},
+};
 
 /// Maximum allowed length for a product name.
 const NAME_MAX_LEN: usize = 128;
@@ -35,7 +39,7 @@ pub enum ProductFormError {
     #[error("invalid currency code `{value}`")]
     InvalidCurrency { value: String },
     /// The uploaded CSV is missing required columns.
-    #[error("upload is missing the required `name`/`title` or `currency` headers")]
+    #[error("upload is missing the required `name` or `currency` headers")]
     MissingRequiredHeaders,
     /// A CSV row did not include a product name.
     #[error("row {row} is missing a product name")]
@@ -46,12 +50,28 @@ pub enum ProductFormError {
     /// A CSV row contained an invalid currency code.
     #[error("row {row} has invalid currency `{value}`")]
     UploadInvalidCurrency { row: usize, value: String },
+    /// A CSV row contained an invalid price for a price level.
+    #[error("row {row} has invalid price `{value}` for price level `{price_level}`")]
+    UploadInvalidPrice {
+        row: usize,
+        price_level: String,
+        value: String,
+    },
+    /// The form referenced a price level that does not exist.
+    #[error("unknown price level id `{price_level_id}`")]
+    UnknownPriceLevel { price_level_id: i32 },
+    /// A provided price could not be parsed for the specified price level.
+    #[error("invalid price `{value}` for price level `{price_level}`")]
+    InvalidPriceLevelAmount { price_level: String, value: String },
     /// The uploaded CSV did not contain any usable products.
     #[error("upload contains no products")]
     EmptyUpload,
     /// CSV parsing failures.
     #[error("failed to parse CSV: {0}")]
     Csv(#[from] csv::Error),
+    /// File system failures while reading the uploaded payload.
+    #[error("failed to read uploaded file: {0}")]
+    FileRead(#[from] std::io::Error),
 }
 
 /// Form payload emitted when submitting the "Add product" form.
@@ -68,11 +88,32 @@ pub struct AddProductForm {
     /// ISO 4217 currency code (e.g. `USD`).
     #[validate(length(equal = CURRENCY_CODE_LEN_VALIDATOR))]
     pub currency: String,
+    /// Optional price level amounts submitted with the product.
+    #[serde(default)]
+    pub price_levels: Vec<AddProductPriceLevelForm>,
+}
+
+/// Price level payload submitted alongside a product form.
+#[derive(Debug, Deserialize)]
+pub struct AddProductPriceLevelForm {
+    pub price_level_id: i32,
+    #[serde(default)]
+    pub price: Option<String>,
 }
 
 impl AddProductForm {
     /// Validates and sanitizes the payload into a domain `NewProduct`.
     pub fn into_new_product(self, hub_id: i32) -> ProductFormResult<NewProduct> {
+        let result = self.into_new_product_with_prices(hub_id, &[])?;
+        Ok(result.product)
+    }
+
+    /// Validates and sanitizes the payload into a product and price level amounts.
+    pub fn into_new_product_with_prices(
+        self,
+        hub_id: i32,
+        price_levels: &[PriceLevel],
+    ) -> ProductFormResult<NewProductUpload> {
         self.validate()?;
 
         let sanitized_name = sanitize_inline_text(&self.name);
@@ -110,45 +151,97 @@ impl AddProductForm {
             new_product = new_product.with_description(description);
         }
 
-        Ok(new_product)
+        let price_level_map: HashMap<i32, &PriceLevel> =
+            price_levels.iter().map(|level| (level.id, level)).collect();
+
+        let mut parsed_price_levels = Vec::new();
+        for entry in self.price_levels {
+            let Some(raw_price) = entry.price.as_deref() else {
+                continue;
+            };
+            let trimmed = raw_price.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let price_level = price_level_map.get(&entry.price_level_id).ok_or(
+                ProductFormError::UnknownPriceLevel {
+                    price_level_id: entry.price_level_id,
+                },
+            )?;
+
+            let price_cents = parse_price_to_cents(trimmed).ok_or_else(|| {
+                ProductFormError::InvalidPriceLevelAmount {
+                    price_level: price_level.name.clone(),
+                    value: raw_price.to_string(),
+                }
+            })?;
+
+            parsed_price_levels.push(NewProductUploadPriceLevel {
+                price_level_id: price_level.id,
+                price_cents,
+            });
+        }
+
+        Ok(NewProductUpload {
+            product: new_product,
+            price_levels: parsed_price_levels,
+        })
     }
 }
 
 /// Multipart-backed upload payload for bulk product creation.
-#[derive(Debug)]
+#[derive(MultipartForm)]
 pub struct UploadProductsForm {
-    /// Optional filename provided by the client.
-    pub file_name: Option<String>,
-    /// Raw CSV bytes received from the upload.
-    pub bytes: Vec<u8>,
+    #[multipart(limit = "10MB")]
+    /// Uploaded CSV containing product data.
+    pub csv: TempFile,
+}
+
+/// Sanitized product plus associated price levels parsed from an upload row.
+#[derive(Debug, Clone)]
+pub struct NewProductUpload {
+    /// Product fields extracted from the CSV row.
+    pub product: NewProduct,
+    /// Optional price level amounts supplied for the product.
+    pub price_levels: Vec<NewProductUploadPriceLevel>,
+}
+
+/// Price level entry parsed for a newly uploaded product.
+#[derive(Debug, Clone)]
+pub struct NewProductUploadPriceLevel {
+    /// Identifier of the price level supplied in the CSV.
+    pub price_level_id: i32,
+    /// Price represented in the smallest currency unit (for example cents).
+    pub price_cents: i32,
 }
 
 impl UploadProductsForm {
-    /// Construct a new upload payload from the multipart data.
-    pub fn new(file_name: Option<String>, bytes: Vec<u8>) -> Self {
-        Self { file_name, bytes }
-    }
-
-    /// Parse the uploaded CSV and convert it into domain `NewProduct` values.
-    pub fn into_new_products(self, hub_id: i32) -> ProductFormResult<Vec<NewProduct>> {
-        let UploadProductsForm { bytes, .. } = self;
-        let cursor = Cursor::new(bytes);
+    /// Parse the uploaded CSV and convert it into product payloads with optional price levels.
+    pub fn into_new_products(
+        &mut self,
+        hub_id: i32,
+        price_levels: &[PriceLevel],
+    ) -> ProductFormResult<Vec<NewProductUpload>> {
+        self.csv.file.rewind()?;
+        let reader_source = self.csv.file.as_file_mut();
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .trim(Trim::All)
             .flexible(true)
-            .from_reader(cursor);
+            .from_reader(reader_source);
 
         let headers = reader.headers()?.clone();
         let header_indexes = locate_product_headers(&headers);
 
-        if header_indexes.name_index.is_none() && header_indexes.title_index.is_none() {
-            return Err(ProductFormError::MissingRequiredHeaders);
-        }
+        let name_index = header_indexes
+            .name_index
+            .ok_or(ProductFormError::MissingRequiredHeaders)?;
+        let currency_index = header_indexes
+            .currency_index
+            .ok_or(ProductFormError::MissingRequiredHeaders)?;
 
-        if header_indexes.currency_index.is_none() {
-            return Err(ProductFormError::MissingRequiredHeaders);
-        }
+        let price_level_columns = locate_price_level_headers(&headers, price_levels);
 
         let mut products = Vec::new();
         let mut processed_rows = 0;
@@ -158,24 +251,13 @@ impl UploadProductsForm {
             let row_number = index + 2; // account for header row
             let record = row?;
 
-            let resolved_name = resolve_product_name(
-                &record,
-                header_indexes.name_index,
-                header_indexes.title_index,
-            );
-            let sanitized_name = sanitize_inline_text(resolved_name);
+            let raw_name = record.get(name_index).unwrap_or("");
+            let sanitized_name = sanitize_inline_text(raw_name);
             if sanitized_name.is_empty() {
                 return Err(ProductFormError::UploadMissingName { row: row_number });
             }
 
-            let currency_raw = record
-                .get(
-                    header_indexes
-                        .currency_index
-                        .expect("currency index validated"),
-                )
-                .unwrap_or("")
-                .trim();
+            let currency_raw = record.get(currency_index).unwrap_or("").trim();
             if currency_raw.is_empty() {
                 return Err(ProductFormError::UploadMissingCurrency { row: row_number });
             }
@@ -213,7 +295,31 @@ impl UploadProductsForm {
                 product = product.with_description(description);
             }
 
-            products.push(product);
+            let mut parsed_price_levels = Vec::new();
+            for column in &price_level_columns {
+                let value = record.get(column.index).unwrap_or("").trim();
+                if value.is_empty() {
+                    continue;
+                }
+
+                let price_cents = parse_price_to_cents(value).ok_or_else(|| {
+                    ProductFormError::UploadInvalidPrice {
+                        row: row_number,
+                        price_level: column.price_level.name.clone(),
+                        value: value.to_string(),
+                    }
+                })?;
+
+                parsed_price_levels.push(NewProductUploadPriceLevel {
+                    price_level_id: column.price_level.id,
+                    price_cents,
+                });
+            }
+
+            products.push(NewProductUpload {
+                product,
+                price_levels: parsed_price_levels,
+            });
         }
 
         if processed_rows == 0 || products.is_empty() {
@@ -303,7 +409,6 @@ impl EditProductForm {
 
 struct ProductHeaderIndexes {
     name_index: Option<usize>,
-    title_index: Option<usize>,
     sku_index: Option<usize>,
     description_index: Option<usize>,
     currency_index: Option<usize>,
@@ -312,7 +417,6 @@ struct ProductHeaderIndexes {
 fn locate_product_headers(headers: &StringRecord) -> ProductHeaderIndexes {
     ProductHeaderIndexes {
         name_index: locate_header(headers, "name"),
-        title_index: locate_header(headers, "title"),
         sku_index: locate_header(headers, "sku"),
         description_index: locate_header(headers, "description"),
         currency_index: locate_header(headers, "currency"),
@@ -325,26 +429,71 @@ fn locate_header(headers: &StringRecord, expected: &str) -> Option<usize> {
         .position(|header| header.eq_ignore_ascii_case(expected))
 }
 
-fn resolve_product_name(
-    record: &StringRecord,
-    name_index: Option<usize>,
-    title_index: Option<usize>,
-) -> &str {
-    if let Some(index) = name_index
-        && let Some(value) = record.get(index)
-        && !value.trim().is_empty()
-    {
-        return value;
+struct PriceLevelColumn<'a> {
+    price_level: &'a PriceLevel,
+    index: usize,
+}
+
+fn locate_price_level_headers<'a>(
+    headers: &StringRecord,
+    price_levels: &'a [PriceLevel],
+) -> Vec<PriceLevelColumn<'a>> {
+    price_levels
+        .iter()
+        .filter_map(|price_level| {
+            locate_header(headers, price_level.name.as_str())
+                .map(|index| PriceLevelColumn { price_level, index })
+        })
+        .collect()
+}
+
+fn parse_price_to_cents(input: &str) -> Option<i32> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
     }
 
-    if let Some(index) = title_index
-        && let Some(value) = record.get(index)
-        && !value.trim().is_empty()
-    {
-        return value;
+    let mut normalized = String::with_capacity(trimmed.len());
+    for ch in trimmed.chars() {
+        if ch.is_ascii_digit() || ch == '.' || ch == ',' {
+            normalized.push(ch);
+        } else if ch.is_whitespace() {
+            continue;
+        } else {
+            return None;
+        }
     }
 
-    ""
+    let normalized = normalized.replace(',', ".");
+    let mut parts = normalized.split('.');
+    let whole_part = parts.next()?;
+    if whole_part.is_empty() || !whole_part.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+
+    let mut cents = whole_part.parse::<i64>().ok()?.checked_mul(100)?;
+
+    if let Some(frac_part) = parts.next() {
+        if parts.next().is_some() {
+            return None;
+        }
+
+        if frac_part.is_empty() || !frac_part.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+
+        let mut buffer = frac_part.to_string();
+        if buffer.len() == 1 {
+            buffer.push('0');
+        } else if buffer.len() > 2 {
+            return None;
+        }
+
+        let fractional = buffer.parse::<i64>().ok()?;
+        cents = cents.checked_add(fractional)?;
+    }
+
+    i32::try_from(cents).ok()
 }
 
 fn sanitize_inline_text(input: &str) -> String {
@@ -430,6 +579,12 @@ fn sanitize_currency(input: &str) -> ProductFormResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Seek, SeekFrom, Write};
+
+    use actix_multipart::form::tempfile::TempFile;
+    use tempfile::NamedTempFile;
+
+    use crate::domain::price_level::PriceLevel;
 
     #[test]
     fn add_product_form_converts_successfully() {
@@ -438,18 +593,37 @@ mod tests {
             sku: Some(" sku-001 ".to_string()),
             description: Some(" First line.\n\n Second line.  ".to_string()),
             currency: "usd".to_string(),
+            price_levels: vec![
+                AddProductPriceLevelForm {
+                    price_level_id: 1,
+                    price: Some("12.34".to_string()),
+                },
+                AddProductPriceLevelForm {
+                    price_level_id: 2,
+                    price: Some("  ".to_string()),
+                },
+            ],
         };
+        let price_levels = vec![
+            build_price_level(1, "Retail"),
+            build_price_level(2, "Wholesale"),
+        ];
 
-        let new_product = form.into_new_product(42).expect("expected success");
+        let payload = form
+            .into_new_product_with_prices(42, &price_levels)
+            .expect("expected success");
 
-        assert_eq!(new_product.hub_id, 42);
-        assert_eq!(new_product.name, "Deluxe Product");
-        assert_eq!(new_product.sku.as_deref(), Some("sku-001"));
+        assert_eq!(payload.product.hub_id, 42);
+        assert_eq!(payload.product.name, "Deluxe Product");
+        assert_eq!(payload.product.sku.as_deref(), Some("sku-001"));
         assert_eq!(
-            new_product.description.as_deref(),
+            payload.product.description.as_deref(),
             Some("First line.\n\nSecond line.")
         );
-        assert_eq!(new_product.currency, "USD");
+        assert_eq!(payload.product.currency, "USD");
+        assert_eq!(payload.price_levels.len(), 1);
+        assert_eq!(payload.price_levels[0].price_level_id, 1);
+        assert_eq!(payload.price_levels[0].price_cents, 1234);
     }
 
     #[test]
@@ -459,6 +633,7 @@ mod tests {
             sku: None,
             description: None,
             currency: "USD".to_string(),
+            price_levels: Vec::new(),
         };
 
         let result = form.into_new_product(1);
@@ -473,6 +648,7 @@ mod tests {
             sku: None,
             description: None,
             currency: "US!".to_string(),
+            price_levels: Vec::new(),
         };
 
         let result = form.into_new_product(1);
@@ -484,30 +660,94 @@ mod tests {
     }
 
     #[test]
+    fn add_product_form_rejects_invalid_price_amount() {
+        let form = AddProductForm {
+            name: "Widget".to_string(),
+            sku: None,
+            description: None,
+            currency: "USD".to_string(),
+            price_levels: vec![AddProductPriceLevelForm {
+                price_level_id: 1,
+                price: Some("oops".to_string()),
+            }],
+        };
+        let levels = vec![build_price_level(1, "Retail")];
+
+        let result = form.into_new_product_with_prices(1, &levels);
+
+        assert!(matches!(
+            result,
+            Err(ProductFormError::InvalidPriceLevelAmount { price_level, value })
+                if price_level == "Retail" && value == "oops"
+        ));
+    }
+
+    #[test]
+    fn add_product_form_rejects_unknown_price_level() {
+        let form = AddProductForm {
+            name: "Widget".to_string(),
+            sku: None,
+            description: None,
+            currency: "USD".to_string(),
+            price_levels: vec![AddProductPriceLevelForm {
+                price_level_id: 999,
+                price: Some("10".to_string()),
+            }],
+        };
+        let levels = vec![build_price_level(1, "Retail")];
+
+        let result = form.into_new_product_with_prices(1, &levels);
+
+        assert!(matches!(
+            result,
+            Err(ProductFormError::UnknownPriceLevel { price_level_id }) if price_level_id == 999
+        ));
+    }
+
+    #[test]
     fn upload_products_form_converts_rows() {
-        let csv = b"name,currency,sku,description\nApple,usd,APL-1,Fresh apple\nBanana,usd,,Ripe banana\n".to_vec();
-        let form = UploadProductsForm::new(Some("products.csv".into()), csv);
+        let csv = "\
+name,currency,sku,description,Retail,Wholesale
+Apple,usd,APL-1,Fresh apple,12.34,9.99
+Banana,usd,,Ripe banana,8.50,
+";
+        let mut form = build_upload_form(csv);
+        let price_levels = vec![
+            build_price_level(1, "Retail"),
+            build_price_level(2, "Wholesale"),
+        ];
 
         let products = form
-            .into_new_products(5)
+            .into_new_products(5, &price_levels)
             .expect("expected upload to succeed");
 
         assert_eq!(products.len(), 2);
-        assert_eq!(products[0].name, "Apple");
-        assert_eq!(products[0].sku.as_deref(), Some("APL-1"));
-        assert_eq!(products[0].currency, "USD");
 
-        assert_eq!(products[1].name, "Banana");
-        assert!(products[1].sku.is_none());
-        assert_eq!(products[1].currency, "USD");
+        let first = &products[0];
+        assert_eq!(first.product.name, "Apple");
+        assert_eq!(first.product.sku.as_deref(), Some("APL-1"));
+        assert_eq!(first.product.currency, "USD");
+        assert_eq!(first.price_levels.len(), 2);
+        assert_eq!(first.price_levels[0].price_level_id, 1);
+        assert_eq!(first.price_levels[0].price_cents, 1234);
+        assert_eq!(first.price_levels[1].price_level_id, 2);
+        assert_eq!(first.price_levels[1].price_cents, 999);
+
+        let second = &products[1];
+        assert_eq!(second.product.name, "Banana");
+        assert!(second.product.sku.is_none());
+        assert_eq!(second.product.currency, "USD");
+        assert_eq!(second.price_levels.len(), 1);
+        assert_eq!(second.price_levels[0].price_level_id, 1);
+        assert_eq!(second.price_levels[0].price_cents, 850);
     }
 
     #[test]
     fn upload_products_form_rejects_missing_currency_header() {
-        let csv = b"name,sku\nApple,APL-1\n".to_vec();
-        let form = UploadProductsForm::new(None, csv);
+        let csv = "name,sku\nApple,APL-1\n";
+        let mut form = build_upload_form(csv);
 
-        let result = form.into_new_products(5);
+        let result = form.into_new_products(5, &[]);
 
         assert!(matches!(
             result,
@@ -517,15 +757,64 @@ mod tests {
 
     #[test]
     fn upload_products_form_rejects_missing_currency_value() {
-        let csv = b"name,currency\nApple,\n".to_vec();
-        let form = UploadProductsForm::new(None, csv);
+        let csv = "name,currency\nApple,\n";
+        let mut form = build_upload_form(csv);
 
-        let result = form.into_new_products(5);
+        let result = form.into_new_products(5, &[]);
 
         assert!(matches!(
             result,
             Err(ProductFormError::UploadMissingCurrency { row: 2 })
         ));
+    }
+
+    #[test]
+    fn upload_products_form_rejects_invalid_price_value() {
+        let csv = "name,currency,Retail\nApple,usd,not-a-price\n";
+        let mut form = build_upload_form(csv);
+        let price_levels = vec![build_price_level(42, "Retail")];
+
+        let result = form.into_new_products(1, &price_levels);
+
+        assert!(matches!(
+            result,
+            Err(ProductFormError::UploadInvalidPrice {
+                row: 2,
+                price_level,
+                value
+            }) if price_level == "Retail" && value == "not-a-price"
+        ));
+    }
+
+    fn build_upload_form(csv: &str) -> UploadProductsForm {
+        let mut file = NamedTempFile::new().expect("create temp file");
+        file.write_all(csv.as_bytes()).expect("write csv contents");
+        file.as_file_mut()
+            .seek(SeekFrom::Start(0))
+            .expect("rewind csv file");
+
+        UploadProductsForm {
+            csv: TempFile {
+                file,
+                content_type: None,
+                file_name: Some("products.csv".to_string()),
+                size: csv.len(),
+            },
+        }
+    }
+
+    fn build_price_level(id: i32, name: &str) -> PriceLevel {
+        let epoch = chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0)
+            .expect("epoch timestamp")
+            .naive_utc();
+
+        PriceLevel {
+            id,
+            hub_id: 1,
+            name: name.to_string(),
+            created_at: epoch,
+            updated_at: epoch,
+        }
     }
 
     #[test]

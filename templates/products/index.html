@@ -29,7 +29,11 @@
     }
 
     .product-recent {
-        background-color: rgba(255, 243, 205, 0.6);
+        background-color: rgba(255, 243, 205, 0.35);
+    }
+
+    .product-archived {
+        opacity: 0.6;
     }
 </style>
 {% endblock %}
@@ -39,7 +43,7 @@
 
 <div class="container bg-white border rounded my-2">
 
-    <div class="row">
+    <div class="row mb-3">
         <div class="col text-center add-product-container">
             <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#productModal">
                 <i class="bi bi-plus-circle"></i>
@@ -49,42 +53,69 @@
             <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 mt-1" type="button"
                 data-bs-toggle="modal" data-bs-target="#filtersModal">
                 <i class="bi bi-funnel"></i>
-                <span id="activeFiltersBadge" class="badge text-bg-primary {% if status_filter or updated_after or updated_before %}{% else %}d-none{% endif %}">•</span>
+                <span id="activeFiltersBadge" class="badge text-bg-primary {% if has_active_filters %}{% else %}d-none{% endif %}">•</span>
             </button>
         </div>
     </div>
 
-    <div class="row d-none d-sm-flex fw-bold">
-        <div class="col-sm-2 overflow-hidden">Идентификатор</div>
-        <div class="col-sm overflow-hidden">Название</div>
-        <div class="col-sm overflow-hidden">Описание</div>
-        <div class="col-sm-2 overflow-hidden">Статус</div>
+    <div class="row d-none d-lg-flex fw-bold">
+        <div class="col-lg-1 overflow-hidden">ID</div>
+        <div class="col-lg-3 overflow-hidden">Название</div>
+        <div class="col-lg-2 overflow-hidden">Артикул</div>
+        <div class="col-lg overflow-hidden">Описание</div>
+        <div class="col-lg-1 overflow-hidden">Валюта</div>
+        <div class="col-lg-2 overflow-hidden">Обновлён</div>
     </div>
     <div id="productList">
         {% for product in products.items %}
-        <div class="row my-1 py-1 border-top selectable {% if product.id in recently_updated_product_ids %}product-recent{% endif %}" data-id="{{ product.id }}">
-            <div class="col-sm-2">
+        <div class="row my-1 py-2 border-top selectable
+            {% if product.id in recently_updated_product_ids %} product-recent{% endif %}
+            {% if product.is_archived %} product-archived{% endif %}
+        " data-id="{{ product.id }}">
+            <div class="col-lg-1 col-12">
                 <strong>{{ product.id }}</strong>
-                <div class="text-muted small">
-                    <i class="bi bi-clock-history" aria-hidden="true"></i> {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
+                <div class="d-lg-none text-muted small">
+                    Обновлён {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
                 </div>
             </div>
-            <div class="col-sm">
-                <span class="d-sm-none fw-bold">Название:</span>
-                {{ product.title }}
+            <div class="col-lg-3 col-12">
+                <span class="d-lg-none fw-bold">Название:</span>
+                {{ product.name }}
             </div>
-            <div class="col-sm">
-                <span class="d-sm-none fw-bold">Описание:</span>
-                {{ macros::product_description(description=product.description) }}
+            <div class="col-lg-2 col-12">
+                <span class="d-lg-none fw-bold">Артикул:</span>
+                {{ product.sku | default(value="—") }}
             </div>
-            <div class="col-sm-2">
-                <span class="d-sm-none fw-bold">Статус:</span>
-                {{ macros::product_status(value=product.status) }}
+            <div class="col-lg col-12">
+                <span class="d-lg-none fw-bold">Описание:</span>
+                {{ product.description | default(value="—") }}
             </div>
+            <div class="col-lg-1 col-6">
+                <span class="d-lg-none fw-bold">Валюта:</span>
+                {{ product.currency }}
+            </div>
+            <div class="col-lg-2 col-6 text-lg-end">
+                <span class="d-lg-none fw-bold">Обновлён:</span>
+                {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
+                {% if product.is_archived %}
+                    <div class="text-muted small">Архивирован</div>
+                {% endif %}
+            </div>
+            {% if product.price_levels | length > 0 %}
+            <div class="col-12 mt-2">
+                <div class="d-flex flex-wrap gap-2 small">
+                    {% for level in product.price_levels %}
+                    <span class="badge bg-secondary-subtle text-body-secondary border">
+                        {{ level.price_level_name }} — {{ level.price_formatted }} {{ product.currency }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
         </div>
         {% else %}
         <div class="alert alert-warning my-2" role="alert">
-            Нет задач для отображения.
+            Нет товаров для отображения.
         </div>
         {% endfor %}
     </div>
@@ -93,95 +124,41 @@
         pages=products.pages,
         current_page=products.page,
         search=search | default(value=""),
-        status=status_filter | default(value=""),
-        updated_after=updated_after | default(value=""),
-        updated_before=updated_before | default(value="")
     ) }}
 </div>
+
+{% include 'products/add_product_modal.html' %}
 
 <div class="modal fade" id="filtersModal" tabindex="-1" aria-labelledby="filtersModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h1 class="modal-title fs-5" id="filtersModalLabel">Фильтры задач</h1>
+                <h1 class="modal-title fs-5" id="filtersModalLabel">Фильтры товаров</h1>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
             </div>
-            <form id="filtersForm" class="modal-body row g-3" method="get" action="/">
-                {% set status_value = status_filter | default(value="") %}
-                {% set updated_after_value = updated_after | default(value="") %}
-                {% set updated_before_value = updated_before | default(value="") %}
-                {% if search %}
-                <input type="hidden" name="search" value="{{ search }}">
-                {% endif %}
+            <form id="filtersForm" class="modal-body row g-3" method="get" action="/products">
                 <div class="col-12">
-                    <label for="filterStatus" class="form-label small text-uppercase text-muted mb-1">Статус</label>
-                    <select id="filterStatus" name="status" class="form-select">
-                        <option value=""{% if status_value == "" %} selected{% endif %}>Все</option>
-                        <option value="Pending"{% if status_value == "Pending" %} selected{% endif %}>В ожидании</option>
-                        <option value="InProgress"{% if status_value == "InProgress" %} selected{% endif %}>В работе</option>
-                        <option value="Blocked"{% if status_value == "Blocked" %} selected{% endif %}>Заблокирована</option>
-                        <option value="Completed"{% if status_value == "Completed" %} selected{% endif %}>Завершена</option>
-                        <option value="Archived"{% if status_value == "Archived" %} selected{% endif %}>Архивирована</option>
-                    </select>
+                    <label for="filterSearch" class="form-label small text-uppercase text-muted mb-1">Поиск</label>
+                    <input id="filterSearch" name="search" type="text" class="form-control"
+                        value="{{ search | default(value='') }}" placeholder="Название или описание">
                 </div>
-                <div class="col-12 col-md-6">
-                    <label for="filterUpdatedAfter" class="form-label small text-uppercase text-muted mb-1">Обновлена после</label>
-                    <input id="filterUpdatedAfter" name="updated_after" type="date" class="form-control" value="{{ updated_after_value }}">
-                </div>
-                <div class="col-12 col-md-6">
-                    <label for="filterUpdatedBefore" class="form-label small text-uppercase text-muted mb-1">Обновлена до</label>
-                    <input id="filterUpdatedBefore" name="updated_before" type="date" class="form-control" value="{{ updated_before_value }}">
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="true" id="filterArchived" name="show_archived"
+                            {% if show_archived %}checked{% endif %}>
+                        <label class="form-check-label" for="filterArchived">
+                            Показывать архивированные товары
+                        </label>
+                    </div>
                 </div>
                 <div class="col-12 d-flex flex-wrap gap-2 justify-content-end pt-3">
                     <button type="submit" class="btn btn-primary">Применить</button>
-                    <a href="/" class="btn btn-outline-secondary">Сбросить</a>
+                    <a href="/products" class="btn btn-outline-secondary">Сбросить</a>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-{% include 'products/add_product_modal.html' %}
-
 {% endblock %}
-
-
-{% block scripts %}
-<script>
-    document.addEventListener("DOMContentLoaded", () => {
-        var selectableList = document.querySelectorAll(".selectable");
-        selectableList.forEach((selectable) => {
-            selectable.addEventListener("click", () => {
-                const productId = selectable.dataset.id;
-                document.location.href = `/product/${productId}`;
-            });
-        });
-
-        const params = new URLSearchParams(window.location.search);
-        const status = params.get("status") || "";
-        const updatedAfter = params.get("updated_after") || "";
-        const updatedBefore = params.get("updated_before") || "";
-
-        const statusField = document.getElementById("filterStatus");
-        const updatedAfterField = document.getElementById("filterUpdatedAfter");
-        const updatedBeforeField = document.getElementById("filterUpdatedBefore");
-        if (statusField) {
-            statusField.value = status;
-        }
-        if (updatedAfterField) {
-            updatedAfterField.value = updatedAfter;
-        }
-        if (updatedBeforeField) {
-            updatedBeforeField.value = updatedBefore;
-        }
-
-        const hasActiveFilters = Boolean(
-            status || updatedAfter || updatedBefore
-        );
-        const badge = document.getElementById("activeFiltersBadge");
-        if (badge && hasActiveFilters) {
-            badge.classList.remove("d-none");
-        }
-    });
-</script>
-{% endblock %}
+{% block scripts %}{% endblock %}

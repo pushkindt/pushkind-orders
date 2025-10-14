@@ -1,0 +1,42 @@
+[Unit]
+Description=pushkind-orders (Actix-Web)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Run as the dedicated service user (from Supervisor)
+User=www-data11
+Group=www-data
+
+# Working directory and command (from Supervisor config)
+WorkingDirectory=/var/www11/html
+ExecStart=/var/www11/html/pushkind-orders
+
+# Autostart / autorestart mapping
+Restart=on-failure
+RestartSec=2
+
+# Supervisor's stopasgroup/killasgroup → KillMode=control-group
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Logging: defaults to journald
+# Uncomment below if you prefer file logs
+# StandardOutput=append:/var/log/orders/orders.log
+# StandardError=inherit
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www11/html
+AmbientCapabilities=
+CapabilityBoundingSet=
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+

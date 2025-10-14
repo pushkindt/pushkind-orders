@@ -18,6 +18,7 @@ use pushkind_orders::routes::main::show_index;
 use pushkind_orders::routes::price_levels::{
     add_price_level, show_price_levels, upload_price_levels,
 };
+use pushkind_orders::routes::products::{add_product, show_products, upload_products};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -92,6 +93,9 @@ async fn main() -> std::io::Result<()> {
                     .service(show_price_levels)
                     .service(add_price_level)
                     .service(upload_price_levels)
+                    .service(show_products)
+                    .service(add_product)
+                    .service(upload_products)
                     .service(logout),
             )
             .app_data(web::Data::new(tera.clone()))
