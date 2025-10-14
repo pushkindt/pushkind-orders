@@ -11,6 +11,7 @@ use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::price_levels::{
     PriceLevelsQuery, create_price_level, import_price_levels, load_price_levels,
+    remove_price_level,
 };
 
 #[get("/price-levels")]
@@ -32,7 +33,7 @@ pub async fn show_price_levels(
             );
             context.insert("price_levels", &data.price_levels);
             context.insert("search", &data.search);
-            context.insert("search_action", &"/price-levels");
+            context.insert("search_action", "/price-levels");
             render_template(&tera, "price_levels/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {
@@ -46,7 +47,7 @@ pub async fn show_price_levels(
     }
 }
 
-#[post("/price-levels")]
+#[post("/price-levels/add")]
 pub async fn add_price_level(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -103,6 +104,35 @@ pub async fn upload_price_levels(
         Err(err) => {
             log::error!("Failed to import price levels: {err}");
             FlashMessage::error("Не удалось загрузить уровни цен.").send();
+            redirect("/price-levels")
+        }
+    }
+}
+
+#[post("/price-levels/{price_level_id}/delete")]
+pub async fn delete_price_level(
+    path: web::Path<i32>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+) -> impl Responder {
+    let price_level_id = path.into_inner();
+
+    match remove_price_level(repo.get_ref(), &user, price_level_id) {
+        Ok(success) => {
+            FlashMessage::success(success.message).send();
+            redirect(&success.redirect_to)
+        }
+        Err(ServiceError::Unauthorized) => {
+            FlashMessage::error("Недостаточно прав.").send();
+            redirect("/na")
+        }
+        Err(ServiceError::NotFound) => {
+            FlashMessage::error("Уровень не найден или уже удален.").send();
+            redirect("/price-levels")
+        }
+        Err(err) => {
+            log::error!("Failed to delete price level {price_level_id}: {err}");
+            FlashMessage::error("Не удалось удалить уровень цен.").send();
             redirect("/price-levels")
         }
     }

@@ -16,7 +16,7 @@ use tera::Tera;
 use pushkind_orders::repository::DieselRepository;
 use pushkind_orders::routes::main::show_index;
 use pushkind_orders::routes::price_levels::{
-    add_price_level, show_price_levels, upload_price_levels,
+    add_price_level, delete_price_level, show_price_levels, upload_price_levels,
 };
 use pushkind_orders::routes::products::{add_product, show_products, upload_products};
 
@@ -93,6 +93,7 @@ async fn main() -> std::io::Result<()> {
                     .service(show_price_levels)
                     .service(add_price_level)
                     .service(upload_price_levels)
+                    .service(delete_price_level)
                     .service(show_products)
                     .service(add_product)
                     .service(upload_products)

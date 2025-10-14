@@ -3,8 +3,10 @@ use pushkind_orders::domain::{
     order::{NewOrder, OrderListQuery, OrderProduct, OrderStatus, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, ProductListQuery, UpdateProduct},
+    product_price_level::NewProductPriceLevelRate,
     user::{NewUser, UpdateUser},
 };
+use pushkind_orders::models::product_price_level::NewProductPriceLevel as DbNewProductPriceLevel;
 use pushkind_orders::repository::DieselRepository;
 use pushkind_orders::repository::{
     OrderReader, OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter,
@@ -205,6 +207,49 @@ fn test_product_repository_crud() {
 }
 
 #[test]
+fn test_replace_product_price_levels() {
+    let test_db = common::TestDb::new("test_replace_product_price_levels.db");
+    let repo = DieselRepository::new(test_db.pool());
+
+    let retail_level = repo
+        .create_price_level(&NewPriceLevel::new(1, "Retail"))
+        .expect("failed to create price level");
+    let wholesale_level = repo
+        .create_price_level(&NewPriceLevel::new(1, "Wholesale"))
+        .expect("failed to create price level");
+
+    let product = repo
+        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .expect("failed to create product");
+
+    let rates = vec![
+        NewProductPriceLevelRate::new(product.id, retail_level.id, 1250),
+        NewProductPriceLevelRate::new(product.id, wholesale_level.id, 990),
+    ];
+
+    repo.replace_product_price_levels(product.id, 1, &rates)
+        .expect("failed to replace product price levels");
+
+    let mut fetched = repo
+        .get_product_by_id(product.id, 1)
+        .expect("failed to fetch product")
+        .expect("product should exist");
+
+    fetched.price_levels.sort_by_key(|rate| rate.price_level_id);
+
+    assert_eq!(fetched.price_levels.len(), 2);
+    assert_eq!(fetched.price_levels[0].price_level_id, retail_level.id);
+    assert_eq!(fetched.price_levels[0].price_cents, 1250);
+    assert_eq!(fetched.price_levels[1].price_level_id, wholesale_level.id);
+    assert_eq!(fetched.price_levels[1].price_cents, 990);
+
+    let err = repo
+        .replace_product_price_levels(product.id, 2, &rates)
+        .expect_err("expected cross-hub update to fail");
+    assert!(matches!(err, RepositoryError::NotFound));
+}
+
+#[test]
 fn test_price_level_repository_crud() {
     let test_db = common::TestDb::new("test_price_level_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
@@ -277,6 +322,72 @@ fn test_price_level_repository_crud() {
         .expect("failed to list after delete");
     assert_eq!(total_final, 1);
     assert_eq!(levels_final[0].id, silver.id);
+}
+
+#[test]
+fn deleting_price_level_removes_product_rates() {
+    use diesel::prelude::*;
+    use pushkind_orders::schema::product_price_levels::dsl as product_rates;
+
+    let test_db = common::TestDb::new("test_price_level_delete_cascade.db");
+    let repo = DieselRepository::new(test_db.pool());
+
+    let product = repo
+        .create_product(&NewProduct::new(1, "Cascade Product", "USD"))
+        .expect("failed to create product");
+    let price_level = repo
+        .create_price_level(&NewPriceLevel::new(1, "Cascade Level"))
+        .expect("failed to create price level");
+
+    {
+        let mut conn = test_db
+            .pool()
+            .get()
+            .expect("failed to acquire connection for insert");
+
+        let new_rate = DbNewProductPriceLevel {
+            product_id: product.id,
+            price_level_id: price_level.id,
+            price_cents: 1950,
+        };
+
+        diesel::insert_into(product_rates::product_price_levels)
+            .values(&new_rate)
+            .execute(&mut conn)
+            .expect("failed to insert product price level");
+
+        let existing: i64 = product_rates::product_price_levels
+            .filter(product_rates::price_level_id.eq(price_level.id))
+            .count()
+            .get_result(&mut conn)
+            .expect("failed to count inserted rates");
+        assert_eq!(existing, 1);
+    }
+
+    repo.delete_price_level(price_level.id, 1)
+        .expect("failed to delete price level");
+
+    {
+        let mut conn = test_db
+            .pool()
+            .get()
+            .expect("failed to acquire connection for verification");
+        let remaining: i64 = product_rates::product_price_levels
+            .filter(product_rates::product_id.eq(product.id))
+            .count()
+            .get_result(&mut conn)
+            .expect("failed to count remaining rates");
+        assert_eq!(remaining, 0, "expected cascade delete to remove rates");
+    }
+
+    let updated_product = repo
+        .get_product_by_id(product.id, 1)
+        .expect("failed to fetch product after cascade")
+        .expect("product should still exist");
+    assert!(
+        updated_product.price_levels.is_empty(),
+        "product should have no price levels after cascade delete"
+    );
 }
 
 #[test]

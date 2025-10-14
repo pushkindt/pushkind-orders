@@ -36,6 +36,33 @@
             background-color: rgb(254, 244, 221);
         }
     </style>
+    <style>
+        .add-item-container {
+            display: flex;
+            align-items: center;
+            text-align: center;
+        }
+
+        .add-item-container>button:hover {
+            opacity: 0.5;
+        }
+
+        .add-item-container>button {
+            opacity: 1.0;
+        }
+
+        .add-item-container>button:active {
+            opacity: 1.0;
+        }
+
+        .add-item-container::before,
+        .add-item-container::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid #000;
+            margin: 0 10px;
+        }
+    </style>
 </head>
 
 <body class="bg-light">

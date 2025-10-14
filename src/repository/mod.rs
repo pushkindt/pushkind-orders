@@ -6,6 +6,7 @@ use crate::domain::{
     order::{NewOrder, Order, OrderListQuery, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
+    product_price_level::NewProductPriceLevelRate,
     user::{NewUser, UpdateUser, User},
 };
 
@@ -50,6 +51,12 @@ pub trait ProductWriter {
         updates: &UpdateProduct,
     ) -> RepositoryResult<Product>;
     fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    fn replace_product_price_levels(
+        &self,
+        product_id: i32,
+        hub_id: i32,
+        rates: &[NewProductPriceLevelRate],
+    ) -> RepositoryResult<()>;
 }
 
 /// Read-only operations over price level records.

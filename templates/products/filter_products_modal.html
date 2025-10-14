@@ -1,0 +1,26 @@
+<div class="modal fade" id="filtersModal" tabindex="-1" aria-labelledby="filtersModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="filtersModalLabel">Фильтры товаров</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <form id="filtersForm" class="modal-body row g-3" method="get" action="/products">
+                <input type="hidden" name="search" value="{{ search | default(value='') }}">
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="true" id="filterArchived" name="show_archived"
+                            {% if show_archived %}checked{% endif %}>
+                        <label class="form-check-label" for="filterArchived">
+                            Показывать архивированные товары
+                        </label>
+                    </div>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2 justify-content-end pt-3">
+                    <button type="submit" class="btn btn-primary">Применить</button>
+                    <a href="/products" class="btn btn-outline-secondary">Сбросить</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

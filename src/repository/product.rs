@@ -9,11 +9,16 @@ use crate::{
         NewProduct as DomainNewProduct, Product as DomainProduct, ProductListQuery,
         UpdateProduct as DomainUpdateProduct,
     },
-    domain::product_price_level::ProductPriceLevelRate as DomainProductPriceLevelRate,
+    domain::product_price_level::{
+        NewProductPriceLevelRate as DomainNewProductPriceLevelRate,
+        ProductPriceLevelRate as DomainProductPriceLevelRate,
+    },
     models::product::{
         NewProduct as DbNewProduct, Product as DbProduct, UpdateProduct as DbUpdateProduct,
     },
-    models::product_price_level::ProductPriceLevel as DbProductPriceLevel,
+    models::product_price_level::{
+        NewProductPriceLevel as DbNewProductPriceLevel, ProductPriceLevel as DbProductPriceLevel,
+    },
     repository::{DieselRepository, ProductReader, ProductWriter},
 };
 
@@ -177,6 +182,66 @@ impl ProductWriter for DieselRepository {
         }
 
         Ok(())
+    }
+
+    fn replace_product_price_levels(
+        &self,
+        product_id: i32,
+        hub_id: i32,
+        rates: &[DomainNewProductPriceLevelRate],
+    ) -> RepositoryResult<()> {
+        use crate::schema::price_levels;
+        use crate::schema::product_price_levels;
+        use crate::schema::products;
+        use diesel::dsl::{delete, exists};
+        use diesel::dsl::{insert_into, select};
+
+        let mut conn = self.conn()?;
+
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            let is_owned: bool = select(exists(
+                products::table
+                    .filter(products::id.eq(product_id))
+                    .filter(products::hub_id.eq(hub_id)),
+            ))
+            .get_result(conn)?;
+
+            if !is_owned {
+                return Err(diesel::result::Error::NotFound);
+            }
+
+            delete(
+                product_price_levels::table.filter(product_price_levels::product_id.eq(product_id)),
+            )
+            .execute(conn)?;
+
+            if !rates.is_empty() {
+                let price_level_ids: std::collections::BTreeSet<i32> =
+                    rates.iter().map(|rate| rate.price_level_id).collect();
+                let expected_count = price_level_ids.len() as i64;
+
+                if expected_count > 0 {
+                    let actual_count: i64 = price_levels::table
+                        .filter(price_levels::id.eq_any(price_level_ids))
+                        .filter(price_levels::hub_id.eq(hub_id))
+                        .count()
+                        .get_result(conn)?;
+
+                    if actual_count != expected_count {
+                        return Err(diesel::result::Error::NotFound);
+                    }
+                }
+
+                let rows: Vec<DbNewProductPriceLevel> =
+                    rates.iter().map(DbNewProductPriceLevel::from).collect();
+                insert_into(product_price_levels::table)
+                    .values(&rows)
+                    .execute(conn)?;
+            }
+
+            Ok(())
+        })
+        .map_err(RepositoryError::from)
     }
 }
 
