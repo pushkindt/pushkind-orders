@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::{
     price_level::{PriceLevel, PriceLevelListQuery},
-    product::ProductListQuery,
+    product::{Product, ProductListQuery},
     product_price_level::{NewProductPriceLevelRate, ProductPriceLevelRate},
 };
 use crate::forms::products::{AddProductForm, NewProductUpload, UploadProductsForm};
 use crate::repository::{PriceLevelReader, ProductReader, ProductWriter};
-use crate::services::{RedirectSuccess, ServiceError, ServiceResult};
+use crate::services::{ServiceError, ServiceResult};
 
 /// Query parameters accepted by the products index page.
 #[derive(Debug, Default, Deserialize)]
@@ -98,7 +98,7 @@ pub fn create_product<R>(
     repo: &R,
     user: &AuthenticatedUser,
     form: AddProductForm,
-) -> ServiceResult<RedirectSuccess>
+) -> ServiceResult<Product>
 where
     R: ProductWriter + PriceLevelReader + ?Sized,
 {
@@ -112,14 +112,7 @@ where
         .into_new_product_with_prices(user.hub_id, &price_levels)
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    let product_name = payload.product.name.clone();
-
-    persist_new_product(repo, user.hub_id, payload)?;
-
-    Ok(RedirectSuccess {
-        message: format!("Товар «{}» добавлен.", product_name),
-        redirect_to: "/products".to_string(),
-    })
+    persist_new_product(repo, user.hub_id, payload)
 }
 
 /// Imports products from an uploaded CSV file.
@@ -127,7 +120,7 @@ pub fn import_products<R>(
     repo: &R,
     user: &AuthenticatedUser,
     mut form: UploadProductsForm,
-) -> ServiceResult<RedirectSuccess>
+) -> ServiceResult<usize>
 where
     R: ProductWriter + PriceLevelReader + ?Sized,
 {
@@ -147,10 +140,7 @@ where
         created += 1;
     }
 
-    Ok(RedirectSuccess {
-        message: format!("Загружено товаров: {created}."),
-        redirect_to: "/products".to_string(),
-    })
+    Ok(created)
 }
 
 fn fetch_all_price_levels<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<PriceLevel>>
@@ -162,7 +152,11 @@ where
     Ok(price_levels)
 }
 
-fn persist_new_product<R>(repo: &R, hub_id: i32, payload: NewProductUpload) -> ServiceResult<()>
+fn persist_new_product<R>(
+    repo: &R,
+    hub_id: i32,
+    payload: NewProductUpload,
+) -> ServiceResult<Product>
 where
     R: ProductWriter + ?Sized,
 {
@@ -171,7 +165,7 @@ where
         .map_err(ServiceError::from)?;
 
     if payload.price_levels.is_empty() {
-        return Ok(());
+        return Ok(created);
     }
 
     let rates: Vec<NewProductPriceLevelRate> = payload
@@ -196,7 +190,7 @@ where
         return Err(ServiceError::from(err));
     }
 
-    Ok(())
+    Ok(created)
 }
 
 /// View model exposed to the products index template.
@@ -559,8 +553,9 @@ mod tests {
         };
 
         let result = create_product(&repo, &user, form).expect("expected success");
-        assert_eq!(result.redirect_to, "/products");
-        assert_eq!(result.message, "Товар «Widget» добавлен.");
+        assert_eq!(result.id, 101);
+        assert_eq!(result.hub_id, hub_id);
+        assert_eq!(result.name, "Widget");
     }
 
     #[test]
@@ -682,8 +677,7 @@ Banana,USD,7.50,
 
         let result = import_products(&repo, &user, form).expect("expected success");
 
-        assert_eq!(result.message, "Загружено товаров: 2.");
-        assert_eq!(result.redirect_to, "/products");
+        assert_eq!(result, 2);
     }
 
     #[test]

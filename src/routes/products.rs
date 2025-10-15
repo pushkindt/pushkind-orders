@@ -1,6 +1,5 @@
 use actix_multipart::form::MultipartForm;
-use actix_web::post;
-use actix_web::{HttpResponse, Responder, get, web};
+use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
@@ -53,16 +52,29 @@ pub async fn show_products(
     }
 }
 
-#[post("/products")]
+#[post("/products/add")]
 pub async fn add_product(
+    req: HttpRequest,
+    body: web::Bytes,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
-    form: web::Form<AddProductForm>,
 ) -> impl Responder {
-    match products::create_product(repo.get_ref(), &user, form.into_inner()) {
-        Ok(success) => {
-            FlashMessage::success(success.message).send();
-            redirect(&success.redirect_to)
+    // Parse the URL-encoded body using serde_qs so nested arrays deserialize correctly.
+    let qs_config = serde_qs::Config::new(5, false);
+    let form = match qs_config.deserialize_bytes::<AddProductForm>(body.as_ref()) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            log::warn!("Failed to parse add product form for {}: {err}", req.path());
+            FlashMessage::error("Некорректные данные формы.").send();
+            return redirect("/products");
+        }
+    };
+
+    log::debug!("{form:?}");
+    match products::create_product(repo.get_ref(), &user, form) {
+        Ok(product) => {
+            FlashMessage::success(format!("Товар «{}» добавлен.", product.name)).send();
+            redirect("/products")
         }
         Err(ServiceError::Unauthorized) => {
             FlashMessage::error("Недостаточно прав.").send();
@@ -87,9 +99,9 @@ pub async fn upload_products(
     MultipartForm(form): MultipartForm<UploadProductsForm>,
 ) -> impl Responder {
     match products::import_products(repo.get_ref(), &user, form) {
-        Ok(success) => {
-            FlashMessage::success(success.message).send();
-            redirect(&success.redirect_to)
+        Ok(created) => {
+            FlashMessage::success(format!("Загружено товаров: {created}.")).send();
+            redirect("/products")
         }
         Err(ServiceError::Unauthorized) => {
             FlashMessage::error("Недостаточно прав.").send();

@@ -156,6 +156,7 @@ impl AddProductForm {
 
         let mut parsed_price_levels = Vec::new();
         for entry in self.price_levels {
+            log::debug!("{entry:?}");
             let Some(raw_price) = entry.price.as_deref() else {
                 continue;
             };
