@@ -2,32 +2,6 @@
 
 {% block styles %}
 <style>
-    .add-order-container {
-        display: flex;
-        align-items: center;
-        text-align: center;
-    }
-
-    .add-order-container>button:hover {
-        opacity: 0.5;
-    }
-
-    .add-order-container>button {
-        opacity: 1.0;
-    }
-
-    .add-order-container>button:active {
-        opacity: 1.0;
-    }
-
-    .add-order-container::before,
-    .add-order-container::after {
-        content: '';
-        flex: 1;
-        border-bottom: 1px solid #000;
-        margin: 0 10px;
-    }
-
     .order-recent {
         background-color: rgba(255, 243, 205, 0.6);
     }
@@ -39,13 +13,8 @@
 
 <div class="container bg-white border rounded my-2">
 
-    <div class="row">
-        <div class="col text-center add-order-container">
-            <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#orderModal">
-                <i class="bi bi-plus-circle"></i>
-            </button>
-        </div>
-        <div class="col-auto">
+    <div class="row justify-content-end">
+        <div class="col-auto align-self-end">
             <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 mt-1" type="button"
                 data-bs-toggle="modal" data-bs-target="#filtersModal">
                 <i class="bi bi-funnel"></i>

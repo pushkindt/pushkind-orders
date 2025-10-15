@@ -2,36 +2,6 @@
 
 {% block styles %}
 <style>
-    .add-product-container {
-        display: flex;
-        align-items: center;
-        text-align: center;
-    }
-
-    .add-product-container>button:hover {
-        opacity: 0.5;
-    }
-
-    .add-product-container>button {
-        opacity: 1.0;
-    }
-
-    .add-product-container>button:active {
-        opacity: 1.0;
-    }
-
-    .add-product-container::before,
-    .add-product-container::after {
-        content: '';
-        flex: 1;
-        border-bottom: 1px solid #000;
-        margin: 0 10px;
-    }
-
-    .product-recent {
-        background-color: rgba(255, 243, 205, 0.35);
-    }
-
     .product-archived {
         opacity: 0.6;
     }
@@ -44,7 +14,7 @@
 <div class="container bg-white border rounded my-2">
 
     <div class="row mb-3">
-        <div class="col text-center add-product-container">
+        <div class="col text-center add-item-container">
             <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#productModal">
                 <i class="bi bi-plus-circle"></i>
             </button>
@@ -58,107 +28,11 @@
         </div>
     </div>
 
-    <div class="row d-none d-lg-flex fw-bold">
-        <div class="col-lg-1 overflow-hidden">ID</div>
-        <div class="col-lg-3 overflow-hidden">Название</div>
-        <div class="col-lg-2 overflow-hidden">Артикул</div>
-        <div class="col-lg overflow-hidden">Описание</div>
-        <div class="col-lg-1 overflow-hidden">Валюта</div>
-        <div class="col-lg-2 overflow-hidden">Обновлён</div>
-    </div>
-    <div id="productList">
-        {% for product in products.items %}
-        <div class="row my-1 py-2 border-top selectable
-            {% if product.id in recently_updated_product_ids %} product-recent{% endif %}
-            {% if product.is_archived %} product-archived{% endif %}
-        " data-id="{{ product.id }}">
-            <div class="col-lg-1 col-12">
-                <strong>{{ product.id }}</strong>
-                <div class="d-lg-none text-muted small">
-                    Обновлён {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
-                </div>
-            </div>
-            <div class="col-lg-3 col-12">
-                <span class="d-lg-none fw-bold">Название:</span>
-                {{ product.name }}
-            </div>
-            <div class="col-lg-2 col-12">
-                <span class="d-lg-none fw-bold">Артикул:</span>
-                {{ product.sku | default(value="—") }}
-            </div>
-            <div class="col-lg col-12">
-                <span class="d-lg-none fw-bold">Описание:</span>
-                {{ product.description | default(value="—") }}
-            </div>
-            <div class="col-lg-1 col-6">
-                <span class="d-lg-none fw-bold">Валюта:</span>
-                {{ product.currency }}
-            </div>
-            <div class="col-lg-2 col-6 text-lg-end">
-                <span class="d-lg-none fw-bold">Обновлён:</span>
-                {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
-                {% if product.is_archived %}
-                    <div class="text-muted small">Архивирован</div>
-                {% endif %}
-            </div>
-            {% if product.price_levels | length > 0 %}
-            <div class="col-12 mt-2">
-                <div class="d-flex flex-wrap gap-2 small">
-                    {% for level in product.price_levels %}
-                    <span class="badge bg-secondary-subtle text-body-secondary border">
-                        {{ level.price_level_name }} — {{ level.price_formatted }} {{ product.currency }}
-                    </span>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-        </div>
-        {% else %}
-        <div class="alert alert-warning my-2" role="alert">
-            Нет товаров для отображения.
-        </div>
-        {% endfor %}
-    </div>
-
-    {{ macros::pagination(
-        pages=products.pages,
-        current_page=products.page,
-        search=search | default(value=""),
-    ) }}
+    {% include 'products/product_list.html' %}
 </div>
 
 {% include 'products/add_product_modal.html' %}
-
-<div class="modal fade" id="filtersModal" tabindex="-1" aria-labelledby="filtersModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h1 class="modal-title fs-5" id="filtersModalLabel">Фильтры товаров</h1>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
-            </div>
-            <form id="filtersForm" class="modal-body row g-3" method="get" action="/products">
-                <div class="col-12">
-                    <label for="filterSearch" class="form-label small text-uppercase text-muted mb-1">Поиск</label>
-                    <input id="filterSearch" name="search" type="text" class="form-control"
-                        value="{{ search | default(value='') }}" placeholder="Название или описание">
-                </div>
-                <div class="col-12">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="true" id="filterArchived" name="show_archived"
-                            {% if show_archived %}checked{% endif %}>
-                        <label class="form-check-label" for="filterArchived">
-                            Показывать архивированные товары
-                        </label>
-                    </div>
-                </div>
-                <div class="col-12 d-flex flex-wrap gap-2 justify-content-end pt-3">
-                    <button type="submit" class="btn btn-primary">Применить</button>
-                    <a href="/products" class="btn btn-outline-secondary">Сбросить</a>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+{% include 'products/filter_products_modal.html' %}
 
 {% endblock %}
 {% block scripts %}{% endblock %}

@@ -118,6 +118,28 @@ where
     })
 }
 
+/// Deletes a price level for the authenticated user's hub.
+pub fn remove_price_level<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    price_level_id: i32,
+) -> ServiceResult<RedirectSuccess>
+where
+    R: PriceLevelWriter + ?Sized,
+{
+    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    repo.delete_price_level(price_level_id, user.hub_id)
+        .map_err(ServiceError::from)?;
+
+    Ok(RedirectSuccess {
+        message: "Уровень удален.".to_string(),
+        redirect_to: "/price-levels".to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,6 +154,7 @@ mod tests {
     use crate::domain::price_level::PriceLevel;
     use crate::forms::price_levels::{AddPriceLevelForm, UploadPriceLevelsForm};
     use crate::repository::mock::{MockPriceLevelReader, MockPriceLevelWriter};
+    use pushkind_common::repository::errors::RepositoryError;
 
     fn fixed_datetime() -> NaiveDateTime {
         match NaiveDate::from_ymd_opt(2024, 1, 1) {
@@ -350,6 +373,51 @@ mod tests {
         let result = import_price_levels(&repo, &user, form).expect("expected success");
 
         assert!(result.message.contains('0'));
+    }
+
+    #[test]
+    fn remove_price_level_requires_role() {
+        let repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[]);
+
+        let result = remove_price_level(&repo, &user, 42);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn remove_price_level_bubbles_not_found() {
+        let mut repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        repo.expect_delete_price_level()
+            .times(1)
+            .withf(|id, hub| *id == 99 && *hub == 42)
+            .return_once(|_, _| Err(RepositoryError::NotFound));
+
+        let result = remove_price_level(&repo, &user, 99);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
+    }
+
+    #[test]
+    fn remove_price_level_returns_redirect_on_success() {
+        let mut repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        repo.expect_delete_price_level()
+            .times(1)
+            .withf(|id, hub| *id == 7 && *hub == 42)
+            .return_once(|_, _| Ok(()));
+
+        let result = remove_price_level(&repo, &user, 7).expect("expected success");
+
+        assert_eq!(result.redirect_to, "/price-levels");
+        assert!(
+            result.message.contains("Уровень"),
+            "unexpected message: {}",
+            result.message
+        );
     }
 
     fn build_upload_form(csv: &str) -> UploadPriceLevelsForm {

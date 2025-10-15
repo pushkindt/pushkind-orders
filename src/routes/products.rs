@@ -36,10 +36,10 @@ pub async fn show_products(
                     .unwrap_or(false);
             context.insert("products", &data.products);
             context.insert("search", &data.search);
+            context.insert("search_action", "/products");
             context.insert("price_levels", &data.price_levels);
             context.insert("show_archived", &data.show_archived);
             context.insert("has_active_filters", &has_active_filters);
-            context.insert("recently_updated_product_ids", &Vec::<i32>::new());
             render_template(&tera, "products/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {
@@ -55,20 +55,54 @@ pub async fn show_products(
 
 #[post("/products")]
 pub async fn add_product(
-    _user: AuthenticatedUser,
-    _repo: web::Data<DieselRepository>,
-    _form: web::Form<AddProductForm>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+    form: web::Form<AddProductForm>,
 ) -> impl Responder {
-    FlashMessage::warning("Добавление товаров пока не реализовано.").send();
-    redirect("/products")
+    match products::create_product(repo.get_ref(), &user, form.into_inner()) {
+        Ok(success) => {
+            FlashMessage::success(success.message).send();
+            redirect(&success.redirect_to)
+        }
+        Err(ServiceError::Unauthorized) => {
+            FlashMessage::error("Недостаточно прав.").send();
+            redirect("/na")
+        }
+        Err(ServiceError::Form(message)) => {
+            FlashMessage::error(message).send();
+            redirect("/products")
+        }
+        Err(err) => {
+            log::error!("Failed to create product: {err}");
+            FlashMessage::error("Не удалось создать товар.").send();
+            redirect("/products")
+        }
+    }
 }
 
 #[post("/products/upload")]
 pub async fn upload_products(
-    _user: AuthenticatedUser,
-    _repo: web::Data<DieselRepository>,
-    MultipartForm(_form): MultipartForm<UploadProductsForm>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+    MultipartForm(form): MultipartForm<UploadProductsForm>,
 ) -> impl Responder {
-    FlashMessage::warning("Загрузка товаров из CSV пока не реализована.").send();
-    redirect("/products")
+    match products::import_products(repo.get_ref(), &user, form) {
+        Ok(success) => {
+            FlashMessage::success(success.message).send();
+            redirect(&success.redirect_to)
+        }
+        Err(ServiceError::Unauthorized) => {
+            FlashMessage::error("Недостаточно прав.").send();
+            redirect("/na")
+        }
+        Err(ServiceError::Form(message)) => {
+            FlashMessage::error(message).send();
+            redirect("/products")
+        }
+        Err(err) => {
+            log::error!("Failed to import products: {err}");
+            FlashMessage::error("Не удалось загрузить товары.").send();
+            redirect("/products")
+        }
+    }
 }
