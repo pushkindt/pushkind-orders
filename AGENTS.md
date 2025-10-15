@@ -67,8 +67,8 @@ cargo fmt --all -- --check
 
 - Keep Actix handlers in `src/routes` focused on extracting inputs, invoking a
   service, and returning an HTTP response.
-- Use the `RedirectSuccess` helper when services need to trigger a redirect with
-  flash messaging.
+- Let Actix handlers manage redirects and flash messaging; keep services
+  transport-agnostic.
 - Render templates with Tera contexts that only expose sanitized data. Use the
   existing component templates under `templates/` for shared UI.
 - Respect the authorization checks via `pushkind_common::routes::check_role` and

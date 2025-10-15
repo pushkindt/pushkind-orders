@@ -7,7 +7,7 @@ use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
 use crate::forms::price_levels::{AddPriceLevelForm, UploadPriceLevelsForm};
 use crate::repository::{PriceLevelReader, PriceLevelWriter};
-use crate::services::{RedirectSuccess, ServiceError, ServiceResult};
+use crate::services::{ServiceError, ServiceResult};
 
 /// Query parameters accepted by the price levels index page.
 #[derive(Debug, Default, Deserialize)]
@@ -66,7 +66,7 @@ pub fn create_price_level<R>(
     repo: &R,
     user: &AuthenticatedUser,
     form: AddPriceLevelForm,
-) -> ServiceResult<RedirectSuccess>
+) -> ServiceResult<PriceLevel>
 where
     R: PriceLevelWriter + ?Sized,
 {
@@ -78,14 +78,8 @@ where
         .into_new_price_level(user.hub_id)
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    let created = repo
-        .create_price_level(&new_price_level)
-        .map_err(ServiceError::from)?;
-
-    Ok(RedirectSuccess {
-        message: format!("Уровень «{}» добавлен.", created.name),
-        redirect_to: "/price-levels".to_string(),
-    })
+    repo.create_price_level(&new_price_level)
+        .map_err(ServiceError::from)
 }
 
 /// Imports price levels from an uploaded CSV file.
@@ -93,7 +87,7 @@ pub fn import_price_levels<R>(
     repo: &R,
     user: &AuthenticatedUser,
     mut form: UploadPriceLevelsForm,
-) -> ServiceResult<RedirectSuccess>
+) -> ServiceResult<usize>
 where
     R: PriceLevelWriter + ?Sized,
 {
@@ -107,15 +101,11 @@ where
 
     let count = price_levels.len();
 
-    for level in price_levels {
-        repo.create_price_level(&level)
-            .map_err(ServiceError::from)?;
+    for level in &price_levels {
+        repo.create_price_level(level).map_err(ServiceError::from)?;
     }
 
-    Ok(RedirectSuccess {
-        message: format!("Загружено уровней цен: {count}."),
-        redirect_to: "/price-levels".to_string(),
-    })
+    Ok(count)
 }
 
 /// Deletes a price level for the authenticated user's hub.
@@ -123,7 +113,7 @@ pub fn remove_price_level<R>(
     repo: &R,
     user: &AuthenticatedUser,
     price_level_id: i32,
-) -> ServiceResult<RedirectSuccess>
+) -> ServiceResult<()>
 where
     R: PriceLevelWriter + ?Sized,
 {
@@ -132,12 +122,7 @@ where
     }
 
     repo.delete_price_level(price_level_id, user.hub_id)
-        .map_err(ServiceError::from)?;
-
-    Ok(RedirectSuccess {
-        message: "Уровень удален.".to_string(),
-        redirect_to: "/price-levels".to_string(),
-    })
+        .map_err(ServiceError::from)
 }
 
 #[cfg(test)]
@@ -281,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn create_price_level_persists_and_returns_redirect() {
+    fn create_price_level_persists_price_level() {
         let mut repo = MockPriceLevelWriter::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
@@ -296,8 +281,9 @@ mod tests {
 
         let result = create_price_level(&repo, &user, form).expect("expected success");
 
-        assert_eq!(result.redirect_to, "/price-levels");
-        assert!(result.message.contains("Retail"));
+        assert_eq!(result.id, 5);
+        assert_eq!(result.hub_id, expected_hub);
+        assert_eq!(result.name, "Retail");
     }
 
     #[test]
@@ -355,8 +341,7 @@ mod tests {
 
         let result = import_price_levels(&repo, &user, form).expect("expected success");
 
-        assert_eq!(result.redirect_to, "/price-levels");
-        assert!(result.message.contains('2'));
+        assert_eq!(result, 2);
 
         let stored = captured_names.lock().expect("mutex poisoned");
         assert_eq!(stored.len(), 2);
@@ -372,7 +357,7 @@ mod tests {
 
         let result = import_price_levels(&repo, &user, form).expect("expected success");
 
-        assert!(result.message.contains('0'));
+        assert_eq!(result, 0);
     }
 
     #[test]
@@ -401,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn remove_price_level_returns_redirect_on_success() {
+    fn remove_price_level_succeeds() {
         let mut repo = MockPriceLevelWriter::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
 
@@ -410,14 +395,7 @@ mod tests {
             .withf(|id, hub| *id == 7 && *hub == 42)
             .return_once(|_, _| Ok(()));
 
-        let result = remove_price_level(&repo, &user, 7).expect("expected success");
-
-        assert_eq!(result.redirect_to, "/price-levels");
-        assert!(
-            result.message.contains("Уровень"),
-            "unexpected message: {}",
-            result.message
-        );
+        remove_price_level(&repo, &user, 7).expect("expected success");
     }
 
     fn build_upload_form(csv: &str) -> UploadPriceLevelsForm {

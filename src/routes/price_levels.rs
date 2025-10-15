@@ -54,9 +54,9 @@ pub async fn add_price_level(
     form: web::Form<AddPriceLevelForm>,
 ) -> impl Responder {
     match create_price_level(repo.get_ref(), &user, form.into_inner()) {
-        Ok(success) => {
-            FlashMessage::success(success.message).send();
-            redirect(&success.redirect_to)
+        Ok(price_level) => {
+            FlashMessage::success(format!("Уровень «{}» добавлен.", price_level.name)).send();
+            redirect("/price-levels")
         }
         Err(ServiceError::Unauthorized) => {
             FlashMessage::error("Недостаточно прав.").send();
@@ -85,9 +85,9 @@ pub async fn upload_price_levels(
     MultipartForm(form): MultipartForm<UploadPriceLevelsForm>,
 ) -> impl Responder {
     match import_price_levels(repo.get_ref(), &user, form) {
-        Ok(success) => {
-            FlashMessage::success(success.message).send();
-            redirect(&success.redirect_to)
+        Ok(created) => {
+            FlashMessage::success(format!("Загружено уровней цен: {created}.")).send();
+            redirect("/price-levels")
         }
         Err(ServiceError::Unauthorized) => {
             FlashMessage::error("Недостаточно прав.").send();
@@ -118,9 +118,9 @@ pub async fn delete_price_level(
     let price_level_id = path.into_inner();
 
     match remove_price_level(repo.get_ref(), &user, price_level_id) {
-        Ok(success) => {
-            FlashMessage::success(success.message).send();
-            redirect(&success.redirect_to)
+        Ok(()) => {
+            FlashMessage::success("Уровень удален.").send();
+            redirect("/price-levels")
         }
         Err(ServiceError::Unauthorized) => {
             FlashMessage::error("Недостаточно прав.").send();
