@@ -213,13 +213,13 @@ impl NewOrder {
 #[derive(Debug, Clone)]
 pub struct UpdateOrder {
     /// Optional status update.
-    pub status: Option<OrderStatus>,
+    pub status: OrderStatus,
     /// Optional notes update.
     pub notes: Option<String>,
     /// Optional total amount update.
-    pub total_cents: Option<i32>,
+    pub total_cents: i32,
     /// Optional currency update.
-    pub currency: Option<String>,
+    pub currency: String,
     /// Optional customer reference update.
     pub customer_id: Option<i32>,
     /// Optional external reference update.
@@ -228,71 +228,6 @@ pub struct UpdateOrder {
     pub products: Option<Vec<OrderProduct>>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
-}
-
-impl Default for UpdateOrder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl UpdateOrder {
-    /// Create a new patch object with no changes applied yet.
-    pub fn new() -> Self {
-        let now = chrono::Local::now().naive_utc();
-        Self {
-            status: None,
-            notes: None,
-            total_cents: None,
-            currency: None,
-            customer_id: None,
-            reference: None,
-            products: None,
-            updated_at: now,
-        }
-    }
-
-    /// Update the order status.
-    pub fn status(mut self, status: OrderStatus) -> Self {
-        self.status = Some(status);
-        self
-    }
-
-    /// Update the order notes.
-    pub fn notes(mut self, notes: impl Into<String>) -> Self {
-        self.notes = Some(notes.into());
-        self
-    }
-
-    /// Update the total amount of the order.
-    pub fn total_cents(mut self, total_cents: i32) -> Self {
-        self.total_cents = Some(total_cents);
-        self
-    }
-
-    /// Update the currency used for the order.
-    pub fn currency(mut self, currency: impl Into<String>) -> Self {
-        self.currency = Some(currency.into());
-        self
-    }
-
-    /// Update the customer associated with the order.
-    pub fn customer_id(mut self, customer_id: i32) -> Self {
-        self.customer_id = Some(customer_id);
-        self
-    }
-
-    /// Update the external reference associated with the order.
-    pub fn reference(mut self, reference: impl Into<String>) -> Self {
-        self.reference = Some(reference.into());
-        self
-    }
-
-    /// Replace the collection of products associated with the order.
-    pub fn products(mut self, products: impl Into<Vec<OrderProduct>>) -> Self {
-        self.products = Some(products.into());
-        self
-    }
 }
 
 /// Query definition used to list orders for a hub.

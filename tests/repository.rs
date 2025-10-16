@@ -160,7 +160,11 @@ fn test_product_repository_crud() {
     assert_eq!(total_sku, 1);
     assert_eq!(products_sku[0].id, apple.id);
 
-    let updates = UpdateProduct::new().archived(true).name("Apple Premium");
+    let updates = UpdateProduct {
+        is_archived: true,
+        name: "Apple Premium".to_string(),
+        ..Default::default()
+    };
 
     let updated = repo
         .update_product(apple.id, 1, &updates)
@@ -169,8 +173,13 @@ fn test_product_repository_crud() {
     assert_eq!(updated.name, "Apple Premium");
     assert!(updated.price_levels.is_empty());
 
+    let updates = UpdateProduct {
+        name: "Apple".to_string(),
+        ..Default::default()
+    };
+
     let err = repo
-        .update_product(apple.id, 2, &UpdateProduct::new().name("Intruder"))
+        .update_product(apple.id, 2, &updates)
         .expect_err("expected cross-hub update failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
@@ -292,15 +301,21 @@ fn test_price_level_repository_crud() {
     assert_eq!(total_search, 1);
     assert_eq!(levels_search[0].id, silver.id);
 
-    let updates = UpdatePriceLevel::new().name("Gold");
+    let updates = UpdatePriceLevel {
+        name: "Gold".to_string(),
+        updated_at: chrono::Utc::now().naive_utc(),
+    };
 
     let updated = repo
         .update_price_level(bronze.id, 1, &updates)
         .expect("failed to update price level");
     assert_eq!(updated.name, "Gold");
 
+    let mut cross_hub_updates = updates.clone();
+    cross_hub_updates.name = "Intruder".to_string();
+
     let err = repo
-        .update_price_level(bronze.id, 2, &UpdatePriceLevel::new().name("Intruder"))
+        .update_price_level(bronze.id, 2, &cross_hub_updates)
         .expect_err("expected cross-hub update failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
@@ -457,11 +472,16 @@ fn test_order_repository_crud() {
     assert_eq!(total_none, 0);
 
     let product_updates = vec![product_snapshot.clone().with_description("Sliced apple")];
-    let updates = UpdateOrder::new()
-        .status(OrderStatus::Processing)
-        .notes("Pack immediately")
-        .customer_id(43)
-        .products(product_updates.clone());
+    let updates = UpdateOrder {
+        status: OrderStatus::Processing,
+        notes: Some("Pack immediately".to_string()),
+        total_cents: order.total_cents,
+        currency: order.currency.clone(),
+        customer_id: Some(43),
+        reference: order.reference.clone(),
+        products: Some(product_updates.clone()),
+        updated_at: chrono::Utc::now().naive_utc(),
+    };
 
     let updated = repo
         .update_order(order.id, 1, &updates)
@@ -474,12 +494,11 @@ fn test_order_repository_crud() {
         Some("Sliced apple")
     );
 
+    let mut cross_hub_updates = updates.clone();
+    cross_hub_updates.status = OrderStatus::Completed;
+
     let err = repo
-        .update_order(
-            order.id,
-            2,
-            &UpdateOrder::new().status(OrderStatus::Completed),
-        )
+        .update_order(order.id, 2, &cross_hub_updates)
         .expect_err("expected cross-hub update to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 

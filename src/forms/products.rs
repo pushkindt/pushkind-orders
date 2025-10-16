@@ -383,34 +383,34 @@ impl EditProductForm {
     pub fn into_update_product(self) -> ProductFormResult<UpdateProduct> {
         self.validate()?;
 
-        let mut updates = UpdateProduct::new();
+        let mut updates = UpdateProduct::default();
 
         if let Some(name) = self.name {
             let sanitized = sanitize_inline_text(&name);
             if sanitized.is_empty() {
                 return Err(ProductFormError::EmptyName);
             }
-            updates = updates.name(sanitized);
+            updates.name = sanitized;
         }
 
         if let Some(sku) = self.sku {
             let sanitized = sanitize_sku(&sku);
             if !sanitized.is_empty() {
-                updates = updates.sku(sanitized);
+                updates.sku = Some(sanitized);
             }
         }
 
         if let Some(description) = self.description {
             let sanitized = sanitize_multiline_text(&description);
             if !sanitized.is_empty() {
-                updates = updates.description(sanitized);
+                updates.description = Some(sanitized);
             }
         }
 
         if let Some(units) = self.units {
             let sanitized = sanitize_inline_text(&units);
             if !sanitized.is_empty() {
-                updates = updates.units(sanitized);
+                updates.units = Some(sanitized);
             }
         }
 
@@ -424,7 +424,7 @@ impl EditProductForm {
 
             match sanitize_currency(trimmed) {
                 Ok(value) => {
-                    updates = updates.currency(value);
+                    updates.currency = value;
                 }
                 Err(ProductFormError::InvalidCurrency { value }) => {
                     return Err(ProductFormError::InvalidCurrency { value });
@@ -434,7 +434,7 @@ impl EditProductForm {
         }
 
         if let Some(is_archived) = self.is_archived {
-            updates = updates.archived(is_archived);
+            updates.is_archived = is_archived;
         }
 
         Ok(updates)
@@ -874,12 +874,12 @@ Banana,usd,,Ripe banana,,8.50,
 
         let updates = form.into_update_product().expect("expected success");
 
-        assert_eq!(updates.name.as_deref(), Some("Premium Widget"));
+        assert_eq!(updates.name.as_str(), "Premium Widget");
         assert!(updates.sku.is_none());
         assert_eq!(updates.description.as_deref(), Some("Updated description."));
         assert_eq!(updates.units.as_deref(), Some("ea"));
-        assert_eq!(updates.currency.as_deref(), Some("EUR"));
-        assert_eq!(updates.is_archived, Some(true));
+        assert_eq!(updates.currency.as_str(), "EUR");
+        assert!(updates.is_archived);
     }
 
     #[test]

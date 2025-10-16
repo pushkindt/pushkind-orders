@@ -38,32 +38,9 @@ impl NewPriceLevel {
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdatePriceLevel {
     /// Optional name update for the price level.
-    pub name: Option<String>,
+    pub name: String,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
-}
-
-impl Default for UpdatePriceLevel {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl UpdatePriceLevel {
-    /// Create a new patch object with no changes applied yet.
-    pub fn new() -> Self {
-        let now = chrono::Local::now().naive_utc();
-        Self {
-            name: None,
-            updated_at: now,
-        }
-    }
-
-    /// Update the price level name.
-    pub fn name(mut self, name: impl Into<String>) -> Self {
-        self.name = Some(name.into().trim().to_string());
-        self
-    }
 }
 
 /// Query definition used to list price levels for a hub.

@@ -85,10 +85,10 @@ impl NewProduct {
 }
 
 /// Patch data applied when updating an existing product.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct UpdateProduct {
     /// Optional name update.
-    pub name: Option<String>,
+    pub name: String,
     /// Optional SKU update.
     pub sku: Option<String>,
     /// Optional description update.
@@ -96,69 +96,11 @@ pub struct UpdateProduct {
     /// Optional unit of measure update.
     pub units: Option<String>,
     /// Optional currency update.
-    pub currency: Option<String>,
+    pub currency: String,
     /// Whether the product should be archived or restored.
-    pub is_archived: Option<bool>,
+    pub is_archived: bool,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
-}
-
-impl Default for UpdateProduct {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl UpdateProduct {
-    /// Create a new patch object with no changes applied yet.
-    pub fn new() -> Self {
-        let now = chrono::Local::now().naive_utc();
-        Self {
-            name: None,
-            sku: None,
-            description: None,
-            units: None,
-            currency: None,
-            is_archived: None,
-            updated_at: now,
-        }
-    }
-
-    /// Update the product name.
-    pub fn name(mut self, name: impl Into<String>) -> Self {
-        self.name = Some(name.into());
-        self
-    }
-
-    /// Update the SKU.
-    pub fn sku(mut self, sku: impl Into<String>) -> Self {
-        self.sku = Some(sku.into());
-        self
-    }
-
-    /// Update the product description.
-    pub fn description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    /// Update the unit of measure.
-    pub fn units(mut self, units: impl Into<String>) -> Self {
-        self.units = Some(units.into());
-        self
-    }
-
-    /// Update the currency used for the product.
-    pub fn currency(mut self, currency: impl Into<String>) -> Self {
-        self.currency = Some(currency.into());
-        self
-    }
-
-    /// Archive or restore the product.
-    pub fn archived(mut self, is_archived: bool) -> Self {
-        self.is_archived = Some(is_archived);
-        self
-    }
 }
 
 /// Query definition used to list products for a hub.

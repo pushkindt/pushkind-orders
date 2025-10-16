@@ -34,13 +34,14 @@ pub struct NewProduct<'a> {
 
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::products)]
+#[diesel(treat_none_as_null = true)]
 pub struct UpdateProduct<'a> {
-    pub name: Option<&'a str>,
+    pub name: &'a str,
     pub sku: Option<&'a str>,
     pub description: Option<&'a str>,
     pub units: Option<&'a str>,
-    pub currency: Option<&'a str>,
-    pub is_archived: Option<bool>,
+    pub currency: &'a str,
+    pub is_archived: bool,
     pub updated_at: NaiveDateTime,
 }
 
@@ -79,11 +80,11 @@ impl<'a> From<&'a DomainNewProduct> for NewProduct<'a> {
 impl<'a> From<&'a DomainUpdateProduct> for UpdateProduct<'a> {
     fn from(value: &'a DomainUpdateProduct) -> Self {
         Self {
-            name: value.name.as_deref(),
+            name: value.name.as_str(),
             sku: value.sku.as_deref(),
             description: value.description.as_deref(),
             units: value.units.as_deref(),
-            currency: value.currency.as_deref(),
+            currency: value.currency.as_str(),
             is_archived: value.is_archived,
             updated_at: value.updated_at,
         }

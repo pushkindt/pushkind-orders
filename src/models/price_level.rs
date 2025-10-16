@@ -25,8 +25,9 @@ pub struct NewPriceLevel<'a> {
 
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::price_levels)]
+#[diesel(treat_none_as_null = true)]
 pub struct UpdatePriceLevel<'a> {
-    pub name: Option<&'a str>,
+    pub name: &'a str,
     pub updated_at: NaiveDateTime,
 }
 
@@ -54,7 +55,7 @@ impl<'a> From<&'a DomainNewPriceLevel> for NewPriceLevel<'a> {
 impl<'a> From<&'a DomainUpdatePriceLevel> for UpdatePriceLevel<'a> {
     fn from(value: &'a DomainUpdatePriceLevel) -> Self {
         Self {
-            name: value.name.as_deref(),
+            name: value.name.as_str(),
             updated_at: value.updated_at,
         }
     }
