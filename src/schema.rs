@@ -1,6 +1,19 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    categories (id) {
+        id -> Integer,
+        hub_id -> Integer,
+        parent_id -> Nullable<Integer>,
+        name -> Text,
+        description -> Nullable<Text>,
+        is_archived -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     order_products (id) {
         id -> Integer,
         order_id -> Integer,
@@ -83,6 +96,7 @@ diesel::joinable!(product_price_levels -> price_levels (price_level_id));
 diesel::joinable!(product_price_levels -> products (product_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    categories,
     order_products,
     orders,
     price_levels,

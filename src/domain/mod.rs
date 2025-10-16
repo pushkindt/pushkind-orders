@@ -1,3 +1,4 @@
+pub mod category;
 pub mod order;
 pub mod price_level;
 pub mod product;
