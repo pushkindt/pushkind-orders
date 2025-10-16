@@ -32,8 +32,9 @@ pub struct NewProductPriceLevel {
 
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::product_price_levels)]
+#[diesel(treat_none_as_null = true)]
 pub struct UpdateProductPriceLevel {
-    pub price_cents: Option<i32>,
+    pub price_cents: i32,
     pub updated_at: NaiveDateTime,
 }
 

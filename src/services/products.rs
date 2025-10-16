@@ -201,6 +201,7 @@ pub struct ProductView {
     pub name: String,
     pub sku: Option<String>,
     pub description: Option<String>,
+    pub units: Option<String>,
     pub currency: String,
     pub is_archived: bool,
     pub updated_at: chrono::NaiveDateTime,
@@ -218,6 +219,7 @@ impl ProductView {
             name,
             sku,
             description,
+            units,
             currency,
             is_archived,
             price_levels,
@@ -236,6 +238,7 @@ impl ProductView {
             name,
             sku,
             description,
+            units,
             currency,
             is_archived,
             updated_at,
@@ -305,6 +308,7 @@ mod tests {
             name: name.to_string(),
             sku: None,
             description: None,
+            units: None,
             currency: "USD".to_string(),
             is_archived: false,
             price_levels,
@@ -495,6 +499,7 @@ mod tests {
             name: "Widget".to_string(),
             sku: None,
             description: None,
+            units: None,
             currency: "USD".to_string(),
             price_levels: Vec::new(),
         };
@@ -523,6 +528,7 @@ mod tests {
                 assert_eq!(new_product.hub_id, hub_id);
                 assert_eq!(new_product.name, "Widget");
                 assert_eq!(new_product.currency, "USD");
+                assert_eq!(new_product.units.as_deref(), Some("Each"));
                 true
             })
             .returning(move |_| Ok(sample_product(101, hub_id, "Widget", Vec::new())));
@@ -545,6 +551,7 @@ mod tests {
             name: " Widget ".to_string(),
             sku: Some(" SKU-1 ".to_string()),
             description: Some(" A great product ".to_string()),
+            units: Some(" Each ".to_string()),
             currency: "usd".to_string(),
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 10,
@@ -592,6 +599,7 @@ mod tests {
             name: "Widget".to_string(),
             sku: None,
             description: None,
+            units: Some("Each".to_string()),
             currency: "USD".to_string(),
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 5,

@@ -17,6 +17,7 @@ pub struct Product {
     pub is_archived: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub units: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -26,18 +27,21 @@ pub struct NewProduct<'a> {
     pub name: &'a str,
     pub sku: Option<&'a str>,
     pub description: Option<&'a str>,
+    pub units: Option<&'a str>,
     pub currency: &'a str,
     pub updated_at: NaiveDateTime,
 }
 
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::products)]
+#[diesel(treat_none_as_null = true)]
 pub struct UpdateProduct<'a> {
-    pub name: Option<&'a str>,
-    pub sku: Option<Option<&'a str>>,
-    pub description: Option<Option<&'a str>>,
-    pub currency: Option<&'a str>,
-    pub is_archived: Option<bool>,
+    pub name: &'a str,
+    pub sku: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub units: Option<&'a str>,
+    pub currency: &'a str,
+    pub is_archived: bool,
     pub updated_at: NaiveDateTime,
 }
 
@@ -49,6 +53,7 @@ impl From<Product> for DomainProduct {
             name: value.name,
             sku: value.sku,
             description: value.description,
+            units: value.units,
             currency: value.currency,
             is_archived: value.is_archived,
             price_levels: Vec::new(),
@@ -65,6 +70,7 @@ impl<'a> From<&'a DomainNewProduct> for NewProduct<'a> {
             name: value.name.as_str(),
             sku: value.sku.as_deref(),
             description: value.description.as_deref(),
+            units: value.units.as_deref(),
             currency: value.currency.as_str(),
             updated_at: value.updated_at,
         }
@@ -74,16 +80,11 @@ impl<'a> From<&'a DomainNewProduct> for NewProduct<'a> {
 impl<'a> From<&'a DomainUpdateProduct> for UpdateProduct<'a> {
     fn from(value: &'a DomainUpdateProduct) -> Self {
         Self {
-            name: value.name.as_deref(),
-            sku: value
-                .sku
-                .as_ref()
-                .map(|sku| sku.as_ref().map(String::as_str)),
-            description: value
-                .description
-                .as_ref()
-                .map(|description| description.as_ref().map(String::as_str)),
-            currency: value.currency.as_deref(),
+            name: value.name.as_str(),
+            sku: value.sku.as_deref(),
+            description: value.description.as_deref(),
+            units: value.units.as_deref(),
+            currency: value.currency.as_str(),
             is_archived: value.is_archived,
             updated_at: value.updated_at,
         }

@@ -44,30 +44,7 @@ impl NewProductPriceLevelRate {
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateProductPriceLevelRate {
     /// Optional price update in the smallest currency unit.
-    pub price_cents: Option<i32>,
+    pub price_cents: i32,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
-}
-
-impl Default for UpdateProductPriceLevelRate {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl UpdateProductPriceLevelRate {
-    /// Create a new patch object with no changes applied yet.
-    pub fn new() -> Self {
-        let now = chrono::Local::now().naive_utc();
-        Self {
-            price_cents: None,
-            updated_at: now,
-        }
-    }
-
-    /// Update the price stored for this association.
-    pub fn price_cents(mut self, price_cents: i32) -> Self {
-        self.price_cents = Some(price_cents);
-        self
-    }
 }

@@ -31,6 +31,14 @@
                         </div>
                     </div>
                     <div class="row mb-3">
+                        <label for="productUnits" class="col-md-3 col-form-label">Единица измерения</label>
+                        <div class="col-md-5 col-lg-4">
+                            <input name="units" type="text" class="form-control" id="productUnits"
+                                placeholder="Например: кг" maxlength="32">
+                            <div class="form-text">Отображается рядом с ценой (оставьте пустым, если не требуется).</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
                         <label for="productCurrency" class="col-md-3 col-form-label">Валюта</label>
                         <div class="col-md-5 col-lg-4">
                             <input name="currency" type="text" class="form-control" id="productCurrency"
@@ -80,7 +88,7 @@
                         <sup>
                             <small class="text-muted">
                                 Ожидаются столбцы <code>name</code>, <code>currency</code>, опционально
-                                <code>sku</code>, <code>description</code> и цены по именам уровней.
+                                <code>sku</code>, <code>description</code>, <code>units</code> и цены по именам уровней.
                             </small>
                         </sup>
                     </div>

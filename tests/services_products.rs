@@ -28,6 +28,7 @@ fn create_product_stores_price_levels() {
         name: "Coffee".to_string(),
         sku: None,
         description: None,
+        units: None,
         currency: "USD".to_string(),
         price_levels: vec![AddProductPriceLevelForm {
             price_level_id: 1,
@@ -71,6 +72,7 @@ fn create_product_requires_service_role() {
         name: "Coffee".to_string(),
         sku: None,
         description: None,
+        units: None,
         currency: "USD".to_string(),
         price_levels: Vec::new(),
     };
