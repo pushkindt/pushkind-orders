@@ -215,15 +215,15 @@ pub struct UpdateOrder {
     /// Optional status update.
     pub status: Option<OrderStatus>,
     /// Optional notes update.
-    pub notes: Option<Option<String>>,
+    pub notes: Option<String>,
     /// Optional total amount update.
     pub total_cents: Option<i32>,
     /// Optional currency update.
     pub currency: Option<String>,
     /// Optional customer reference update.
-    pub customer_id: Option<Option<i32>>,
+    pub customer_id: Option<i32>,
     /// Optional external reference update.
-    pub reference: Option<Option<String>>,
+    pub reference: Option<String>,
     /// Optional product list update.
     pub products: Option<Vec<OrderProduct>>,
     /// Timestamp captured when the patch was created.
@@ -258,9 +258,9 @@ impl UpdateOrder {
         self
     }
 
-    /// Update the order notes, using `None` to clear an existing value.
-    pub fn notes(mut self, notes: Option<impl Into<String>>) -> Self {
-        self.notes = Some(notes.map(|value| value.into()));
+    /// Update the order notes.
+    pub fn notes(mut self, notes: impl Into<String>) -> Self {
+        self.notes = Some(notes.into());
         self
     }
 
@@ -276,15 +276,15 @@ impl UpdateOrder {
         self
     }
 
-    /// Update the customer associated with the order, using `None` to clear the value.
-    pub fn customer_id(mut self, customer_id: Option<i32>) -> Self {
+    /// Update the customer associated with the order.
+    pub fn customer_id(mut self, customer_id: i32) -> Self {
         self.customer_id = Some(customer_id);
         self
     }
 
     /// Update the external reference associated with the order.
-    pub fn reference(mut self, reference: Option<impl Into<String>>) -> Self {
-        self.reference = Some(reference.map(|value| value.into()));
+    pub fn reference(mut self, reference: impl Into<String>) -> Self {
+        self.reference = Some(reference.into());
         self
     }
 

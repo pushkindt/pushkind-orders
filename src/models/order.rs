@@ -68,11 +68,11 @@ pub struct NewOrderProduct<'a> {
 #[diesel(table_name = crate::schema::orders)]
 pub struct UpdateOrder<'a> {
     pub status: Option<&'a str>,
-    pub notes: Option<Option<&'a str>>,
+    pub notes: Option<&'a str>,
     pub total_cents: Option<i32>,
     pub currency: Option<&'a str>,
-    pub customer_id: Option<Option<i32>>,
-    pub reference: Option<Option<&'a str>>,
+    pub customer_id: Option<i32>,
+    pub reference: Option<&'a str>,
     pub updated_at: NaiveDateTime,
 }
 
@@ -151,17 +151,11 @@ impl<'a> From<&'a DomainUpdateOrder> for UpdateOrder<'a> {
     fn from(value: &'a DomainUpdateOrder) -> Self {
         Self {
             status: value.status.map(|status| status.into()),
-            notes: value
-                .notes
-                .as_ref()
-                .map(|notes| notes.as_ref().map(String::as_str)),
+            notes: value.notes.as_deref(),
             total_cents: value.total_cents,
             currency: value.currency.as_deref(),
             customer_id: value.customer_id,
-            reference: value
-                .reference
-                .as_ref()
-                .map(|reference| reference.as_ref().map(String::as_str)),
+            reference: value.reference.as_deref(),
             updated_at: value.updated_at,
         }
     }

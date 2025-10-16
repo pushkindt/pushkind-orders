@@ -63,6 +63,7 @@ diesel::table! {
         is_archived -> Bool,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        units -> Nullable<Text>,
     }
 }
 

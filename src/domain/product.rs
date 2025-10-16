@@ -17,6 +17,8 @@ pub struct Product {
     pub sku: Option<String>,
     /// Optional longer description shown to users.
     pub description: Option<String>,
+    /// Optional unit of measure for the product (e.g. `kg`, `pack`).
+    pub units: Option<String>,
     /// ISO 4217 currency code used when assigning prices to this product.
     pub currency: String,
     /// Flag indicating whether the product has been archived.
@@ -40,6 +42,8 @@ pub struct NewProduct {
     pub sku: Option<String>,
     /// Optional longer description shown to users.
     pub description: Option<String>,
+    /// Optional unit of measure for the product (e.g. `kg`, `pack`).
+    pub units: Option<String>,
     /// ISO 4217 currency code used when assigning prices to this product.
     pub currency: String,
     /// Timestamp captured when the product payload was created.
@@ -55,6 +59,7 @@ impl NewProduct {
             name: name.into(),
             sku: None,
             description: None,
+            units: None,
             currency: currency.into(),
             updated_at: now,
         }
@@ -71,6 +76,12 @@ impl NewProduct {
         self.description = Some(description.into());
         self
     }
+
+    /// Attach a unit of measure to the product payload.
+    pub fn with_units(mut self, units: impl Into<String>) -> Self {
+        self.units = Some(units.into());
+        self
+    }
 }
 
 /// Patch data applied when updating an existing product.
@@ -79,9 +90,11 @@ pub struct UpdateProduct {
     /// Optional name update.
     pub name: Option<String>,
     /// Optional SKU update.
-    pub sku: Option<Option<String>>,
+    pub sku: Option<String>,
     /// Optional description update.
-    pub description: Option<Option<String>>,
+    pub description: Option<String>,
+    /// Optional unit of measure update.
+    pub units: Option<String>,
     /// Optional currency update.
     pub currency: Option<String>,
     /// Whether the product should be archived or restored.
@@ -104,6 +117,7 @@ impl UpdateProduct {
             name: None,
             sku: None,
             description: None,
+            units: None,
             currency: None,
             is_archived: None,
             updated_at: now,
@@ -116,15 +130,21 @@ impl UpdateProduct {
         self
     }
 
-    /// Update the SKU, using `None` to clear an existing value.
-    pub fn sku(mut self, sku: Option<impl Into<String>>) -> Self {
-        self.sku = Some(sku.map(|value| value.into()));
+    /// Update the SKU.
+    pub fn sku(mut self, sku: impl Into<String>) -> Self {
+        self.sku = Some(sku.into());
         self
     }
 
-    /// Update the product description, using `None` to clear an existing value.
-    pub fn description(mut self, description: Option<impl Into<String>>) -> Self {
-        self.description = Some(description.map(|value| value.into()));
+    /// Update the product description.
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Update the unit of measure.
+    pub fn units(mut self, units: impl Into<String>) -> Self {
+        self.units = Some(units.into());
         self
     }
 

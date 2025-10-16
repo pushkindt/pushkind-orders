@@ -19,6 +19,10 @@ const NAME_MAX_LEN_VALIDATOR: u64 = NAME_MAX_LEN as u64;
 const SKU_MAX_LEN: usize = 64;
 const SKU_MAX_LEN_VALIDATOR: u64 = SKU_MAX_LEN as u64;
 
+/// Maximum allowed length for a unit of measure descriptor.
+const UNITS_MAX_LEN: usize = 32;
+const UNITS_MAX_LEN_VALIDATOR: u64 = UNITS_MAX_LEN as u64;
+
 /// ISO 4217 currency codes are three ASCII alphabetic characters.
 const CURRENCY_CODE_LEN: usize = 3;
 const CURRENCY_CODE_LEN_VALIDATOR: u64 = CURRENCY_CODE_LEN as u64;
@@ -85,6 +89,9 @@ pub struct AddProductForm {
     pub sku: Option<String>,
     /// Optional longer description.
     pub description: Option<String>,
+    /// Optional unit of measure.
+    #[validate(length(max = UNITS_MAX_LEN_VALIDATOR))]
+    pub units: Option<String>,
     /// ISO 4217 currency code (e.g. `USD`).
     #[validate(length(equal = CURRENCY_CODE_LEN_VALIDATOR))]
     pub currency: String,
@@ -133,6 +140,12 @@ impl AddProductForm {
             .map(sanitize_multiline_text)
             .filter(|value| !value.is_empty());
 
+        let sanitized_units = self
+            .units
+            .as_deref()
+            .map(sanitize_inline_text)
+            .filter(|value| !value.is_empty());
+
         let currency = match sanitize_currency(&self.currency) {
             Ok(value) => value,
             Err(ProductFormError::InvalidCurrency { value }) => {
@@ -149,6 +162,10 @@ impl AddProductForm {
 
         if let Some(description) = sanitized_description {
             new_product = new_product.with_description(description);
+        }
+
+        if let Some(units) = sanitized_units {
+            new_product = new_product.with_units(units);
         }
 
         let price_level_map: HashMap<i32, &PriceLevel> =
@@ -286,6 +303,12 @@ impl UploadProductsForm {
                 .map(sanitize_multiline_text)
                 .filter(|value| !value.is_empty());
 
+            let units = header_indexes
+                .units_index
+                .and_then(|idx| record.get(idx))
+                .map(sanitize_inline_text)
+                .filter(|value| !value.is_empty());
+
             let mut product = NewProduct::new(hub_id, sanitized_name, currency);
 
             if let Some(sku) = sku {
@@ -294,6 +317,10 @@ impl UploadProductsForm {
 
             if let Some(description) = description {
                 product = product.with_description(description);
+            }
+
+            if let Some(units) = units {
+                product = product.with_units(units);
             }
 
             let mut parsed_price_levels = Vec::new();
@@ -342,6 +369,9 @@ pub struct EditProductForm {
     pub sku: Option<String>,
     /// Optional description update (empty string clears the existing description).
     pub description: Option<String>,
+    /// Optional units update (empty string clears the existing units).
+    #[validate(length(max = UNITS_MAX_LEN_VALIDATOR))]
+    pub units: Option<String>,
     /// Optional currency update.
     pub currency: Option<String>,
     /// Optional archive flag toggle.
@@ -365,19 +395,22 @@ impl EditProductForm {
 
         if let Some(sku) = self.sku {
             let sanitized = sanitize_sku(&sku);
-            if sanitized.is_empty() {
-                updates = updates.sku(None::<String>);
-            } else {
-                updates = updates.sku(Some(sanitized));
+            if !sanitized.is_empty() {
+                updates = updates.sku(sanitized);
             }
         }
 
         if let Some(description) = self.description {
             let sanitized = sanitize_multiline_text(&description);
-            if sanitized.is_empty() {
-                updates = updates.description(None::<String>);
-            } else {
-                updates = updates.description(Some(sanitized));
+            if !sanitized.is_empty() {
+                updates = updates.description(sanitized);
+            }
+        }
+
+        if let Some(units) = self.units {
+            let sanitized = sanitize_inline_text(&units);
+            if !sanitized.is_empty() {
+                updates = updates.units(sanitized);
             }
         }
 
@@ -412,6 +445,7 @@ struct ProductHeaderIndexes {
     name_index: Option<usize>,
     sku_index: Option<usize>,
     description_index: Option<usize>,
+    units_index: Option<usize>,
     currency_index: Option<usize>,
 }
 
@@ -420,6 +454,7 @@ fn locate_product_headers(headers: &StringRecord) -> ProductHeaderIndexes {
         name_index: locate_header(headers, "name"),
         sku_index: locate_header(headers, "sku"),
         description_index: locate_header(headers, "description"),
+        units_index: locate_header(headers, "units"),
         currency_index: locate_header(headers, "currency"),
     }
 }
@@ -593,6 +628,7 @@ mod tests {
             name: "  Deluxe  Product  ".to_string(),
             sku: Some(" sku-001 ".to_string()),
             description: Some(" First line.\n\n Second line.  ".to_string()),
+            units: Some("  Box  ".to_string()),
             currency: "usd".to_string(),
             price_levels: vec![
                 AddProductPriceLevelForm {
@@ -621,6 +657,7 @@ mod tests {
             payload.product.description.as_deref(),
             Some("First line.\n\nSecond line.")
         );
+        assert_eq!(payload.product.units.as_deref(), Some("Box"));
         assert_eq!(payload.product.currency, "USD");
         assert_eq!(payload.price_levels.len(), 1);
         assert_eq!(payload.price_levels[0].price_level_id, 1);
@@ -633,6 +670,7 @@ mod tests {
             name: "   ".to_string(),
             sku: None,
             description: None,
+            units: None,
             currency: "USD".to_string(),
             price_levels: Vec::new(),
         };
@@ -648,6 +686,7 @@ mod tests {
             name: "Widget".to_string(),
             sku: None,
             description: None,
+            units: None,
             currency: "US!".to_string(),
             price_levels: Vec::new(),
         };
@@ -666,6 +705,7 @@ mod tests {
             name: "Widget".to_string(),
             sku: None,
             description: None,
+            units: None,
             currency: "USD".to_string(),
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 1,
@@ -689,6 +729,7 @@ mod tests {
             name: "Widget".to_string(),
             sku: None,
             description: None,
+            units: None,
             currency: "USD".to_string(),
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 999,
@@ -708,9 +749,9 @@ mod tests {
     #[test]
     fn upload_products_form_converts_rows() {
         let csv = "\
-name,currency,sku,description,Retail,Wholesale
-Apple,usd,APL-1,Fresh apple,12.34,9.99
-Banana,usd,,Ripe banana,8.50,
+name,currency,sku,description,units,Retail,Wholesale
+Apple,usd,APL-1,Fresh apple, Each ,12.34,9.99
+Banana,usd,,Ripe banana,,8.50,
 ";
         let mut form = build_upload_form(csv);
         let price_levels = vec![
@@ -727,6 +768,7 @@ Banana,usd,,Ripe banana,8.50,
         let first = &products[0];
         assert_eq!(first.product.name, "Apple");
         assert_eq!(first.product.sku.as_deref(), Some("APL-1"));
+        assert_eq!(first.product.units.as_deref(), Some("Each"));
         assert_eq!(first.product.currency, "USD");
         assert_eq!(first.price_levels.len(), 2);
         assert_eq!(first.price_levels[0].price_level_id, 1);
@@ -737,6 +779,7 @@ Banana,usd,,Ripe banana,8.50,
         let second = &products[1];
         assert_eq!(second.product.name, "Banana");
         assert!(second.product.sku.is_none());
+        assert!(second.product.units.is_none());
         assert_eq!(second.product.currency, "USD");
         assert_eq!(second.price_levels.len(), 1);
         assert_eq!(second.price_levels[0].price_level_id, 1);
@@ -824,6 +867,7 @@ Banana,usd,,Ripe banana,8.50,
             name: Some("  Premium  Widget ".to_string()),
             sku: Some("  ".to_string()),
             description: Some(" Updated description. \n\n ".to_string()),
+            units: Some("  ea ".to_string()),
             currency: Some("eur".to_string()),
             is_archived: Some(true),
         };
@@ -831,14 +875,9 @@ Banana,usd,,Ripe banana,8.50,
         let updates = form.into_update_product().expect("expected success");
 
         assert_eq!(updates.name.as_deref(), Some("Premium Widget"));
-        assert!(matches!(updates.sku, Some(None)));
-        assert_eq!(
-            updates
-                .description
-                .as_ref()
-                .and_then(|value| value.as_deref()),
-            Some("Updated description.")
-        );
+        assert!(updates.sku.is_none());
+        assert_eq!(updates.description.as_deref(), Some("Updated description."));
+        assert_eq!(updates.units.as_deref(), Some("ea"));
         assert_eq!(updates.currency.as_deref(), Some("EUR"));
         assert_eq!(updates.is_archived, Some(true));
     }
@@ -849,6 +888,7 @@ Banana,usd,,Ripe banana,8.50,
             name: None,
             sku: None,
             description: None,
+            units: None,
             currency: Some("1".to_string()),
             is_archived: None,
         };

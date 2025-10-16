@@ -459,8 +459,8 @@ fn test_order_repository_crud() {
     let product_updates = vec![product_snapshot.clone().with_description("Sliced apple")];
     let updates = UpdateOrder::new()
         .status(OrderStatus::Processing)
-        .notes(Some("Pack immediately"))
-        .customer_id(Some(43))
+        .notes("Pack immediately")
+        .customer_id(43)
         .products(product_updates.clone());
 
     let updated = repo
