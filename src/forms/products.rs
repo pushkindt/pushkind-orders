@@ -448,7 +448,7 @@ impl EditProductForm {
         }
 
         if let Some(category_id) = self.category_id {
-            updates.category_id = Some(normalize_category_id(category_id));
+            updates.category_id = normalize_category_id(category_id);
         }
 
         Ok(updates)
@@ -905,7 +905,7 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(updates.units.as_deref(), Some("ea"));
         assert_eq!(updates.currency.as_str(), "EUR");
         assert!(updates.is_archived);
-        assert_eq!(updates.category_id, Some(Some(12)));
+        assert_eq!(updates.category_id, Some(12));
     }
 
     #[test]

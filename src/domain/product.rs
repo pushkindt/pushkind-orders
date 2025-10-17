@@ -111,7 +111,7 @@ pub struct UpdateProduct {
     /// Whether the product should be archived or restored.
     pub is_archived: bool,
     /// Optional identifier of the category the product belongs to.
-    pub category_id: Option<Option<i32>>,
+    pub category_id: Option<i32>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }

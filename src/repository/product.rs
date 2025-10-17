@@ -168,7 +168,7 @@ impl ProductWriter for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        if let Some(Some(category_id)) = updates.category_id {
+        if let Some(category_id) = updates.category_id {
             use crate::schema::categories;
             use diesel::dsl::{exists, select};
 
@@ -190,11 +190,11 @@ impl ProductWriter for DieselRepository {
             .filter(products::id.eq(product_id))
             .filter(products::hub_id.eq(hub_id));
 
-        let updated = if let Some(category_value) = updates.category_id {
+        let updated = if updates.category_id.is_some() {
             diesel::update(target)
                 .set((
                     &db_updates,
-                    products::category_id.eq::<Option<i32>>(category_value),
+                    products::category_id.eq::<Option<i32>>(updates.category_id),
                 ))
                 .get_result::<DbProduct>(&mut conn)?
         } else {
