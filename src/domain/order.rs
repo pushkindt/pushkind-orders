@@ -212,13 +212,13 @@ impl NewOrder {
 /// Patch data applied when updating an existing order.
 #[derive(Debug, Clone)]
 pub struct UpdateOrder {
-    /// Optional status update.
+    /// Status update.
     pub status: OrderStatus,
     /// Optional notes update.
     pub notes: Option<String>,
-    /// Optional total amount update.
+    /// Total amount update.
     pub total_cents: i32,
-    /// Optional currency update.
+    /// Currency update.
     pub currency: String,
     /// Optional customer reference update.
     pub customer_id: Option<i32>,

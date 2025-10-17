@@ -190,18 +190,9 @@ impl ProductWriter for DieselRepository {
             .filter(products::id.eq(product_id))
             .filter(products::hub_id.eq(hub_id));
 
-        let updated = if updates.category_id.is_some() {
-            diesel::update(target)
-                .set((
-                    &db_updates,
-                    products::category_id.eq::<Option<i32>>(updates.category_id),
-                ))
-                .get_result::<DbProduct>(&mut conn)?
-        } else {
-            diesel::update(target)
-                .set(&db_updates)
-                .get_result::<DbProduct>(&mut conn)?
-        };
+        let updated = diesel::update(target)
+            .set(&db_updates)
+            .get_result::<DbProduct>(&mut conn)?;
 
         let mut domain: DomainProduct = updated.into();
         let mut price_levels = load_price_levels_for_products(&mut conn, &[domain.id])?;

@@ -43,7 +43,7 @@ impl NewProductPriceLevelRate {
 /// Patch data applied when updating an existing product price level rate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateProductPriceLevelRate {
-    /// Optional price update in the smallest currency unit.
+    /// Price update in the smallest currency unit.
     pub price_cents: i32,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,

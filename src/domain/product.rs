@@ -98,7 +98,7 @@ impl NewProduct {
 /// Patch data applied when updating an existing product.
 #[derive(Debug, Clone, Default)]
 pub struct UpdateProduct {
-    /// Optional name update.
+    /// Name update.
     pub name: String,
     /// Optional SKU update.
     pub sku: Option<String>,
@@ -106,7 +106,7 @@ pub struct UpdateProduct {
     pub description: Option<String>,
     /// Optional unit of measure update.
     pub units: Option<String>,
-    /// Optional currency update.
+    /// Currency update.
     pub currency: String,
     /// Whether the product should be archived or restored.
     pub is_archived: bool,

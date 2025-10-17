@@ -37,7 +37,7 @@ impl NewPriceLevel {
 /// Patch data applied when updating an existing price level.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdatePriceLevel {
-    /// Optional name update for the price level.
+    /// Name update for the price level.
     pub name: String,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
