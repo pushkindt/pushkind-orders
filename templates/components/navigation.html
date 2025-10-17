@@ -18,7 +18,13 @@
                         <a class="nav-link {%if current_page == 'products'%}active{%endif%}" href="/products">Товары</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {%if current_page == 'categories'%}active{%endif%}" href="/categories">Категории</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {%if current_page == 'price_levels'%}active{%endif%}" href="/price-levels">Цены</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {%if current_page == 'tags'%}active{%endif%}" href="/tags">Теги</a>
                     </li>
                 </ul>
                 <form class="d-flex w-100" role="search" action="{{search_action | default(value='/')}}">
