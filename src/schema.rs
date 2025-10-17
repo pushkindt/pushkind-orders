@@ -55,6 +55,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    product_tags (id) {
+        id -> Integer,
+        product_id -> Integer,
+        tag_id -> Integer,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     product_price_levels (id) {
         id -> Integer,
         product_id -> Integer,
@@ -81,6 +91,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    tags (id) {
+        id -> Integer,
+        hub_id -> Integer,
+        name -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Integer,
         hub_id -> Integer,
@@ -94,6 +114,8 @@ diesel::table! {
 diesel::joinable!(order_products -> orders (order_id));
 diesel::joinable!(product_price_levels -> price_levels (price_level_id));
 diesel::joinable!(product_price_levels -> products (product_id));
+diesel::joinable!(product_tags -> products (product_id));
+diesel::joinable!(product_tags -> tags (tag_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     categories,
@@ -101,6 +123,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     orders,
     price_levels,
     product_price_levels,
+    product_tags,
     products,
+    tags,
     users,
 );
