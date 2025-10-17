@@ -95,6 +95,9 @@ pub struct AddProductForm {
     /// ISO 4217 currency code (e.g. `USD`).
     #[validate(length(equal = CURRENCY_CODE_LEN_VALIDATOR))]
     pub currency: String,
+    /// Optional category identifier selected by the user.
+    #[serde(default)]
+    pub category_id: Option<i32>,
     /// Optional price level amounts submitted with the product.
     #[serde(default)]
     pub price_levels: Vec<AddProductPriceLevelForm>,
@@ -166,6 +169,10 @@ impl AddProductForm {
 
         if let Some(units) = sanitized_units {
             new_product = new_product.with_units(units);
+        }
+
+        if let Some(category_id) = self.category_id.and_then(normalize_category_id) {
+            new_product = new_product.with_category_id(category_id);
         }
 
         let price_level_map: HashMap<i32, &PriceLevel> =
@@ -376,6 +383,9 @@ pub struct EditProductForm {
     pub currency: Option<String>,
     /// Optional archive flag toggle.
     pub is_archived: Option<bool>,
+    /// Optional category update (negative or zero clears the category).
+    #[serde(default)]
+    pub category_id: Option<i32>,
 }
 
 impl EditProductForm {
@@ -437,6 +447,10 @@ impl EditProductForm {
             updates.is_archived = is_archived;
         }
 
+        if let Some(category_id) = self.category_id {
+            updates.category_id = Some(normalize_category_id(category_id));
+        }
+
         Ok(updates)
     }
 }
@@ -457,6 +471,10 @@ fn locate_product_headers(headers: &StringRecord) -> ProductHeaderIndexes {
         units_index: locate_header(headers, "units"),
         currency_index: locate_header(headers, "currency"),
     }
+}
+
+fn normalize_category_id(input: i32) -> Option<i32> {
+    if input > 0 { Some(input) } else { None }
 }
 
 fn locate_header(headers: &StringRecord, expected: &str) -> Option<usize> {
@@ -630,6 +648,7 @@ mod tests {
             description: Some(" First line.\n\n Second line.  ".to_string()),
             units: Some("  Box  ".to_string()),
             currency: "usd".to_string(),
+            category_id: Some(7),
             price_levels: vec![
                 AddProductPriceLevelForm {
                     price_level_id: 1,
@@ -659,6 +678,7 @@ mod tests {
         );
         assert_eq!(payload.product.units.as_deref(), Some("Box"));
         assert_eq!(payload.product.currency, "USD");
+        assert_eq!(payload.product.category_id, Some(7));
         assert_eq!(payload.price_levels.len(), 1);
         assert_eq!(payload.price_levels[0].price_level_id, 1);
         assert_eq!(payload.price_levels[0].price_cents, 1234);
@@ -672,6 +692,7 @@ mod tests {
             description: None,
             units: None,
             currency: "USD".to_string(),
+            category_id: None,
             price_levels: Vec::new(),
         };
 
@@ -688,6 +709,7 @@ mod tests {
             description: None,
             units: None,
             currency: "US!".to_string(),
+            category_id: None,
             price_levels: Vec::new(),
         };
 
@@ -707,6 +729,7 @@ mod tests {
             description: None,
             units: None,
             currency: "USD".to_string(),
+            category_id: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 1,
                 price: Some("oops".to_string()),
@@ -731,6 +754,7 @@ mod tests {
             description: None,
             units: None,
             currency: "USD".to_string(),
+            category_id: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 999,
                 price: Some("10".to_string()),
@@ -870,6 +894,7 @@ Banana,usd,,Ripe banana,,8.50,
             units: Some("  ea ".to_string()),
             currency: Some("eur".to_string()),
             is_archived: Some(true),
+            category_id: Some(12),
         };
 
         let updates = form.into_update_product().expect("expected success");
@@ -880,6 +905,7 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(updates.units.as_deref(), Some("ea"));
         assert_eq!(updates.currency.as_str(), "EUR");
         assert!(updates.is_archived);
+        assert_eq!(updates.category_id, Some(Some(12)));
     }
 
     #[test]
@@ -891,6 +917,7 @@ Banana,usd,,Ripe banana,,8.50,
             units: None,
             currency: Some("1".to_string()),
             is_archived: None,
+            category_id: None,
         };
 
         let result = form.into_update_product();
