@@ -55,21 +55,21 @@ diesel::table! {
 }
 
 diesel::table! {
-    product_tags (id) {
+    product_price_levels (id) {
         id -> Integer,
         product_id -> Integer,
-        tag_id -> Integer,
+        price_level_id -> Integer,
+        price_cents -> Integer,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
 }
 
 diesel::table! {
-    product_price_levels (id) {
+    product_tags (id) {
         id -> Integer,
         product_id -> Integer,
-        price_level_id -> Integer,
-        price_cents -> Integer,
+        tag_id -> Integer,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
