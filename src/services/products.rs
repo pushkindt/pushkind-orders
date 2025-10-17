@@ -204,6 +204,7 @@ pub struct ProductView {
     pub units: Option<String>,
     pub currency: String,
     pub is_archived: bool,
+    pub category_id: Option<i32>,
     pub updated_at: chrono::NaiveDateTime,
     pub price_levels: Vec<ProductPriceLevelView>,
 }
@@ -222,6 +223,7 @@ impl ProductView {
             units,
             currency,
             is_archived,
+            category_id,
             price_levels,
             updated_at,
             ..
@@ -241,6 +243,7 @@ impl ProductView {
             units,
             currency,
             is_archived,
+            category_id,
             updated_at,
             price_levels,
         }
@@ -311,6 +314,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             is_archived: false,
+            category_id: None,
             price_levels,
             created_at: datetime(),
             updated_at: datetime(),
@@ -501,6 +505,7 @@ mod tests {
             description: None,
             units: None,
             currency: "USD".to_string(),
+            category_id: None,
             price_levels: Vec::new(),
         };
 
@@ -553,6 +558,7 @@ mod tests {
             description: Some(" A great product ".to_string()),
             units: Some(" Each ".to_string()),
             currency: "usd".to_string(),
+            category_id: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 10,
                 price: Some("12.34".to_string()),
@@ -601,6 +607,7 @@ mod tests {
             description: None,
             units: Some("Each".to_string()),
             currency: "USD".to_string(),
+            category_id: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 5,
                 price: Some("10.00".to_string()),
