@@ -87,6 +87,7 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         units -> Nullable<Text>,
+        category_id -> Nullable<Integer>,
     }
 }
 
@@ -116,6 +117,7 @@ diesel::joinable!(product_price_levels -> price_levels (price_level_id));
 diesel::joinable!(product_price_levels -> products (product_id));
 diesel::joinable!(product_tags -> products (product_id));
 diesel::joinable!(product_tags -> tags (tag_id));
+diesel::joinable!(products -> categories (category_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     categories,

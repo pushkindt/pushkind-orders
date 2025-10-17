@@ -23,6 +23,8 @@ pub struct Product {
     pub currency: String,
     /// Flag indicating whether the product has been archived.
     pub is_archived: bool,
+    /// Optional identifier of the category the product belongs to.
+    pub category_id: Option<i32>,
     /// Price level rates configured for the product.
     pub price_levels: Vec<ProductPriceLevelRate>,
     /// Timestamp for when the product record was created.
@@ -46,6 +48,8 @@ pub struct NewProduct {
     pub units: Option<String>,
     /// ISO 4217 currency code used when assigning prices to this product.
     pub currency: String,
+    /// Optional identifier of the category the product belongs to.
+    pub category_id: Option<i32>,
     /// Timestamp captured when the product payload was created.
     pub updated_at: NaiveDateTime,
 }
@@ -61,6 +65,7 @@ impl NewProduct {
             description: None,
             units: None,
             currency: currency.into(),
+            category_id: None,
             updated_at: now,
         }
     }
@@ -82,12 +87,18 @@ impl NewProduct {
         self.units = Some(units.into());
         self
     }
+
+    /// Assign the product to a category.
+    pub fn with_category_id(mut self, category_id: i32) -> Self {
+        self.category_id = Some(category_id);
+        self
+    }
 }
 
 /// Patch data applied when updating an existing product.
 #[derive(Debug, Clone, Default)]
 pub struct UpdateProduct {
-    /// Optional name update.
+    /// Name update.
     pub name: String,
     /// Optional SKU update.
     pub sku: Option<String>,
@@ -95,10 +106,12 @@ pub struct UpdateProduct {
     pub description: Option<String>,
     /// Optional unit of measure update.
     pub units: Option<String>,
-    /// Optional currency update.
+    /// Currency update.
     pub currency: String,
     /// Whether the product should be archived or restored.
     pub is_archived: bool,
+    /// Optional identifier of the category the product belongs to.
+    pub category_id: Option<i32>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }

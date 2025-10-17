@@ -128,6 +128,23 @@ impl ProductWriter for DieselRepository {
         use crate::schema::products;
 
         let mut conn = self.conn()?;
+
+        if let Some(category_id) = new_product.category_id {
+            use crate::schema::categories;
+            use diesel::dsl::{exists, select};
+
+            let category_exists: bool = select(exists(
+                categories::table
+                    .filter(categories::id.eq(category_id))
+                    .filter(categories::hub_id.eq(new_product.hub_id)),
+            ))
+            .get_result(&mut conn)?;
+
+            if !category_exists {
+                return Err(RepositoryError::NotFound);
+            }
+        }
+
         let db_new = DbNewProduct::from(new_product);
 
         let created = diesel::insert_into(products::table)
@@ -150,6 +167,23 @@ impl ProductWriter for DieselRepository {
         use crate::schema::products;
 
         let mut conn = self.conn()?;
+
+        if let Some(category_id) = updates.category_id {
+            use crate::schema::categories;
+            use diesel::dsl::{exists, select};
+
+            let category_exists: bool = select(exists(
+                categories::table
+                    .filter(categories::id.eq(category_id))
+                    .filter(categories::hub_id.eq(hub_id)),
+            ))
+            .get_result(&mut conn)?;
+
+            if !category_exists {
+                return Err(RepositoryError::NotFound);
+            }
+        }
+
         let db_updates = DbUpdateProduct::from(updates);
 
         let target = products::table

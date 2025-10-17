@@ -1,17 +1,21 @@
+use diesel::prelude::*;
 use pushkind_common::repository::errors::RepositoryError;
 use pushkind_orders::domain::{
+    category::NewCategory as DomainNewCategory,
     order::{NewOrder, OrderListQuery, OrderProduct, OrderStatus, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
     user::{NewUser, UpdateUser},
 };
+use pushkind_orders::models::category::NewCategory as DbNewCategory;
 use pushkind_orders::models::product_price_level::NewProductPriceLevel as DbNewProductPriceLevel;
 use pushkind_orders::repository::DieselRepository;
 use pushkind_orders::repository::{
     OrderReader, OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter,
     UserListQuery, UserReader, UserWriter,
 };
+use pushkind_orders::schema::categories;
 
 mod common;
 
@@ -106,9 +110,19 @@ fn test_product_repository_crud() {
     let test_db = common::TestDb::new("test_product_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
 
+    let mut conn = test_db.pool().get().expect("obtain connection");
+    let category_domain = DomainNewCategory::new(1, "Fruit");
+    let db_category = DbNewCategory::from(&category_domain);
+    let category_id: i32 = diesel::insert_into(categories::table)
+        .values(&db_category)
+        .returning(categories::id)
+        .get_result(&mut conn)
+        .expect("create category");
+
     let apple_new = NewProduct::new(1, "Apple", "USD")
         .with_sku("APL-1")
-        .with_description("Fresh apple");
+        .with_description("Fresh apple")
+        .with_category_id(category_id);
     let banana_new = NewProduct::new(1, "Banana", "USD");
 
     let apple = repo
@@ -120,8 +134,14 @@ fn test_product_repository_crud() {
 
     assert_eq!(apple.name, "Apple");
     assert_eq!(apple.sku.as_deref(), Some("APL-1"));
+    assert_eq!(apple.category_id, Some(category_id));
     assert!(apple.price_levels.is_empty());
     assert!(banana.price_levels.is_empty());
+
+    let err = repo
+        .create_product(&NewProduct::new(1, "Ghost", "USD").with_category_id(category_id + 999))
+        .expect_err("expected missing category");
+    assert!(matches!(err, RepositoryError::NotFound));
 
     let fetched = repo
         .get_product_by_id(apple.id, 1)
