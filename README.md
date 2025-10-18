@@ -14,6 +14,14 @@ of Actix Web, Diesel, and Tera and integrates tightly with the shared
 - **Shared Pushkind scaffolding** – Navigation, flash messaging, auth guards, and pagination helpers come from `pushkind-common` for a consistent UX across services.
 - **Diesel-backed persistence layer** – Repository traits and a `DieselRepository` implementation span orders, products, price levels, and users for reuse in services and tests.
 
+## Pages
+
+- **Main page** – Browse existing orders with pagination, search, and filters. Selecting an order opens a modal window that shows the order details without leaving the list.
+- **Products page** – Review products with search, filters, and pagination. Operators can create individual products, batch upload catalog entries, and open a modal to edit or delete a selected product.
+- **Categories page** – Manage product categories with inline actions to browse, create, rename, and delete entries.
+- **Prices page** – Inspect and maintain product price levels, including creating, renaming, and deleting tiers.
+- **Discounts page** – Assign price levels to clients. Each assignment requires approval from a user with the `orders_manager` role, and clients can only view price levels that have been granted to them.
+
 ## Architecture at a Glance
 
 The codebase follows a clean, layered structure so that business logic can be
