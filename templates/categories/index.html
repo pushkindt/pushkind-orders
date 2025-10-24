@@ -69,14 +69,15 @@
             Нет категорий для отображения.
         </div>
         {% else %}
-        {% set_global has_root_categories = false %}
+        {% set page_ids = page_category_ids | default(value=[]) %}
+        {% set ns = namespace(has_visible=false) %}
         {% for category in categories.items %}
-            {% if category.parent_id is none %}
-                {% set_global has_root_categories = true %}
+            {% if category.parent_id is none or category.parent_id not in page_ids %}
+                {% set ns.has_visible = true %}
                 {{ category_macros::render_category(category=category, categories=categories.items, level=0) }}
             {% endif %}
         {% endfor %}
-        {% if not has_root_categories %}
+        {% if not ns.has_visible %}
         <div class="alert alert-warning my-2" role="alert">
             Категории не имеют верхнего уровня или скрыты фильтрами.
         </div>
