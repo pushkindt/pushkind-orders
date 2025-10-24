@@ -173,10 +173,10 @@ where
         let mut visited = HashSet::new();
 
         while let Some(current) = stack.pop() {
-            if visited.insert(current) {
-                if let Some(children) = children_by_parent.get(&current) {
-                    stack.extend(children.iter().copied());
-                }
+            if visited.insert(current)
+                && let Some(children) = children_by_parent.get(&current)
+            {
+                stack.extend(children.iter().copied());
             }
         }
 
@@ -210,7 +210,9 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
     use serde_json::Value;
 
-    use crate::domain::category::{NewCategory as DomainNewCategory, UpdateCategory as DomainUpdateCategory};
+    use crate::domain::category::{
+        NewCategory as DomainNewCategory, UpdateCategory as DomainUpdateCategory,
+    };
     use crate::forms::categories::AssignChildCategoriesForm;
     use crate::repository::mock::{MockCategoryReader, MockCategoryWriter};
     use pushkind_common::repository::errors::RepositoryResult;
@@ -237,7 +239,10 @@ mod tests {
     }
 
     impl CategoryReader for MockCategoryRepo {
-        fn list_categories(&self, query: CategoryTreeQuery) -> RepositoryResult<(usize, Vec<Category>)> {
+        fn list_categories(
+            &self,
+            query: CategoryTreeQuery,
+        ) -> RepositoryResult<(usize, Vec<Category>)> {
             self.reader.list_categories(query)
         }
 
@@ -274,7 +279,8 @@ mod tests {
             parent_id: i32,
             child_ids: &[i32],
         ) -> RepositoryResult<Category> {
-            self.writer.assign_child_categories(hub_id, parent_id, child_ids)
+            self.writer
+                .assign_child_categories(hub_id, parent_id, child_ids)
         }
     }
 
