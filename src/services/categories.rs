@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
@@ -138,7 +138,7 @@ pub fn modify_category<R>(
     form: EditCategoryForm,
 ) -> ServiceResult<Category>
 where
-    R: CategoryWriter + ?Sized,
+    R: CategoryReader + CategoryWriter + ?Sized,
 {
     if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
         return Err(ServiceError::Unauthorized);
@@ -152,6 +152,39 @@ where
         return Err(ServiceError::Form(
             "Категория не может быть родителем самой себя.".to_string(),
         ));
+    }
+
+    if let Some(new_parent_id) = payload.update.parent_id {
+        let (_, categories) = repo
+            .list_categories(CategoryTreeQuery::new(user.hub_id).include_archived())
+            .map_err(ServiceError::from)?;
+
+        let mut children_by_parent: HashMap<i32, Vec<i32>> = HashMap::new();
+        for category in &categories {
+            if let Some(parent_id) = category.parent_id {
+                children_by_parent
+                    .entry(parent_id)
+                    .or_default()
+                    .push(category.id);
+            }
+        }
+
+        let mut stack = vec![payload.category_id];
+        let mut visited = HashSet::new();
+
+        while let Some(current) = stack.pop() {
+            if visited.insert(current) {
+                if let Some(children) = children_by_parent.get(&current) {
+                    stack.extend(children.iter().copied());
+                }
+            }
+        }
+
+        if visited.contains(&new_parent_id) {
+            return Err(ServiceError::Form(
+                "Категория не может быть родителем своей дочерней категории.".to_string(),
+            ));
+        }
     }
 
     repo.update_category(payload.category_id, user.hub_id, &payload.update)
@@ -177,13 +210,71 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
     use serde_json::Value;
 
+    use crate::domain::category::{NewCategory as DomainNewCategory, UpdateCategory as DomainUpdateCategory};
     use crate::forms::categories::AssignChildCategoriesForm;
     use crate::repository::mock::{MockCategoryReader, MockCategoryWriter};
+    use pushkind_common::repository::errors::RepositoryResult;
 
     fn fixed_datetime() -> NaiveDateTime {
         match NaiveDate::from_ymd_opt(2024, 1, 1) {
             Some(date) => date.and_hms_opt(0, 0, 0).unwrap_or_default(),
             None => NaiveDateTime::default(),
+        }
+    }
+
+    struct MockCategoryRepo {
+        pub reader: MockCategoryReader,
+        pub writer: MockCategoryWriter,
+    }
+
+    impl MockCategoryRepo {
+        fn new() -> Self {
+            Self {
+                reader: MockCategoryReader::new(),
+                writer: MockCategoryWriter::new(),
+            }
+        }
+    }
+
+    impl CategoryReader for MockCategoryRepo {
+        fn list_categories(&self, query: CategoryTreeQuery) -> RepositoryResult<(usize, Vec<Category>)> {
+            self.reader.list_categories(query)
+        }
+
+        fn get_category_by_id(
+            &self,
+            category_id: i32,
+            hub_id: i32,
+        ) -> RepositoryResult<Option<Category>> {
+            self.reader.get_category_by_id(category_id, hub_id)
+        }
+    }
+
+    impl CategoryWriter for MockCategoryRepo {
+        fn create_category(&self, new_category: &DomainNewCategory) -> RepositoryResult<Category> {
+            self.writer.create_category(new_category)
+        }
+
+        fn update_category(
+            &self,
+            category_id: i32,
+            hub_id: i32,
+            updates: &DomainUpdateCategory,
+        ) -> RepositoryResult<Category> {
+            self.writer.update_category(category_id, hub_id, updates)
+        }
+
+        fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()> {
+            self.writer.delete_category(category_id, hub_id)
+        }
+
+        fn assign_child_categories(
+            &self,
+            hub_id: i32,
+            parent_id: i32,
+            child_ids: &[i32],
+        ) -> RepositoryResult<Category> {
+            self.writer.assign_child_categories(hub_id, parent_id, child_ids)
         }
     }
 
@@ -377,7 +468,7 @@ mod tests {
 
     #[test]
     fn modify_category_requires_role() {
-        let repo = MockCategoryWriter::new();
+        let repo = MockCategoryRepo::new();
         let user = user_with_roles(&[]);
         let form = EditCategoryForm {
             category_id: 1,
@@ -394,7 +485,7 @@ mod tests {
 
     #[test]
     fn modify_category_rejects_self_parent() {
-        let repo = MockCategoryWriter::new();
+        let repo = MockCategoryRepo::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let form = EditCategoryForm {
             category_id: 3,
@@ -410,11 +501,67 @@ mod tests {
     }
 
     #[test]
-    fn modify_category_updates_entry() {
-        let mut repo = MockCategoryWriter::new();
+    fn modify_category_rejects_descendant_parent() {
+        let mut repo = MockCategoryRepo::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
 
-        repo.expect_update_category()
+        repo.reader
+            .expect_list_categories()
+            .times(1)
+            .withf(|query| {
+                assert_eq!(query.hub_id, 9);
+                assert!(query.include_archived);
+                true
+            })
+            .returning(|_| {
+                Ok((
+                    3,
+                    vec![
+                        sample_category(1, 9, "Root"),
+                        Category {
+                            id: 2,
+                            hub_id: 9,
+                            parent_id: Some(1),
+                            name: "Child".to_string(),
+                            description: None,
+                            is_archived: false,
+                            created_at: fixed_datetime(),
+                            updated_at: fixed_datetime(),
+                        },
+                        Category {
+                            id: 3,
+                            hub_id: 9,
+                            parent_id: Some(2),
+                            name: "Grandchild".to_string(),
+                            description: None,
+                            is_archived: false,
+                            created_at: fixed_datetime(),
+                            updated_at: fixed_datetime(),
+                        },
+                    ],
+                ))
+            });
+
+        let form = EditCategoryForm {
+            category_id: 1,
+            name: "Root".to_string(),
+            description: None,
+            parent_id: Some("3".to_string()),
+            is_archived: None,
+        };
+
+        let result = modify_category(&repo, &user, form);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
+    }
+
+    #[test]
+    fn modify_category_updates_entry() {
+        let mut repo = MockCategoryRepo::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        repo.writer
+            .expect_update_category()
             .times(1)
             .withf(|category_id, hub_id, updates| {
                 assert_eq!(*category_id, 3);
