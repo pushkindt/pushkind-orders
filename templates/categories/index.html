@@ -1,5 +1,4 @@
 {% extends 'base.html' %}
-{% import _self as category_macros %}
 
 {% macro render_category(category, categories, level) %}
 <div class="row my-1 py-1 border-top category-row" data-id="{{ category.id }}"{% if category.parent_id is not none %}
@@ -73,8 +72,8 @@
         {% set ns = namespace(has_visible=false) %}
         {% for category in categories.items %}
             {% if category.parent_id is none or category.parent_id not in page_ids %}
-                {% set ns.has_visible = true %}
-                {{ category_macros::render_category(category=category, categories=categories.items, level=0) }}
+                
+                {{ render_category(category=category, categories=categories.items, level=0) }}
             {% endif %}
         {% endfor %}
         {% if not ns.has_visible %}
