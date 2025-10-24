@@ -27,6 +27,8 @@ pub struct CategoryQuery {
 pub struct CategoriesPageData {
     /// Paginated list of categories displayed in the table.
     pub categories: Paginated<Category>,
+    /// Identifiers of the categories that belong to the current page.
+    pub page_category_ids: Vec<i32>,
     /// Search query echoed back to the template when present.
     pub search: Option<String>,
     /// Whether archived items were requested.
@@ -68,10 +70,12 @@ where
         .map_err(ServiceError::from)?;
 
     let total_pages = total.div_ceil(DEFAULT_ITEMS_PER_PAGE);
+    let page_category_ids = categories.iter().map(|category| category.id).collect();
     let categories = Paginated::new(categories, page, total_pages);
 
     Ok(CategoriesPageData {
         categories,
+        page_category_ids,
         search,
         show_archived,
     })
@@ -385,33 +389,30 @@ mod tests {
 
         repo.expect_list_categories()
             .times(1)
-            .withf(move |query| {
+            .returning(move |query| {
                 assert_eq!(query.hub_id, expected_hub);
                 assert!(query.include_archived);
                 assert_eq!(query.search.as_deref(), Some("veg"));
+
                 match &query.pagination {
                     Some(pagination) => {
                         assert_eq!(pagination.page, 2);
                         assert_eq!(pagination.per_page, DEFAULT_ITEMS_PER_PAGE);
+
+                        let mut child = sample_category(2, expected_hub, "Vegan");
+                        child.parent_id = Some(1);
+
+                        Ok((30, vec![child]))
                     }
                     None => panic!("expected pagination to be set"),
                 }
-                true
-            })
-            .returning(move |_| {
-                Ok((
-                    30,
-                    vec![
-                        sample_category(1, expected_hub, "Vegetables"),
-                        sample_category(2, expected_hub, "Vegan"),
-                    ],
-                ))
             });
 
         let result = load_categories(&repo, &user, query);
         let data = result.expect("expected success");
 
         assert!(data.show_archived);
+        assert_eq!(data.page_category_ids, vec![2]);
         assert_eq!(data.search.as_deref(), Some("veg"));
 
         let serialized =
@@ -427,7 +428,7 @@ mod tests {
             .get("items")
             .and_then(Value::as_array)
             .expect("expected items array");
-        assert_eq!(items.len(), 2);
+        assert_eq!(items.len(), 1);
     }
 
     #[test]

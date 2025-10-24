@@ -31,8 +31,17 @@ pub async fn show_categories(
                 &server_config.auth_service_url,
             );
             context.insert("categories", &data.categories);
+            context.insert("page_category_ids", &data.page_category_ids);
             context.insert("search", &data.search);
             context.insert("search_action", "/categories");
+            context.insert("show_archived", &data.show_archived);
+            let has_active_filters = data.show_archived
+                || data
+                    .search
+                    .as_ref()
+                    .map(|value| !value.trim().is_empty())
+                    .unwrap_or(false);
+            context.insert("has_active_filters", &has_active_filters);
             render_template(&tera, "categories/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {

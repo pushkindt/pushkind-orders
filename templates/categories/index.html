@@ -1,4 +1,41 @@
 {% extends 'base.html' %}
+{% import _self as category_macros %}
+
+{% macro render_category(category, categories, level) %}
+<div class="row my-1 py-1 border-top category-row" data-id="{{ category.id }}"{% if category.parent_id is not none %}
+    data-parent-id="{{ category.parent_id }}"{% endif %}>
+    <div class="col-sm">
+        <span class="d-sm-none fw-bold">Категория:</span>
+        <span class="d-inline-block" style="padding-left: {{ level * 24 }}px;">
+            {{ category.name }}
+        </span>
+        {% if category.is_archived %}
+        <span class="badge text-bg-warning ms-2">В архиве</span>
+        {% endif %}
+    </div>
+    <div class="col-sm">
+        <span class="d-sm-none fw-bold">Описание:</span>
+        {% if category.description %}
+        {{ category.description }}
+        {% else %}
+        <span class="text-muted">—</span>
+        {% endif %}
+    </div>
+    <div class="col-sm">
+        <span class="d-sm-none fw-bold">Добавлено:</span>
+        {{ category.created_at | date }}
+    </div>
+    <div class="col-sm">
+        <span class="d-sm-none fw-bold">Обновлено:</span>
+        {{ category.updated_at | date }}
+    </div>
+</div>
+{% for child in categories %}
+    {% if child.parent_id is not none and child.parent_id == category.id %}
+        {{ self::render_category(category=child, categories=categories, level=level + 1) }}
+    {% endif %}
+{% endfor %}
+{% endmacro render_category %}
 
 {% block content %}
 {% include 'components/navigation.html' %}
@@ -20,8 +57,44 @@
         </div>
     </div>
 
+    <div class="row d-none d-sm-flex fw-bold">
+        <div class="col-sm overflow-hidden">Категория</div>
+        <div class="col-sm overflow-hidden">Описание</div>
+        <div class="col-sm overflow-hidden">Добавлено</div>
+        <div class="col-sm overflow-hidden">Обновлено</div>
+    </div>
+    <div id="categoryList">
+        {% if categories.items | length == 0 %}
+        <div class="alert alert-warning my-2" role="alert">
+            Нет категорий для отображения.
+        </div>
+        {% else %}
+        {% set page_ids = page_category_ids | default(value=[]) %}
+        {% set ns = namespace(has_visible=false) %}
+        {% for category in categories.items %}
+            {% if category.parent_id is none or category.parent_id not in page_ids %}
+                {% set ns.has_visible = true %}
+                {{ category_macros::render_category(category=category, categories=categories.items, level=0) }}
+            {% endif %}
+        {% endfor %}
+        {% if not ns.has_visible %}
+        <div class="alert alert-warning my-2" role="alert">
+            Категории не имеют верхнего уровня или скрыты фильтрами.
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
 
+    {{ macros::pagination(
+        pages=categories.pages,
+        current_page=categories.page,
+        search_query=search | default(value=""),
+    ) }}
 </div>
+
+{% include 'categories/add_category_modal.html' %}
+{% include 'categories/edit_category_modal.html' %}
+{% include 'categories/filter_caterories_modal.html' %}
 
 {% endblock %}
 {% block scripts %}{% endblock %}
