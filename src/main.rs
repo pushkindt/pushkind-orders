@@ -14,11 +14,15 @@ use pushkind_common::routes::{logout, not_assigned};
 use tera::Tera;
 
 use pushkind_orders::repository::DieselRepository;
+use pushkind_orders::routes::categories::{
+    add_category, assign_category, delete_category, edit_category, show_categories,
+};
 use pushkind_orders::routes::main::show_index;
 use pushkind_orders::routes::price_levels::{
     add_price_level, delete_price_level, show_price_levels, upload_price_levels,
 };
 use pushkind_orders::routes::products::{add_product, show_products, upload_products};
+use pushkind_orders::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -90,6 +94,15 @@ async fn main() -> std::io::Result<()> {
                 web::scope("")
                     .wrap(RedirectUnauthorized)
                     .service(show_index)
+                    .service(show_categories)
+                    .service(add_category)
+                    .service(assign_category)
+                    .service(edit_category)
+                    .service(delete_category)
+                    .service(show_tags)
+                    .service(add_tag)
+                    .service(edit_tag)
+                    .service(delete_tag)
                     .service(show_price_levels)
                     .service(add_price_level)
                     .service(upload_price_levels)

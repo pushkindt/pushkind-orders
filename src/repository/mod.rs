@@ -3,16 +3,20 @@ use pushkind_common::pagination::Pagination;
 use pushkind_common::repository::errors::RepositoryResult;
 
 use crate::domain::{
+    category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
     order::{NewOrder, Order, OrderListQuery, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
+    tag::{NewTag, Tag, TagListQuery, UpdateTag},
     user::{NewUser, UpdateUser, User},
 };
 
+pub mod category;
 pub mod order;
 pub mod price_level;
 pub mod product;
+pub mod tag;
 pub mod user;
 
 #[cfg(test)]
@@ -96,6 +100,47 @@ pub trait OrderWriter {
         updates: &UpdateOrder,
     ) -> RepositoryResult<Order>;
     fn delete_order(&self, order_id: i32, hub_id: i32) -> RepositoryResult<()>;
+}
+
+/// Read-only operations over tag records.
+pub trait TagReader {
+    fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<Tag>)>;
+}
+
+/// Write operations over tag records.
+pub trait TagWriter {
+    fn create_tag(&self, new_tag: &NewTag) -> RepositoryResult<Tag>;
+    fn update_tag(&self, tag_id: i32, hub_id: i32, updates: &UpdateTag) -> RepositoryResult<Tag>;
+    fn delete_tag(&self, tag_id: i32, hub_id: i32) -> RepositoryResult<()>;
+}
+
+/// Read operations over category records.
+pub trait CategoryReader {
+    fn list_categories(&self, query: CategoryTreeQuery)
+    -> RepositoryResult<(usize, Vec<Category>)>;
+    fn get_category_by_id(
+        &self,
+        category_id: i32,
+        hub_id: i32,
+    ) -> RepositoryResult<Option<Category>>;
+}
+
+/// Write operations over category records.
+pub trait CategoryWriter {
+    fn create_category(&self, new_category: &NewCategory) -> RepositoryResult<Category>;
+    fn update_category(
+        &self,
+        category_id: i32,
+        hub_id: i32,
+        updates: &UpdateCategory,
+    ) -> RepositoryResult<Category>;
+    fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    fn assign_child_categories(
+        &self,
+        hub_id: i32,
+        parent_id: i32,
+        child_ids: &[i32],
+    ) -> RepositoryResult<Category>;
 }
 
 #[derive(Debug, Clone)]

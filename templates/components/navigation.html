@@ -26,9 +26,6 @@
                     <li class="nav-item">
                         <a class="nav-link {%if current_page == 'tags'%}active{%endif%}" href="/tags">Теги</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link {%if current_page == 'discounts'%}active{%endif%}" href="/discounts">Скидки</a>
-                    </li>
                 </ul>
                 <form class="d-flex w-100" role="search" action="{{search_action | default(value='/')}}">
                     <div class="input-group me-2">

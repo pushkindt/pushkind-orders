@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use chrono::{Local, NaiveDateTime};
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +41,7 @@ pub struct NewCategory {
 impl NewCategory {
     /// Build a new category payload with the supplied details and current timestamp.
     pub fn new(hub_id: i32, name: impl Into<String>) -> Self {
-        let now = chrono::Local::now().naive_utc();
+        let now = Local::now().naive_utc();
         Self {
             hub_id,
             parent_id: None,
@@ -64,6 +64,39 @@ impl NewCategory {
     }
 }
 
+/// Patch data applied when updating an existing category.
+#[derive(Debug, Clone)]
+pub struct UpdateCategory {
+    /// Updated name for the category.
+    pub name: String,
+    /// New description value; `None` clears the description.
+    pub description: Option<String>,
+    /// New parent category identifier; `None` clears the relationship.
+    pub parent_id: Option<i32>,
+    /// Optional archive flag toggle.
+    pub is_archived: Option<bool>,
+    /// Timestamp captured when the patch was created.
+    pub updated_at: NaiveDateTime,
+}
+
+impl UpdateCategory {
+    /// Build a category update payload with the supplied values.
+    pub fn new(
+        name: String,
+        description: Option<String>,
+        parent_id: Option<i32>,
+        is_archived: Option<bool>,
+    ) -> Self {
+        Self {
+            name,
+            description,
+            parent_id,
+            is_archived,
+            updated_at: Local::now().naive_utc(),
+        }
+    }
+}
+
 /// Query definition used to retrieve the full category tree for a hub.
 #[derive(Debug, Clone)]
 pub struct CategoryTreeQuery {
@@ -71,6 +104,8 @@ pub struct CategoryTreeQuery {
     pub hub_id: i32,
     /// Whether archived categories should be included in the results.
     pub include_archived: bool,
+    /// Optional case-insensitive substring search applied to category names.
+    pub search: Option<String>,
     /// Optional pagination options applied when retrieving a flattened list.
     pub pagination: Option<Pagination>,
 }
@@ -81,6 +116,7 @@ impl CategoryTreeQuery {
         Self {
             hub_id,
             include_archived: false,
+            search: None,
             pagination: None,
         }
     }
@@ -94,6 +130,12 @@ impl CategoryTreeQuery {
     /// Apply pagination to the query when the repository returns a flattened list.
     pub fn paginate(mut self, page: usize, per_page: usize) -> Self {
         self.pagination = Some(Pagination { page, per_page });
+        self
+    }
+
+    /// Filter results by a search term applied to the name and description.
+    pub fn search(mut self, value: impl Into<String>) -> Self {
+        self.search = Some(value.into());
         self
     }
 }
