@@ -105,7 +105,7 @@ pub fn assign_child_categories<R>(
     form: AssignChildCategoriesForm,
 ) -> ServiceResult<Category>
 where
-    R: CategoryWriter + ?Sized,
+    R: CategoryReader + CategoryWriter + ?Sized,
 {
     if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
         return Err(ServiceError::Unauthorized);
@@ -116,11 +116,28 @@ where
         return Err(ServiceError::Form("Некорректная категория.".to_string()));
     }
 
+    let (_, categories) = repo
+        .list_categories(CategoryTreeQuery::new(user.hub_id).include_archived())
+        .map_err(ServiceError::from)?;
+
+    let parent_map = build_parent_map(&categories);
+    if !parent_map.contains_key(&payload.parent_id) {
+        return Err(ServiceError::Form("Некорректная категория.".to_string()));
+    }
+
+    let ancestors = collect_ancestors(payload.parent_id, &parent_map);
+
     let mut unique_children = HashSet::new();
     let mut child_ids = Vec::new();
     for child in payload.child_ids {
         if child <= 0 || child == payload.parent_id {
             continue;
+        }
+
+        if ancestors.contains(&child) {
+            return Err(ServiceError::Form(
+                "Категория не может быть дочерней категорией своего потомка.".to_string(),
+            ));
         }
         if unique_children.insert(child) {
             child_ids.push(child);
@@ -159,28 +176,10 @@ where
             .list_categories(CategoryTreeQuery::new(user.hub_id).include_archived())
             .map_err(ServiceError::from)?;
 
-        let mut children_by_parent: HashMap<i32, Vec<i32>> = HashMap::new();
-        for category in &categories {
-            if let Some(parent_id) = category.parent_id {
-                children_by_parent
-                    .entry(parent_id)
-                    .or_default()
-                    .push(category.id);
-            }
-        }
+        let children_by_parent = build_children_map(&categories);
+        let descendants = collect_descendants(payload.category_id, &children_by_parent);
 
-        let mut stack = vec![payload.category_id];
-        let mut visited = HashSet::new();
-
-        while let Some(current) = stack.pop() {
-            if visited.insert(current)
-                && let Some(children) = children_by_parent.get(&current)
-            {
-                stack.extend(children.iter().copied());
-            }
-        }
-
-        if visited.contains(&new_parent_id) {
+        if descendants.contains(&new_parent_id) {
             return Err(ServiceError::Form(
                 "Категория не может быть родителем своей дочерней категории.".to_string(),
             ));
@@ -202,6 +201,61 @@ where
 
     repo.delete_category(category_id, user.hub_id)
         .map_err(ServiceError::from)
+}
+
+fn build_parent_map(categories: &[Category]) -> HashMap<i32, Option<i32>> {
+    categories
+        .iter()
+        .map(|category| (category.id, category.parent_id))
+        .collect()
+}
+
+fn collect_ancestors(category_id: i32, parent_map: &HashMap<i32, Option<i32>>) -> HashSet<i32> {
+    let mut ancestors = HashSet::new();
+    let mut current = Some(category_id);
+
+    while let Some(node) = current {
+        if !ancestors.insert(node) {
+            break;
+        }
+
+        current = parent_map.get(&node).copied().flatten();
+    }
+
+    ancestors
+}
+
+fn build_children_map(categories: &[Category]) -> HashMap<i32, Vec<i32>> {
+    let mut children_by_parent: HashMap<i32, Vec<i32>> = HashMap::new();
+
+    for category in categories {
+        if let Some(parent_id) = category.parent_id {
+            children_by_parent
+                .entry(parent_id)
+                .or_default()
+                .push(category.id);
+        }
+    }
+
+    children_by_parent
+}
+
+fn collect_descendants(
+    category_id: i32,
+    children_by_parent: &HashMap<i32, Vec<i32>>,
+) -> HashSet<i32> {
+    let mut stack = vec![category_id];
+    let mut visited = HashSet::new();
+
+    while let Some(current) = stack.pop() {
+        if visited.insert(current)
+            && let Some(children) = children_by_parent.get(&current)
+        {
+            stack.extend(children.iter().copied());
+        }
+    }
+
+    visited
 }
 
 #[cfg(test)]
@@ -435,7 +489,7 @@ mod tests {
 
     #[test]
     fn assign_child_categories_requires_role() {
-        let repo = MockCategoryWriter::new();
+        let repo = MockCategoryRepo::new();
         let user = user_with_roles(&[]);
         let form = AssignChildCategoriesForm {
             parent_id: 5,
@@ -449,10 +503,23 @@ mod tests {
 
     #[test]
     fn assign_child_categories_filters_invalid_ids() {
-        let mut repo = MockCategoryWriter::new();
+        let mut repo = MockCategoryRepo::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
 
-        repo.expect_assign_child_categories()
+        repo.reader
+            .expect_list_categories()
+            .times(1)
+            .returning(|_| {
+                let parent = sample_category(5, 9, "Parent");
+                let mut child_a = sample_category(6, 9, "Child A");
+                child_a.parent_id = Some(5);
+                let mut child_b = sample_category(8, 9, "Child B");
+                child_b.parent_id = Some(5);
+                Ok((3, vec![parent, child_a, child_b]))
+            });
+
+        repo.writer
+            .expect_assign_child_categories()
             .times(1)
             .withf(|hub_id, parent_id, child_ids| {
                 assert_eq!(*hub_id, 9);
@@ -470,6 +537,33 @@ mod tests {
         let result = assign_child_categories(&repo, &user, form);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn assign_child_categories_rejects_ancestor_loop() {
+        let mut repo = MockCategoryRepo::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        repo.reader
+            .expect_list_categories()
+            .times(1)
+            .returning(|_| {
+                let root = sample_category(1, 9, "Root");
+                let mut middle = sample_category(2, 9, "Middle");
+                middle.parent_id = Some(1);
+                let mut leaf = sample_category(3, 9, "Leaf");
+                leaf.parent_id = Some(2);
+                Ok((3, vec![root, middle, leaf]))
+            });
+
+        let form = AssignChildCategoriesForm {
+            parent_id: 3,
+            child_ids: vec![1],
+        };
+
+        let result = assign_child_categories(&repo, &user, form);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
     }
 
     #[test]
