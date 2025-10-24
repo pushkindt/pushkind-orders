@@ -1,0 +1,69 @@
+<div class="modal fade" id="editTagModal" tabindex="-1" aria-labelledby="editTagModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form action="/tags/edit" method="POST">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="editTagModalLabel">Редактировать тег</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editTagId" name="tag_id">
+                    <div class="mb-3">
+                        <label for="editTagName" class="form-label">Название тега</label>
+                        <input type="text"
+                               class="form-control"
+                               id="editTagName"
+                               name="name"
+                               placeholder="Например: «Новинки»"
+                               maxlength="128"
+                               required>
+                        <div class="form-text">
+                            Обновите название и сохраните изменения.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const modalElement = document.getElementById("editTagModal");
+        if (!modalElement) {
+            return;
+        }
+
+        const form = modalElement.querySelector("form");
+        const idInput = modalElement.querySelector("#editTagId");
+        const nameInput = modalElement.querySelector("#editTagName");
+
+        modalElement.addEventListener("show.bs.modal", event => {
+            const trigger = event.relatedTarget;
+            if (!trigger || !idInput || !nameInput) {
+                return;
+            }
+
+            const tagId = trigger.getAttribute("data-tag-id") || "";
+            const tagName = trigger.getAttribute("data-tag-name") || "";
+
+            idInput.value = tagId;
+            nameInput.value = tagName;
+            nameInput.focus();
+        });
+
+        modalElement.addEventListener("hidden.bs.modal", () => {
+            if (!form || !idInput || !nameInput) {
+                return;
+            }
+
+            form.reset();
+            idInput.value = "";
+            nameInput.value = "";
+        });
+    });
+</script>
