@@ -13,8 +13,62 @@
         </div>
     </div>
 
+    <div class="row d-none d-sm-flex fw-bold">
+        <div class="col-sm overflow-hidden">Название</div>
+        <div class="col-sm overflow-hidden">Добавлено</div>
+        <div class="col-sm overflow-hidden">Обновлено</div>
+        <div class="col-sm-2 overflow-hidden text-sm-end">Действия</div>
+    </div>
+    <div id="tagList">
+        {% for tag in tags.items %}
+        <div class="row my-1 py-1 border-top" data-id="{{ tag.id }}">
+            <div class="col-sm">
+                <span class="d-sm-none fw-bold">Название:</span>
+                {{ tag.name }}
+            </div>
+            <div class="col-sm">
+                <span class="d-sm-none fw-bold">Добавлено:</span>
+                {{ tag.created_at | date }}
+            </div>
+            <div class="col-sm">
+                <span class="d-sm-none fw-bold">Обновлено:</span>
+                {{ tag.updated_at | date }}
+            </div>
+            <div class="col-sm-2 col-12 d-flex justify-content-sm-end align-items-center mt-2 mt-sm-0">
+                <span class="d-sm-none fw-bold me-2">Действия:</span>
+                <button class="btn btn-sm btn-outline-warning d-flex align-items-center gap-2 me-2"
+                        type="button"
+                        data-bs-toggle="modal"
+                        data-bs-target="#editTagModal"
+                        data-tag-id="{{ tag.id }}"
+                        data-tag-name="{{ tag.name }}">
+                    <i class="bi bi-pen"></i>
+                    <span class="d-none d-sm-inline">Изменить</span>
+                </button>
+                <form method="POST" action="/tags/{{ tag.id }}/delete">
+                    <button class="btn btn-sm btn-outline-danger d-flex align-items-center gap-2" type="submit">
+                        <i class="bi bi-trash"></i>
+                        <span class="d-none d-sm-inline">Удалить</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-warning my-2" role="alert">
+            Нет тегов для отображения.
+        </div>
+        {% endfor %}
+    </div>
 
+    {{ macros::pagination(
+        pages=tags.pages,
+        current_page=tags.page,
+        search_query=search | default(value=""),
+    ) }}
 </div>
+
+{% include 'tags/add_tags_modal.html' %}
+{% include 'tags/edit_tags_modal.html' %}
 
 {% endblock %}
 {% block scripts %}{% endblock %}
