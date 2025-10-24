@@ -50,6 +50,9 @@ cargo fmt --all -- --check
 - Sanitize and validate user input early using `validator` and `ammonia` helpers
   from the form layer.
 - Prefer dependency injection through function parameters over global state.
+- For Diesel update models, avoid nested optionals; prefer single-layer `Option<T>`
+  fields and rely on `#[diesel(treat_none_as_null = true)]` when nullable columns
+  need to be cleared.
 - Document all public APIs and any breaking changes.
 
 ## Database Guidelines

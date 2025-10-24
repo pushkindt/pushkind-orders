@@ -1,14 +1,16 @@
 use mockall::mock;
 
 use super::{
-    OrderReader, OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter,
-    UserListQuery, UserReader, UserWriter,
+    CategoryReader, CategoryWriter, OrderReader, OrderWriter, PriceLevelReader, PriceLevelWriter,
+    ProductReader, ProductWriter, TagReader, TagWriter, UserListQuery, UserReader, UserWriter,
 };
 use crate::domain::{
+    category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
     order::{NewOrder, Order, OrderListQuery, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
+    tag::{NewTag, Tag, TagListQuery, UpdateTag},
     user::{NewUser, UpdateUser, User},
 };
 use pushkind_common::repository::errors::RepositoryResult;
@@ -88,5 +90,43 @@ mock! {
         fn create_user(&self, new_user: &NewUser) -> RepositoryResult<User>;
         fn update_user(&self, user_id: i32, hub_id: i32, updates: &UpdateUser) -> RepositoryResult<User>;
         fn delete_user(&self, user_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    }
+}
+
+mock! {
+    pub TagReader {}
+
+    impl TagReader for TagReader {
+        fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<Tag>)>;
+    }
+}
+
+mock! {
+    pub TagWriter {}
+
+    impl TagWriter for TagWriter {
+        fn create_tag(&self, new_tag: &NewTag) -> RepositoryResult<Tag>;
+        fn update_tag(&self, tag_id: i32, hub_id: i32, updates: &UpdateTag) -> RepositoryResult<Tag>;
+        fn delete_tag(&self, tag_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    }
+}
+
+mock! {
+    pub CategoryReader {}
+
+    impl CategoryReader for CategoryReader {
+        fn list_categories(&self, query: CategoryTreeQuery) -> RepositoryResult<(usize, Vec<Category>)>;
+        fn get_category_by_id(&self, category_id: i32, hub_id: i32) -> RepositoryResult<Option<Category>>;
+    }
+}
+
+mock! {
+    pub CategoryWriter {}
+
+    impl CategoryWriter for CategoryWriter {
+        fn create_category(&self, new_category: &NewCategory) -> RepositoryResult<Category>;
+        fn update_category(&self, category_id: i32, hub_id: i32, updates: &UpdateCategory) -> RepositoryResult<Category>;
+        fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()>;
+        fn assign_child_categories(&self, hub_id: i32, parent_id: i32, child_ids: &[i32]) -> RepositoryResult<Category>;
     }
 }

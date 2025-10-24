@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'components/navigation.html' %}
+
+<div class="container bg-white border rounded my-2">
+
+    <div class="row mb-3">
+        <div class="col text-center add-item-container">
+            <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#addTagModal">
+                <i class="bi bi-plus-circle"></i>
+            </button>
+        </div>
+    </div>
+
+
+</div>
+
+{% endblock %}
+{% block scripts %}{% endblock %}

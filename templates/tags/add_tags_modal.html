@@ -1,0 +1,31 @@
+<div class="modal fade" id="addTagModal" tabindex="-1" aria-labelledby="addTagModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form action="/tags/add" method="POST">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="addTagModalLabel">Добавить тег</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="addTagName" class="form-label">Название тега</label>
+                        <input type="text"
+                               class="form-control"
+                               id="addTagName"
+                               name="name"
+                               placeholder="Например: «Новинки»"
+                               maxlength="128"
+                               required>
+                        <div class="form-text">
+                            До 128 символов. Используйте уникальные и понятные названия.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
