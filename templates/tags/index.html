@@ -63,7 +63,7 @@
     {{ macros::pagination(
         pages=tags.pages,
         current_page=tags.page,
-        search=search | default(value=""),
+        search_query=search | default(value=""),
     ) }}
 </div>
 
