@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'components/navigation.html' %}
+
+<div class="container bg-white border rounded my-2">
+
+    <div class="row mb-3">
+        <div class="col text-center add-item-container">
+            <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
+                <i class="bi bi-plus-circle"></i>
+            </button>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 mt-1" type="button"
+                data-bs-toggle="modal" data-bs-target="#categoryFiltersModal">
+                <i class="bi bi-funnel"></i>
+                <span id="activeFiltersBadge" class="badge text-bg-primary {% if has_active_filters %}{% else %}d-none{% endif %}">•</span>
+            </button>
+        </div>
+    </div>
+
+
+</div>
+
+{% endblock %}
+{% block scripts %}{% endblock %}
