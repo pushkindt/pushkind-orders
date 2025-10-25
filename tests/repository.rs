@@ -529,7 +529,6 @@ fn test_order_repository_crud() {
         .with_description("Fresh apple");
 
     let new_order = NewOrder::new(1, 300, "USD")
-        .with_customer_id(42)
         .with_reference("REF-001")
         .with_notes("Handle with care")
         .with_status(OrderStatus::Pending)
@@ -568,12 +567,6 @@ fn test_order_repository_crud() {
     assert_eq!(total_status, 1);
     assert_eq!(orders_status[0].id, order.id);
 
-    let (total_customer, orders_customer) = repo
-        .list_orders(OrderListQuery::new(1).customer_id(42))
-        .expect("failed to filter by customer");
-    assert_eq!(total_customer, 1);
-    assert_eq!(orders_customer[0].id, order.id);
-
     let (total_search, orders_search) = repo
         .list_orders(OrderListQuery::new(1).search("REF-001"))
         .expect("failed to search orders");
@@ -591,7 +584,7 @@ fn test_order_repository_crud() {
         notes: Some("Pack immediately".to_string()),
         total_cents: order.total_cents,
         currency: order.currency.clone(),
-        customer_id: Some(43),
+        customer_id: None,
         reference: order.reference.clone(),
         products: Some(product_updates.clone()),
         updated_at: chrono::Utc::now().naive_utc(),
@@ -601,7 +594,6 @@ fn test_order_repository_crud() {
         .update_order(order.id, 1, &updates)
         .expect("failed to update order");
     assert_eq!(updated.status, OrderStatus::Processing);
-    assert_eq!(updated.customer_id, Some(43));
     assert_eq!(updated.products.len(), 1);
     assert_eq!(
         updated.products[0].description.as_deref(),
