@@ -1,0 +1,154 @@
+<div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form action="/products/edit" method="POST">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="editProductModalLabel">Редактировать товар</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editProductId" name="product_id">
+                    <div class="row mb-3">
+                        <label for="editProductName" class="col-md-3 col-form-label">Название</label>
+                        <div class="col-md-9">
+                            <input name="name" type="text" class="form-control" id="editProductName"
+                                   placeholder="Например: «Кофе арабика»" maxlength="128" required>
+                            <div class="form-text">
+                                Название будет обновлено для всех уровней цен и заказов.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="editProductSku" class="col-md-3 col-form-label">Артикул</label>
+                        <div class="col-md-9">
+                            <input name="sku" type="text" class="form-control" id="editProductSku"
+                                   placeholder="Необязательно" maxlength="64">
+                            <div class="form-text">
+                                Очистите поле, чтобы убрать SKU.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="editProductDescription" class="col-md-3 col-form-label">Описание</label>
+                        <div class="col-md-9">
+                            <textarea name="description" class="form-control" id="editProductDescription" rows="4"
+                                      placeholder="Краткое описание товара"></textarea>
+                            <div class="form-text">
+                                Удалите текст, чтобы очистить описание.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="editProductUnits" class="col-md-3 col-form-label">Единица измерения</label>
+                        <div class="col-md-5 col-lg-4">
+                            <input name="units" type="text" class="form-control" id="editProductUnits"
+                                   placeholder="Например: кг" maxlength="32">
+                            <div class="form-text">
+                                Оставьте пустым, чтобы скрыть единицу измерения.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="editProductCurrency" class="col-md-3 col-form-label">Валюта</label>
+                        <div class="col-md-5 col-lg-4">
+                            <input name="currency" type="text" class="form-control text-uppercase" id="editProductCurrency"
+                                   placeholder="Например: USD" maxlength="3" required>
+                            <div class="form-text">
+                                Трёхсимвольный код ISO&nbsp;4217.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="true" id="editProductArchived" name="is_archived">
+                                <label class="form-check-label" for="editProductArchived">
+                                    Архивировать товар
+                                </label>
+                            </div>
+                            <div class="form-text">
+                                Архивированные товары не отображаются покупателям, но сохраняются в истории.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const modalElement = document.getElementById("editProductModal");
+        if (!modalElement) {
+            return;
+        }
+
+        const form = modalElement.querySelector("form");
+        const idInput = modalElement.querySelector("#editProductId");
+        const nameInput = modalElement.querySelector("#editProductName");
+        const skuInput = modalElement.querySelector("#editProductSku");
+        const descriptionInput = modalElement.querySelector("#editProductDescription");
+        const unitsInput = modalElement.querySelector("#editProductUnits");
+        const currencyInput = modalElement.querySelector("#editProductCurrency");
+        const archivedInput = modalElement.querySelector("#editProductArchived");
+
+        const toBoolean = (value) => {
+            if (typeof value !== "string") {
+                return false;
+            }
+            return ["1", "true", "yes"].includes(value.toLowerCase());
+        };
+
+        modalElement.addEventListener("show.bs.modal", (event) => {
+            const trigger = event.relatedTarget;
+            if (!trigger || !form || !idInput || !nameInput || !currencyInput || !archivedInput) {
+                return;
+            }
+
+            const dataset = trigger.dataset || {};
+            idInput.value = dataset.productId || "";
+            nameInput.value = dataset.productName || "";
+            skuInput.value = dataset.productSku || "";
+            descriptionInput.value = dataset.productDescription || "";
+            unitsInput.value = dataset.productUnits || "";
+
+            const currency = dataset.productCurrency || "";
+            currencyInput.value = currency.toUpperCase();
+
+            archivedInput.checked = toBoolean(dataset.productArchived);
+
+            // Focus name for quick editing.
+            nameInput.focus();
+        });
+
+        modalElement.addEventListener("hidden.bs.modal", () => {
+            if (!form) {
+                return;
+            }
+            form.reset();
+            if (idInput) {
+                idInput.value = "";
+            }
+            if (skuInput) {
+                skuInput.value = "";
+            }
+            if (descriptionInput) {
+                descriptionInput.value = "";
+            }
+            if (unitsInput) {
+                unitsInput.value = "";
+            }
+        });
+
+        if (currencyInput) {
+            currencyInput.addEventListener("blur", () => {
+                currencyInput.value = (currencyInput.value || "").trim().toUpperCase();
+            });
+        }
+    });
+</script>

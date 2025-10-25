@@ -4,6 +4,7 @@ use pushkind_common::repository::errors::RepositoryResult;
 
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
+    customer::{Customer, NewCustomer},
     order::{NewOrder, Order, OrderListQuery, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
@@ -13,6 +14,7 @@ use crate::domain::{
 };
 
 pub mod category;
+pub mod customer;
 pub mod order;
 pub mod price_level;
 pub mod product;
@@ -21,6 +23,64 @@ pub mod user;
 
 #[cfg(test)]
 pub mod mock;
+
+#[derive(Debug, Clone)]
+/// Query definition used to list customers for a hub.
+pub struct CustomerListQuery {
+    pub hub_id: i32,
+    pub search: Option<String>,
+    pub price_level_id: Option<i32>,
+    pub pagination: Option<Pagination>,
+}
+
+impl CustomerListQuery {
+    /// Construct a query that targets all customers belonging to `hub_id`.
+    pub fn new(hub_id: i32) -> Self {
+        Self {
+            hub_id,
+            search: None,
+            price_level_id: None,
+            pagination: None,
+        }
+    }
+
+    /// Filter the results by a case-insensitive search on name or email fields.
+    pub fn search(mut self, term: impl Into<String>) -> Self {
+        self.search = Some(term.into());
+        self
+    }
+
+    /// Restrict the results to customers assigned to the specified price level.
+    pub fn price_level(mut self, price_level_id: i32) -> Self {
+        self.price_level_id = Some(price_level_id);
+        self
+    }
+
+    /// Apply pagination to the query with the given page number and page size.
+    pub fn paginate(mut self, page: usize, per_page: usize) -> Self {
+        self.pagination = Some(Pagination { page, per_page });
+        self
+    }
+}
+
+/// Read-only operations over customer records.
+pub trait CustomerReader {
+    fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Customer>>;
+    fn get_customer_by_email(&self, email: &str, hub_id: i32)
+    -> RepositoryResult<Option<Customer>>;
+    fn list_customers(&self, query: CustomerListQuery) -> RepositoryResult<(usize, Vec<Customer>)>;
+}
+
+/// Write operations over customer records.
+pub trait CustomerWriter {
+    fn create_customer(&self, new_customer: &NewCustomer) -> RepositoryResult<Customer>;
+    fn assign_price_level_to_customers(
+        &self,
+        hub_id: i32,
+        customer_ids: &[i32],
+        price_level_id: Option<i32>,
+    ) -> RepositoryResult<()>;
+}
 
 #[derive(Clone)]
 /// Diesel-backed repository implementation that wraps an r2d2 pool.

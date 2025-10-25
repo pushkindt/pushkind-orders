@@ -32,7 +32,7 @@ CREATE INDEX products_is_archived_idx ON products(is_archived);
 CREATE TABLE orders (
     id INTEGER NOT NULL PRIMARY KEY,
     hub_id INTEGER NOT NULL,
-    customer_id INTEGER,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
     reference TEXT,
     status TEXT NOT NULL,
     notes TEXT,
