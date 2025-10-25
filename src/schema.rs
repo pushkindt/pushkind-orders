@@ -126,6 +126,7 @@ diesel::table! {
 
 diesel::joinable!(customers -> price_levels (price_level_id));
 diesel::joinable!(order_products -> orders (order_id));
+diesel::joinable!(orders -> customers (customer_id));
 diesel::joinable!(product_price_levels -> price_levels (price_level_id));
 diesel::joinable!(product_price_levels -> products (product_id));
 diesel::joinable!(product_tags -> products (product_id));
