@@ -14,6 +14,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    customers (id) {
+        id -> Integer,
+        hub_id -> Integer,
+        name -> Text,
+        email -> Text,
+        price_level_id -> Nullable<Integer>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     order_products (id) {
         id -> Integer,
         order_id -> Integer,
@@ -112,6 +124,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(customers -> price_levels (price_level_id));
 diesel::joinable!(order_products -> orders (order_id));
 diesel::joinable!(product_price_levels -> price_levels (price_level_id));
 diesel::joinable!(product_price_levels -> products (product_id));
@@ -121,6 +134,7 @@ diesel::joinable!(products -> categories (category_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     categories,
+    customers,
     order_products,
     orders,
     price_levels,

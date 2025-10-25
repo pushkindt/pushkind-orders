@@ -6,8 +6,11 @@ use crate::domain::order::{
     UpdateOrder as DomainUpdateOrder,
 };
 
-#[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
-#[diesel(table_name = crate::schema::orders)]
+#[derive(Debug, Clone, Identifiable, Queryable, Selectable, Associations)]
+#[diesel(
+    table_name = crate::schema::orders,
+    belongs_to(super::customer::Customer, foreign_key = customer_id)
+)]
 pub struct Order {
     pub id: i32,
     pub hub_id: i32,
