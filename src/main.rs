@@ -11,6 +11,7 @@ use pushkind_common::db::establish_connection_pool;
 use pushkind_common::middleware::RedirectUnauthorized;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{logout, not_assigned};
+use pushkind_orders::models::config::ServerConfig;
 use tera::Tera;
 
 use pushkind_orders::repository::DieselRepository;
@@ -53,6 +54,9 @@ async fn main() -> std::io::Result<()> {
         secret: secret.unwrap_or_default(),
         auth_service_url,
     };
+
+    let crm_service_url = env::var("CRM_SERVICE_URL").unwrap_or_default();
+    let server_config = ServerConfig { crm_service_url };
 
     let domain = env::var("DOMAIN").unwrap_or("localhost".to_string());
 
@@ -115,6 +119,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(tera.clone()))
             .app_data(web::Data::new(repo.clone()))
             .app_data(web::Data::new(common_config.clone()))
+            .app_data(web::Data::new(server_config.clone()))
     })
     .bind((address, port))?
     .run()

@@ -1,0 +1,108 @@
+<div class="modal fade" id="addCategoryModal" tabindex="-1" aria-labelledby="addCategoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form action="/categories/add" method="POST">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="addCategoryModalLabel">Добавить категорию</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <label for="addCategoryName" class="col-md-4 col-form-label">Название</label>
+                        <div class="col-md-8">
+                            <input name="name" type="text" class="form-control" id="addCategoryName"
+                                placeholder="Например: «Горячие напитки»" maxlength="128" required>
+                            <div class="form-text">Укажите уникальное имя категории.</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="addCategoryDescription" class="col-md-4 col-form-label">Описание</label>
+                        <div class="col-md-8">
+                            <textarea name="description" class="form-control" id="addCategoryDescription" rows="4"
+                                placeholder="Краткое описание категории" maxlength="2048"></textarea>
+                            <div class="form-text">Необязательно. Можно оставить пустым.</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="addCategoryParent" class="col-md-4 col-form-label">Родительская категория</label>
+                        <div class="col-md-8">
+                            <select name="parent_id" id="addCategoryParent" class="form-select">
+                                <option value="">Нет родителя</option>
+                            </select>
+                            <div class="form-text">Оставьте «Нет родителя», чтобы создать категорию верхнего уровня.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const modalElement = document.getElementById("addCategoryModal");
+        if (!modalElement) {
+            return;
+        }
+
+        const form = modalElement.querySelector("form");
+        const nameInput = modalElement.querySelector("#addCategoryName");
+        const parentSelect = modalElement.querySelector("#addCategoryParent");
+        const buildOption = (value, label) => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = label;
+            return option;
+        };
+        const setParentOptions = (options) => {
+            if (!parentSelect) {
+                return;
+            }
+            parentSelect.innerHTML = "";
+            options.forEach((option) => parentSelect.appendChild(option));
+        };
+        const normalizeDatasetValue = (value) =>
+            typeof value === "string" ? value.trim() : "";
+
+        modalElement.addEventListener("show.bs.modal", (event) => {
+            const trigger = event.relatedTarget;
+            if (!parentSelect) {
+                return;
+            }
+
+            const dataset = (trigger && trigger.dataset) || {};
+            const parentId = normalizeDatasetValue(
+                dataset.parentId ||
+                    dataset.parentCategoryId ||
+                    dataset.categoryParentId
+            );
+            const parentName = normalizeDatasetValue(
+                dataset.parentName ||
+                    dataset.parentCategoryName ||
+                    dataset.categoryParentName
+            );
+
+            if (parentId && parentName) {
+                setParentOptions([buildOption(parentId, parentName)]);
+            } else {
+                setParentOptions([buildOption("", "Нет родителя")]);
+            }
+        });
+
+        modalElement.addEventListener("shown.bs.modal", () => {
+            if (nameInput) {
+                nameInput.focus();
+            }
+        });
+
+        modalElement.addEventListener("hidden.bs.modal", () => {
+            if (form) {
+                form.reset();
+            }
+        });
+    });
+</script>

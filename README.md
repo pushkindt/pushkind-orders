@@ -83,6 +83,7 @@ ones are:
 | `PORT` | HTTP port | `8080` |
 | `ADDRESS` | Interface to bind | `127.0.0.1` |
 | `DOMAIN` | Cookie domain applied to session cookies (without protocol) | `localhost` |
+| `CRM_SERVICE_URL` | Base URL for linking back to the CRM UI | _optional_ |
 
 Create a `.env` file if you want these values loaded automatically via
 [`dotenvy`](https://crates.io/crates/dotenvy).

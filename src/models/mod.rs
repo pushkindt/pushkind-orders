@@ -1,4 +1,5 @@
 pub mod category;
+pub mod config;
 pub mod customer;
 pub mod order;
 pub mod price_level;

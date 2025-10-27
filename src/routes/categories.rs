@@ -9,20 +9,18 @@ use crate::forms::categories::{AddCategoryForm, AssignChildCategoriesForm, EditC
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::categories::{
-    CategoryQuery, assign_child_categories, create_category, load_categories, modify_category,
-    remove_category,
+    assign_child_categories, create_category, load_categories, modify_category, remove_category,
 };
 
 #[get("/categories")]
 pub async fn show_categories(
-    params: web::Query<CategoryQuery>,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
     flash_messages: IncomingFlashMessages,
     server_config: web::Data<CommonServerConfig>,
     tera: web::Data<Tera>,
 ) -> impl Responder {
-    match load_categories(repo.get_ref(), &user, params.0) {
+    match load_categories(repo.get_ref(), &user) {
         Ok(data) => {
             let mut context = base_context(
                 &flash_messages,
@@ -30,18 +28,7 @@ pub async fn show_categories(
                 "categories",
                 &server_config.auth_service_url,
             );
-            context.insert("categories", &data.categories);
-            context.insert("page_category_ids", &data.page_category_ids);
-            context.insert("search", &data.search);
-            context.insert("search_action", "/categories");
-            context.insert("show_archived", &data.show_archived);
-            let has_active_filters = data.show_archived
-                || data
-                    .search
-                    .as_ref()
-                    .map(|value| !value.trim().is_empty())
-                    .unwrap_or(false);
-            context.insert("has_active_filters", &has_active_filters);
+            context.insert("category_tree", &data.tree);
             render_template(&tera, "categories/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {
