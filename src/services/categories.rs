@@ -1,46 +1,22 @@
 use std::collections::{HashMap, HashSet};
 
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::check_role;
-use serde::Deserialize;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::category::{Category, CategoryTreeQuery};
+use crate::domain::category::{Category, CategoryTreeNode, CategoryTreeQuery};
 use crate::forms::categories::{AddCategoryForm, AssignChildCategoriesForm, EditCategoryForm};
 use crate::repository::{CategoryReader, CategoryWriter};
 use crate::services::{ServiceError, ServiceResult};
 
-/// Query parameters accepted by the categories index page.
-#[derive(Debug, Default, Deserialize)]
-pub struct CategoryQuery {
-    /// Optional search string entered by the user.
-    pub search: Option<String>,
-    /// Page number requested by the user interface.
-    pub page: Option<usize>,
-    /// Whether archived entries should be included in the response.
-    #[serde(default)]
-    pub show_archived: bool,
-}
-
 /// Data required to render the categories index template.
-pub struct CategoriesPageData {
-    /// Paginated list of categories displayed in the table.
-    pub categories: Paginated<Category>,
-    /// Identifiers of the categories that belong to the current page.
-    pub page_category_ids: Vec<i32>,
-    /// Search query echoed back to the template when present.
-    pub search: Option<String>,
-    /// Whether archived items were requested.
-    pub show_archived: bool,
+pub struct CategoryTreeData {
+    /// Hierarchical representation of the categories.
+    pub tree: Vec<CategoryTreeNode>,
 }
 
 /// Loads the categories overview page.
-pub fn load_categories<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
-    query: CategoryQuery,
-) -> ServiceResult<CategoriesPageData>
+pub fn load_categories<R>(repo: &R, user: &AuthenticatedUser) -> ServiceResult<CategoryTreeData>
 where
     R: CategoryReader + ?Sized,
 {
@@ -48,37 +24,18 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
-    let CategoryQuery {
-        search,
-        page,
-        show_archived,
-    } = query;
-
-    let page = page.unwrap_or(1);
-    let mut list_query = CategoryTreeQuery::new(user.hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
-
-    if let Some(term) = search.as_ref() {
-        list_query = list_query.search(term);
-    }
-
-    if show_archived {
-        list_query = list_query.include_archived();
-    }
-
-    let (total, categories) = repo
-        .list_categories(list_query)
+    let (_, mut flat) = repo
+        .list_categories(CategoryTreeQuery::new(user.hub_id).include_archived())
         .map_err(ServiceError::from)?;
 
-    let total_pages = total.div_ceil(DEFAULT_ITEMS_PER_PAGE);
-    let page_category_ids = categories.iter().map(|category| category.id).collect();
-    let categories = Paginated::new(categories, page, total_pages);
+    if flat.is_empty() {
+        return Ok(CategoryTreeData { tree: Vec::new() });
+    }
 
-    Ok(CategoriesPageData {
-        categories,
-        page_category_ids,
-        search,
-        show_archived,
-    })
+    flat.sort_by(|a, b| a.name.cmp(&b.name));
+    let tree = build_category_tree(&flat);
+
+    Ok(CategoryTreeData { tree })
 }
 
 /// Creates a new category for the authenticated user's hub.
@@ -207,6 +164,40 @@ where
         .map_err(ServiceError::from)
 }
 
+fn build_category_tree(categories: &[Category]) -> Vec<CategoryTreeNode> {
+    let mut children_by_parent: HashMap<Option<i32>, Vec<&Category>> = HashMap::new();
+
+    for category in categories {
+        children_by_parent
+            .entry(category.parent_id)
+            .or_default()
+            .push(category);
+    }
+
+    for children in children_by_parent.values_mut() {
+        children.sort_by(|a, b| a.name.cmp(&b.name));
+    }
+
+    fn build_branch(
+        parent_id: Option<i32>,
+        grouped: &HashMap<Option<i32>, Vec<&Category>>,
+    ) -> Vec<CategoryTreeNode> {
+        match grouped.get(&parent_id) {
+            Some(children) => {
+                let mut nodes = Vec::with_capacity(children.len());
+                for category in children {
+                    let sub_tree = build_branch(Some(category.id), grouped);
+                    nodes.push(CategoryTreeNode::new((*category).clone()).with_children(sub_tree));
+                }
+                nodes
+            }
+            None => Vec::new(),
+        }
+    }
+
+    build_branch(None, &children_by_parent)
+}
+
 fn build_parent_map(categories: &[Category]) -> HashMap<i32, Option<i32>> {
     categories
         .iter()
@@ -266,7 +257,6 @@ fn collect_descendants(
 mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
-    use serde_json::Value;
 
     use crate::domain::category::{
         NewCategory as DomainNewCategory, UpdateCategory as DomainUpdateCategory,
@@ -371,20 +361,15 @@ mod tests {
         let repo = MockCategoryReader::new();
         let user = user_with_roles(&[]);
 
-        let result = load_categories(&repo, &user, CategoryQuery::default());
+        let result = load_categories(&repo, &user);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
 
     #[test]
-    fn load_categories_returns_paginated_data() {
+    fn load_categories_returns_category_tree() {
         let mut repo = MockCategoryReader::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-        let query = CategoryQuery {
-            search: Some("veg".to_string()),
-            page: Some(2),
-            show_archived: true,
-        };
         let expected_hub = user.hub_id;
 
         repo.expect_list_categories()
@@ -392,43 +377,31 @@ mod tests {
             .returning(move |query| {
                 assert_eq!(query.hub_id, expected_hub);
                 assert!(query.include_archived);
-                assert_eq!(query.search.as_deref(), Some("veg"));
+                assert!(query.search.is_none());
+                assert!(query.pagination.is_none());
 
-                match &query.pagination {
-                    Some(pagination) => {
-                        assert_eq!(pagination.page, 2);
-                        assert_eq!(pagination.per_page, DEFAULT_ITEMS_PER_PAGE);
+                let beverages = sample_category(1, expected_hub, "Beverages");
+                let mut hot_drinks = sample_category(2, expected_hub, "Hot Drinks");
+                hot_drinks.parent_id = Some(beverages.id);
+                hot_drinks.is_archived = true;
+                let mut coffee = sample_category(3, expected_hub, "Coffee");
+                coffee.parent_id = Some(hot_drinks.id);
 
-                        let mut child = sample_category(2, expected_hub, "Vegan");
-                        child.parent_id = Some(1);
-
-                        Ok((30, vec![child]))
-                    }
-                    None => panic!("expected pagination to be set"),
-                }
+                Ok((3, vec![beverages, hot_drinks, coffee]))
             });
 
-        let result = load_categories(&repo, &user, query);
-        let data = result.expect("expected success");
+        let data = load_categories(&repo, &user).expect("expected success");
 
-        assert!(data.show_archived);
-        assert_eq!(data.page_category_ids, vec![2]);
-        assert_eq!(data.search.as_deref(), Some("veg"));
+        assert_eq!(data.tree.len(), 1);
+        let root = &data.tree[0];
+        assert_eq!(root.category.name, "Beverages");
+        assert_eq!(root.children.len(), 1);
 
-        let serialized =
-            serde_json::to_value(&data.categories).expect("serialization should succeed");
-
-        let page_value = serialized
-            .get("page")
-            .and_then(Value::as_u64)
-            .expect("expected page");
-        assert_eq!(page_value, 2);
-
-        let items = serialized
-            .get("items")
-            .and_then(Value::as_array)
-            .expect("expected items array");
-        assert_eq!(items.len(), 1);
+        let child = &root.children[0];
+        assert_eq!(child.category.name, "Hot Drinks");
+        assert!(child.category.is_archived);
+        assert_eq!(child.children.len(), 1);
+        assert_eq!(child.children[0].category.name, "Coffee");
     }
 
     #[test]

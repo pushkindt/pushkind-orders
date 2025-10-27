@@ -1,0 +1,142 @@
+<div class="modal fade" id="editCategoryModal" tabindex="-1" aria-labelledby="editCategoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form action="/categories/edit" method="POST">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="editCategoryModalLabel">Редактировать категорию</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editCategoryId" name="category_id">
+                    <div class="row mb-3">
+                        <label for="editCategoryName" class="col-md-4 col-form-label">Название</label>
+                        <div class="col-md-8">
+                            <input name="name" type="text" class="form-control" id="editCategoryName"
+                                placeholder="Например: «Горячие напитки»" maxlength="128" required>
+                            <div class="form-text">Название должно быть уникальным в пределах хаба.</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="editCategoryDescription" class="col-md-4 col-form-label">Описание</label>
+                        <div class="col-md-8">
+                            <textarea name="description" class="form-control" id="editCategoryDescription" rows="4"
+                                placeholder="Краткое описание категории" maxlength="2048"></textarea>
+                            <div class="form-text">Очистите поле, чтобы убрать описание.</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-8 offset-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="true" id="editCategoryArchived" name="is_archived">
+                                <label class="form-check-label" for="editCategoryArchived">
+                                    Архивировать категорию
+                                </label>
+                            </div>
+                            <div class="form-text">
+                                Архивированные категории скрываются из списка по умолчанию, но сохраняются в базе данных.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" form="deleteCategoryForm" class="btn btn-outline-danger">
+                        Удалить
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+            <form id="deleteCategoryForm" method="POST">
+                <input type="hidden" name="category_id" id="deleteCategoryId">
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const modalElement = document.getElementById("editCategoryModal");
+        if (!modalElement) {
+            return;
+        }
+
+        const form = modalElement.querySelector("form");
+        const idInput = modalElement.querySelector("#editCategoryId");
+        const nameInput = modalElement.querySelector("#editCategoryName");
+        const descriptionInput = modalElement.querySelector("#editCategoryDescription");
+        const archivedCheckbox = modalElement.querySelector("#editCategoryArchived");
+        const deleteForm = modalElement.querySelector("#deleteCategoryForm");
+        const deleteFormIdInput = modalElement.querySelector("#deleteCategoryId");
+        const deleteButton = modalElement.querySelector('button[form="deleteCategoryForm"]');
+
+        const toBoolean = (value) => {
+            if (typeof value !== "string") {
+                return false;
+            }
+            return ["1", "true", "yes"].includes(value.toLowerCase());
+        };
+
+        modalElement.addEventListener("show.bs.modal", (event) => {
+            const trigger = event.relatedTarget;
+            if (!trigger) {
+                return;
+            }
+
+            const dataset = trigger.dataset || {};
+            const categoryId = dataset.categoryId || dataset.id || "";
+
+            if (idInput) {
+                idInput.value = categoryId;
+            }
+            if (nameInput) {
+                nameInput.value = dataset.categoryName || dataset.name || "";
+            }
+            if (descriptionInput) {
+                descriptionInput.value = dataset.categoryDescription || dataset.description || "";
+            }
+
+            if (archivedCheckbox) {
+                archivedCheckbox.checked = toBoolean(
+                    dataset.categoryArchived || dataset.archived || "false",
+                );
+            }
+
+            if (deleteForm) {
+                deleteForm.action = categoryId ? `/categories/${categoryId}/delete` : "";
+            }
+            if (deleteFormIdInput) {
+                deleteFormIdInput.value = categoryId || "";
+            }
+            if (deleteButton) {
+                deleteButton.disabled = !categoryId;
+            }
+        });
+
+        modalElement.addEventListener("shown.bs.modal", () => {
+            if (nameInput) {
+                nameInput.focus();
+            }
+        });
+
+        modalElement.addEventListener("hidden.bs.modal", () => {
+            if (form) {
+                form.reset();
+            }
+            if (idInput) {
+                idInput.value = "";
+            }
+            if (descriptionInput) {
+                descriptionInput.value = "";
+            }
+            if (deleteForm) {
+                deleteForm.action = "";
+            }
+            if (deleteFormIdInput) {
+                deleteFormIdInput.value = "";
+            }
+            if (deleteButton) {
+                deleteButton.disabled = false;
+            }
+        });
+    });
+</script>
