@@ -46,6 +46,7 @@ pub struct AddPriceLevelForm {
     #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
     pub name: String,
     /// Is this a default price level?
+    #[serde(default)]
     pub default: bool,
 }
 
