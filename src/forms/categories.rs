@@ -87,6 +87,7 @@ pub struct EditCategoryForm {
     #[validate(length(max = DESCRIPTION_MAX_LEN_VALIDATOR))]
     pub description: Option<String>,
     /// Optional archive toggle for the category.
+    #[serde(default)]
     pub is_archived: bool,
 }
 
