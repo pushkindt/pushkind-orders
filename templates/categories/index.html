@@ -1,5 +1,22 @@
 {% extends 'base.html' %}
 
+{% block styles %}
+    {{ super() }}
+    <style>
+        .category-tree-toggle .icon-open {
+            display: none;
+        }
+
+        .category-tree-toggle[aria-expanded="true"] .icon-open {
+            display: inline-flex;
+        }
+
+        .category-tree-toggle[aria-expanded="true"] .icon-closed {
+            display: none;
+        }
+    </style>
+{% endblock %}
+
 {% macro node(n) %}
 
     <div class="mb-2">
@@ -7,14 +24,16 @@
             <div class="d-flex align-items-center flex-grow-1">
                 {% if n.children | length > 0 %}
                     <button
-                        class="btn btn-sm btn-link p-0 text-secondary transition-transform "
+                        class="btn btn-sm btn-link p-0 text-secondary category-tree-toggle"
                         type="button"
                         data-bs-toggle="collapse"
                         data-bs-target="#collapseChildren{{ n.category.id }}"
                         aria-expanded="false"
                         aria-controls="collapseChildren{{ n.category.id }}"
                     >
-                        <i class="bi bi-chevron-right"></i>
+                        <i class="bi bi-chevron-right icon-closed" aria-hidden="true"></i>
+                        <i class="bi bi-chevron-down icon-open" aria-hidden="true"></i>
+                        <span class="visually-hidden">Toggle subcategories</span>
                     </button>
                 {% endif %}
                 <div class="ms-2">
