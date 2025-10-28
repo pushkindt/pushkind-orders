@@ -29,7 +29,7 @@ pub struct NewCategory<'a> {
 }
 
 #[derive(Default, AsChangeset)]
-#[diesel(table_name = crate::schema::categories)]
+#[diesel(table_name = crate::schema::categories, treat_none_as_null = true)]
 pub struct UpdateCategory {
     pub name: String,
     pub is_archived: bool,
