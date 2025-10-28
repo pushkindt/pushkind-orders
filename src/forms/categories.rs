@@ -97,9 +97,6 @@ pub struct EditCategoryForm {
     /// Optional description update.
     #[validate(length(max = DESCRIPTION_MAX_LEN_VALIDATOR))]
     pub description: Option<String>,
-    /// Optional parent category identifier update.
-    #[serde(default)]
-    pub parent_id: Option<String>,
     /// Optional archive toggle for the category.
     pub is_archived: Option<bool>,
 }
@@ -113,7 +110,6 @@ impl EditCategoryForm {
             category_id,
             name,
             description,
-            parent_id,
             is_archived,
         } = self;
 
@@ -137,9 +133,7 @@ impl EditCategoryForm {
             None => None,
         };
 
-        let parent_id = parse_parent_id_update(parent_id)?;
-
-        let update = UpdateCategory::new(name, description, parent_id, is_archived);
+        let update = UpdateCategory::new(name, description, is_archived);
 
         Ok(EditCategoryPayload {
             category_id,
@@ -213,28 +207,6 @@ fn parse_optional_i32(
         }
     }
 }
-
-fn parse_parent_id_update(value: Option<String>) -> CategoryFormResult<Option<i32>> {
-    match value {
-        None => Ok(None),
-        Some(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                Ok(None)
-            } else {
-                match trimmed.parse::<i32>() {
-                    Ok(parsed) if parsed > 0 => Ok(Some(parsed)),
-                    Ok(_) => Ok(None),
-                    Err(_) => Err(CategoryFormError::InvalidIdentifier {
-                        field: "parent category",
-                        value: trimmed.to_string(),
-                    }),
-                }
-            }
-        }
-    }
-}
-
 fn sanitize_inline_text(input: &str) -> String {
     let mut sanitized = String::with_capacity(input.len());
     let mut previous_whitespace = false;
@@ -364,7 +336,6 @@ mod tests {
             category_id: 42,
             name: "  Pantry  ".to_string(),
             description: Some(" Dry goods ".to_string()),
-            parent_id: Some(" 5 ".to_string()),
             is_archived: Some(true),
         };
 
@@ -376,7 +347,6 @@ mod tests {
         let update = payload.update;
         assert_eq!(update.name, "Pantry");
         assert_eq!(update.description.as_deref(), Some("Dry goods"));
-        assert_eq!(update.parent_id, Some(5));
         assert_eq!(update.is_archived, Some(true));
     }
 
@@ -386,7 +356,6 @@ mod tests {
             category_id: 1,
             name: "   ".to_string(),
             description: None,
-            parent_id: None,
             is_archived: None,
         };
 
@@ -401,7 +370,6 @@ mod tests {
             category_id: 2,
             name: " Pantry ".to_string(),
             description: Some("  ".to_string()),
-            parent_id: Some("0".to_string()),
             is_archived: None,
         };
 
@@ -412,6 +380,5 @@ mod tests {
         let update = payload.update;
 
         assert!(update.description.is_none());
-        assert!(update.parent_id.is_none());
     }
 }

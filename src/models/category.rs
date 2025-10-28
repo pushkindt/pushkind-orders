@@ -41,7 +41,6 @@ pub struct UpdateCategoryCore {
 #[diesel(table_name = crate::schema::categories, treat_none_as_null = true)]
 pub struct UpdateCategoryNullable {
     pub description: Option<String>,
-    pub parent_id: Option<i32>,
 }
 
 pub struct UpdateCategoryChangeset {
@@ -86,7 +85,6 @@ impl From<&DomainUpdateCategory> for UpdateCategoryChangeset {
 
         let nullable = UpdateCategoryNullable {
             description: value.description.clone(),
-            parent_id: value.parent_id,
         };
 
         Self { core, nullable }
