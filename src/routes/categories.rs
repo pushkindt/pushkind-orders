@@ -5,11 +5,11 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
-use crate::forms::categories::{AddCategoryForm, AssignChildCategoriesForm, EditCategoryForm};
+use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::categories::{
-    assign_child_categories, create_category, load_categories, modify_category, remove_category,
+    create_category, load_categories, modify_category, remove_category,
 };
 
 #[get("/categories")]
@@ -68,33 +68,6 @@ pub async fn add_category(
         Err(err) => {
             log::error!("Failed to create category: {err}");
             FlashMessage::error("Не удалось создать категорию.").send();
-            redirect("/categories")
-        }
-    }
-}
-
-#[post("/categories/assign")]
-pub async fn assign_category(
-    user: AuthenticatedUser,
-    repo: web::Data<DieselRepository>,
-    form: web::Form<AssignChildCategoriesForm>,
-) -> impl Responder {
-    match assign_child_categories(repo.get_ref(), &user, form.into_inner()) {
-        Ok(category) => {
-            FlashMessage::success(format!("Категория «{}» изменена.", category.name)).send();
-            redirect("/categories")
-        }
-        Err(ServiceError::Unauthorized) => {
-            FlashMessage::error("Недостаточно прав.").send();
-            redirect("/na")
-        }
-        Err(ServiceError::Form(message)) => {
-            FlashMessage::error(message).send();
-            redirect("/categories")
-        }
-        Err(err) => {
-            log::error!("Failed to assign child categories: {err}");
-            FlashMessage::error("Не удалось изменить категорию.").send();
             redirect("/categories")
         }
     }

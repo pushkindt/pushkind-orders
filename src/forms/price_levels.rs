@@ -45,6 +45,9 @@ pub struct AddPriceLevelForm {
     /// Name entered by the user.
     #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
     pub name: String,
+    /// Is this a default price level?
+    #[serde(default)]
+    pub default: bool,
 }
 
 impl AddPriceLevelForm {
@@ -57,7 +60,7 @@ impl AddPriceLevelForm {
             return Err(PriceLevelFormError::EmptyName);
         }
 
-        Ok(NewPriceLevel::new(hub_id, sanitized_name))
+        Ok(NewPriceLevel::new(hub_id, sanitized_name, self.default))
     }
 }
 
@@ -121,7 +124,7 @@ fn parse_price_levels<R: Read>(
         let record = row?;
 
         if let Some(name) = record.name {
-            let price_level = NewPriceLevel::new(hub_id, name);
+            let price_level = NewPriceLevel::new(hub_id, name, false);
 
             price_levels.push(price_level);
         }
@@ -163,6 +166,7 @@ mod tests {
     fn add_price_level_form_sanitizes_and_converts() {
         let form = AddPriceLevelForm {
             name: "  Premium\tLevel  ".to_string(),
+            default: false,
         };
 
         let new_level = form.into_new_price_level(5).expect("expected success");
@@ -175,6 +179,7 @@ mod tests {
     fn add_price_level_form_rejects_empty() {
         let form = AddPriceLevelForm {
             name: "   ".to_string(),
+            default: false,
         };
 
         let result = form.into_new_price_level(1);

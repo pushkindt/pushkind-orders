@@ -18,11 +18,13 @@ pub struct NewUser {
 
 impl NewUser {
     #[must_use]
-    pub fn new(hub_id: i32, name: String, email: String) -> Self {
+    pub fn new(hub_id: i32, name: impl Into<String>, email: impl Into<String>) -> Self {
+        let name = name.into().trim().to_string();
+        let email = email.into().trim().to_lowercase();
         Self {
             hub_id,
             name,
-            email: email.to_lowercase(),
+            email,
         }
     }
 }
@@ -30,6 +32,14 @@ impl NewUser {
 #[derive(Clone, Debug, Deserialize)]
 pub struct UpdateUser {
     pub name: String,
+}
+
+impl UpdateUser {
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into().trim().to_string();
+        Self { name }
+    }
 }
 
 impl From<&AuthenticatedUser> for NewUser {

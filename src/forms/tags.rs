@@ -45,15 +45,6 @@ impl AddTagForm {
     }
 }
 
-/// Normalized payload produced by the "Edit tag" form.
-#[derive(Debug)]
-pub struct EditTagPayload {
-    /// Identifier of the tag to update.
-    pub tag_id: i32,
-    /// Patch data that should be applied to the tag.
-    pub update: UpdateTag,
-}
-
 /// Form payload emitted when editing an existing tag.
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditTagForm {
@@ -67,7 +58,7 @@ pub struct EditTagForm {
 
 impl EditTagForm {
     /// Validates and sanitizes the payload into a domain `UpdateTag`.
-    pub fn into_update_tag(self, updated_at: NaiveDateTime) -> TagFormResult<EditTagPayload> {
+    pub fn into_update_tag(self, updated_at: NaiveDateTime) -> TagFormResult<UpdateTag> {
         self.validate()?;
 
         let sanitized_name = sanitize_inline_text(&self.name);
@@ -75,12 +66,9 @@ impl EditTagForm {
             return Err(TagFormError::EmptyName);
         }
 
-        Ok(EditTagPayload {
-            tag_id: self.tag_id,
-            update: UpdateTag {
-                name: sanitized_name,
-                updated_at,
-            },
+        Ok(UpdateTag {
+            name: sanitized_name,
+            updated_at,
         })
     }
 }
@@ -146,13 +134,14 @@ mod tests {
             name: "  Limited\nEdition  ".to_string(),
         };
 
-        let payload = form
+        let tag_id = form.tag_id;
+        let update = form
             .into_update_tag(updated_at)
             .expect("expected payload conversion to succeed");
 
-        assert_eq!(payload.tag_id, 9);
-        assert_eq!(payload.update.name, "Limited Edition");
-        assert_eq!(payload.update.updated_at, updated_at);
+        assert_eq!(tag_id, 9);
+        assert_eq!(update.name, "Limited Edition");
+        assert_eq!(update.updated_at, updated_at);
     }
 
     #[test]

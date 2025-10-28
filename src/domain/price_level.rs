@@ -15,6 +15,9 @@ pub struct PriceLevel {
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the price level record.
     pub updated_at: NaiveDateTime,
+    /// A flag indicating if the price level is default.
+    /// Only one price level can be default at a time for a hub.
+    pub is_default: bool,
 }
 
 /// Payload required to insert a new price level for a hub.
@@ -24,13 +27,19 @@ pub struct NewPriceLevel {
     pub hub_id: i32,
     /// Human-readable name of the price level.
     pub name: String,
+    /// Default flag for the price level.
+    pub is_default: bool,
 }
 
 impl NewPriceLevel {
     /// Construct a new price level payload with a trimmed name.
-    pub fn new(hub_id: i32, name: impl Into<String>) -> Self {
+    pub fn new(hub_id: i32, name: impl Into<String>, is_default: bool) -> Self {
         let name = name.into().trim().to_string();
-        Self { hub_id, name }
+        Self {
+            hub_id,
+            name,
+            is_default,
+        }
     }
 }
 
@@ -41,6 +50,21 @@ pub struct UpdatePriceLevel {
     pub name: String,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
+    /// Default flag update for the price level.
+    pub is_default: bool,
+}
+
+impl UpdatePriceLevel {
+    /// Construct a patch payload with a trimmed name.
+    pub fn new(name: impl Into<String>, is_default: bool) -> Self {
+        let name = name.into().trim().to_string();
+        let updated_at = chrono::Utc::now().naive_utc();
+        Self {
+            name,
+            updated_at,
+            is_default,
+        }
+    }
 }
 
 /// Query definition used to list price levels for a hub.

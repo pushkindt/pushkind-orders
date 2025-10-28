@@ -100,8 +100,6 @@ pub struct NewOrder {
     pub products: Vec<OrderProduct>,
     /// Current lifecycle status of the order.
     pub status: OrderStatus,
-    /// Timestamp captured when the order payload was created.
-    pub updated_at: NaiveDateTime,
 }
 
 /// Static snapshot of a product that was added to an order.
@@ -164,7 +162,6 @@ impl OrderProduct {
 impl NewOrder {
     /// Build a new order payload with the supplied details and current timestamp.
     pub fn new(hub_id: i32, total_cents: i32, currency: impl Into<String>) -> Self {
-        let now = chrono::Local::now().naive_utc();
         Self {
             hub_id,
             customer_id: None,
@@ -174,7 +171,6 @@ impl NewOrder {
             currency: currency.into(),
             status: OrderStatus::default(),
             products: Vec::new(),
-            updated_at: now,
         }
     }
 

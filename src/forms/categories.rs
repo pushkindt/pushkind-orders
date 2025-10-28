@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
@@ -76,15 +74,6 @@ impl AddCategoryForm {
     }
 }
 
-/// Normalized payload produced by the "Edit category" form.
-#[derive(Debug)]
-pub struct EditCategoryPayload {
-    /// Identifier of the category to update.
-    pub category_id: i32,
-    /// Patch data that should be applied to the category.
-    pub update: UpdateCategory,
-}
-
 /// Form payload emitted when editing an existing category.
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditCategoryForm {
@@ -98,16 +87,17 @@ pub struct EditCategoryForm {
     #[validate(length(max = DESCRIPTION_MAX_LEN_VALIDATOR))]
     pub description: Option<String>,
     /// Optional archive toggle for the category.
-    pub is_archived: Option<bool>,
+    #[serde(default)]
+    pub is_archived: bool,
 }
 
 impl EditCategoryForm {
     /// Validates and sanitizes the payload into a domain `UpdateCategory`.
-    pub fn into_update_category(self) -> CategoryFormResult<EditCategoryPayload> {
+    pub fn into_update_category(self) -> CategoryFormResult<UpdateCategory> {
         self.validate()?;
 
         let EditCategoryForm {
-            category_id,
+            category_id: _,
             name,
             description,
             is_archived,
@@ -135,10 +125,7 @@ impl EditCategoryForm {
 
         let update = UpdateCategory::new(name, description, is_archived);
 
-        Ok(EditCategoryPayload {
-            category_id,
-            update,
-        })
+        Ok(update)
     }
 }
 
@@ -149,39 +136,6 @@ pub struct AssignChildCategoriesPayload {
     pub parent_id: i32,
     /// Unique list of child category identifiers to associate with the parent.
     pub child_ids: Vec<i32>,
-}
-
-/// Form payload emitted when submitting the "Assign child categories" form.
-#[derive(Debug, Deserialize)]
-pub struct AssignChildCategoriesForm {
-    /// Identifier of the parent category.
-    pub parent_id: i32,
-    /// Identifiers of the child categories selected by the user.
-    #[serde(default)]
-    pub child_ids: Vec<i32>,
-}
-
-impl AssignChildCategoriesForm {
-    /// Sanitizes the payload into a normalized assignment request.
-    pub fn into_payload(self) -> AssignChildCategoriesPayload {
-        let mut seen = HashSet::new();
-        let mut normalized = Vec::new();
-
-        for child_id in self.child_ids {
-            if child_id <= 0 || child_id == self.parent_id {
-                continue;
-            }
-
-            if seen.insert(child_id) {
-                normalized.push(child_id);
-            }
-        }
-
-        AssignChildCategoriesPayload {
-            parent_id: self.parent_id,
-            child_ids: normalized,
-        }
-    }
 }
 
 fn parse_optional_i32(
@@ -318,36 +272,21 @@ mod tests {
     }
 
     #[test]
-    fn assign_child_categories_form_filters_duplicates_and_parent() {
-        let form = AssignChildCategoriesForm {
-            parent_id: 10,
-            child_ids: vec![11, 10, 12, 11, -1],
-        };
-
-        let payload = form.into_payload();
-
-        assert_eq!(payload.parent_id, 10);
-        assert_eq!(payload.child_ids, vec![11, 12]);
-    }
-
-    #[test]
     fn edit_category_form_builds_payload() {
         let form = EditCategoryForm {
             category_id: 42,
             name: "  Pantry  ".to_string(),
             description: Some(" Dry goods ".to_string()),
-            is_archived: Some(true),
+            is_archived: true,
         };
 
-        let payload = form
+        let update = form
             .into_update_category()
             .expect("expected payload conversion to succeed");
 
-        assert_eq!(payload.category_id, 42);
-        let update = payload.update;
         assert_eq!(update.name, "Pantry");
         assert_eq!(update.description.as_deref(), Some("Dry goods"));
-        assert_eq!(update.is_archived, Some(true));
+        assert!(update.is_archived);
     }
 
     #[test]
@@ -356,7 +295,7 @@ mod tests {
             category_id: 1,
             name: "   ".to_string(),
             description: None,
-            is_archived: None,
+            is_archived: false,
         };
 
         let result = form.into_update_category();
@@ -370,14 +309,12 @@ mod tests {
             category_id: 2,
             name: " Pantry ".to_string(),
             description: Some("  ".to_string()),
-            is_archived: None,
+            is_archived: false,
         };
 
-        let payload = form
+        let update = form
             .into_update_category()
             .expect("expected payload conversion to succeed");
-
-        let update = payload.update;
 
         assert!(update.description.is_none());
     }

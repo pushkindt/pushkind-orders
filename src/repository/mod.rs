@@ -2,6 +2,7 @@ use pushkind_common::db::{DbConnection, DbPool};
 use pushkind_common::pagination::Pagination;
 use pushkind_common::repository::errors::RepositoryResult;
 
+use crate::domain::customer::CustomerListQuery;
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
     customer::{Customer, NewCustomer},
@@ -23,45 +24,6 @@ pub mod user;
 
 #[cfg(test)]
 pub mod mock;
-
-#[derive(Debug, Clone)]
-/// Query definition used to list customers for a hub.
-pub struct CustomerListQuery {
-    pub hub_id: i32,
-    pub search: Option<String>,
-    pub price_level_id: Option<i32>,
-    pub pagination: Option<Pagination>,
-}
-
-impl CustomerListQuery {
-    /// Construct a query that targets all customers belonging to `hub_id`.
-    pub fn new(hub_id: i32) -> Self {
-        Self {
-            hub_id,
-            search: None,
-            price_level_id: None,
-            pagination: None,
-        }
-    }
-
-    /// Filter the results by a case-insensitive search on name or email fields.
-    pub fn search(mut self, term: impl Into<String>) -> Self {
-        self.search = Some(term.into());
-        self
-    }
-
-    /// Restrict the results to customers assigned to the specified price level.
-    pub fn price_level(mut self, price_level_id: i32) -> Self {
-        self.price_level_id = Some(price_level_id);
-        self
-    }
-
-    /// Apply pagination to the query with the given page number and page size.
-    pub fn paginate(mut self, page: usize, per_page: usize) -> Self {
-        self.pagination = Some(Pagination { page, per_page });
-        self
-    }
-}
 
 /// Read-only operations over customer records.
 pub trait CustomerReader {

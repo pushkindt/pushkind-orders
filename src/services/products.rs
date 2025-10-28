@@ -817,6 +817,7 @@ Banana,USD,7.50,
             name: name.to_string(),
             created_at: datetime(),
             updated_at: datetime(),
+            is_default: false,
         }
     }
 }

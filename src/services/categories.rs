@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::category::{Category, CategoryTreeNode, CategoryTreeQuery};
-use crate::forms::categories::{AddCategoryForm, AssignChildCategoriesForm, EditCategoryForm};
+use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
 use crate::repository::{CategoryReader, CategoryWriter};
 use crate::services::{ServiceError, ServiceResult};
 
@@ -59,56 +59,6 @@ where
         .map_err(ServiceError::from)
 }
 
-/// Assigns a set of child categories to a parent category.
-pub fn assign_child_categories<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
-    form: AssignChildCategoriesForm,
-) -> ServiceResult<Category>
-where
-    R: CategoryReader + CategoryWriter + ?Sized,
-{
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
-
-    let payload = form.into_payload();
-    if payload.parent_id <= 0 {
-        return Err(ServiceError::Form("Некорректная категория.".to_string()));
-    }
-
-    let (_, categories) = repo
-        .list_categories(CategoryTreeQuery::new(user.hub_id).include_archived())
-        .map_err(ServiceError::from)?;
-
-    let parent_map = build_parent_map(&categories);
-    if !parent_map.contains_key(&payload.parent_id) {
-        return Err(ServiceError::Form("Некорректная категория.".to_string()));
-    }
-
-    let ancestors = collect_ancestors(payload.parent_id, &parent_map);
-
-    let mut unique_children = HashSet::new();
-    let mut child_ids = Vec::new();
-    for child in payload.child_ids {
-        if child <= 0 || child == payload.parent_id {
-            continue;
-        }
-
-        if ancestors.contains(&child) {
-            return Err(ServiceError::Form(
-                "Категория не может быть дочерней категорией своего потомка.".to_string(),
-            ));
-        }
-        if unique_children.insert(child) {
-            child_ids.push(child);
-        }
-    }
-
-    repo.assign_child_categories(user.hub_id, payload.parent_id, &child_ids)
-        .map_err(ServiceError::from)
-}
-
 /// Updates an existing category for the authenticated user's hub.
 pub fn modify_category<R>(
     repo: &R,
@@ -122,11 +72,13 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
-    let payload = form
+    let category_id = form.category_id;
+
+    let update = form
         .into_update_category()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    repo.update_category(payload.category_id, user.hub_id, &payload.update)
+    repo.update_category(category_id, user.hub_id, &update)
         .map_err(ServiceError::from)
 }
 
@@ -177,28 +129,6 @@ fn build_category_tree(categories: &[Category]) -> Vec<CategoryTreeNode> {
     build_branch(None, &children_by_parent)
 }
 
-fn build_parent_map(categories: &[Category]) -> HashMap<i32, Option<i32>> {
-    categories
-        .iter()
-        .map(|category| (category.id, category.parent_id))
-        .collect()
-}
-
-fn collect_ancestors(category_id: i32, parent_map: &HashMap<i32, Option<i32>>) -> HashSet<i32> {
-    let mut ancestors = HashSet::new();
-    let mut current = Some(category_id);
-
-    while let Some(node) = current {
-        if !ancestors.insert(node) {
-            break;
-        }
-
-        current = parent_map.get(&node).copied().flatten();
-    }
-
-    ancestors
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,7 +137,6 @@ mod tests {
     use crate::domain::category::{
         NewCategory as DomainNewCategory, UpdateCategory as DomainUpdateCategory,
     };
-    use crate::forms::categories::AssignChildCategoriesForm;
     use crate::repository::mock::{MockCategoryReader, MockCategoryWriter};
     use pushkind_common::repository::errors::RepositoryResult;
 
@@ -408,85 +337,6 @@ mod tests {
     }
 
     #[test]
-    fn assign_child_categories_requires_role() {
-        let repo = MockCategoryRepo::new();
-        let user = user_with_roles(&[]);
-        let form = AssignChildCategoriesForm {
-            parent_id: 5,
-            child_ids: vec![6, 7],
-        };
-
-        let result = assign_child_categories(&repo, &user, form);
-
-        assert!(matches!(result, Err(ServiceError::Unauthorized)));
-    }
-
-    #[test]
-    fn assign_child_categories_filters_invalid_ids() {
-        let mut repo = MockCategoryRepo::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-
-        repo.reader
-            .expect_list_categories()
-            .times(1)
-            .returning(|_| {
-                let parent = sample_category(5, 9, "Parent");
-                let mut child_a = sample_category(6, 9, "Child A");
-                child_a.parent_id = Some(5);
-                let mut child_b = sample_category(8, 9, "Child B");
-                child_b.parent_id = Some(5);
-                Ok((3, vec![parent, child_a, child_b]))
-            });
-
-        repo.writer
-            .expect_assign_child_categories()
-            .times(1)
-            .withf(|hub_id, parent_id, child_ids| {
-                assert_eq!(*hub_id, 9);
-                assert_eq!(*parent_id, 5);
-                assert_eq!(child_ids, &[6, 8]);
-                true
-            })
-            .returning(|_, _, _| Ok(sample_category(5, 9, "Parent")));
-
-        let form = AssignChildCategoriesForm {
-            parent_id: 5,
-            child_ids: vec![6, 8, 5, 6, -1],
-        };
-
-        let result = assign_child_categories(&repo, &user, form);
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn assign_child_categories_rejects_ancestor_loop() {
-        let mut repo = MockCategoryRepo::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-
-        repo.reader
-            .expect_list_categories()
-            .times(1)
-            .returning(|_| {
-                let root = sample_category(1, 9, "Root");
-                let mut middle = sample_category(2, 9, "Middle");
-                middle.parent_id = Some(1);
-                let mut leaf = sample_category(3, 9, "Leaf");
-                leaf.parent_id = Some(2);
-                Ok((3, vec![root, middle, leaf]))
-            });
-
-        let form = AssignChildCategoriesForm {
-            parent_id: 3,
-            child_ids: vec![1],
-        };
-
-        let result = assign_child_categories(&repo, &user, form);
-
-        assert!(matches!(result, Err(ServiceError::Form(_))));
-    }
-
-    #[test]
     fn modify_category_requires_role() {
         let repo = MockCategoryRepo::new();
         let user = user_with_roles(&[]);
@@ -494,7 +344,7 @@ mod tests {
             category_id: 1,
             name: "Updated".to_string(),
             description: None,
-            is_archived: None,
+            is_archived: false,
         };
 
         let result = modify_category(&repo, &user, form);
@@ -523,7 +373,7 @@ mod tests {
             category_id: 3,
             name: " Dry Goods ".to_string(),
             description: Some(" pantry items ".to_string()),
-            is_archived: Some(false),
+            is_archived: false,
         };
 
         let updated = modify_category(&repo, &user, form).expect("expected success");

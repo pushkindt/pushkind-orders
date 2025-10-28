@@ -26,26 +26,15 @@ pub struct NewCategory<'a> {
     pub parent_id: Option<i32>,
     pub name: &'a str,
     pub description: Option<&'a str>,
-    pub updated_at: NaiveDateTime,
-}
-
-#[derive(Default, AsChangeset)]
-#[diesel(table_name = crate::schema::categories)]
-pub struct UpdateCategoryCore {
-    pub name: Option<String>,
-    pub is_archived: Option<bool>,
-    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Default, AsChangeset)]
 #[diesel(table_name = crate::schema::categories, treat_none_as_null = true)]
-pub struct UpdateCategoryNullable {
+pub struct UpdateCategory {
+    pub name: String,
+    pub is_archived: bool,
+    pub updated_at: NaiveDateTime,
     pub description: Option<String>,
-}
-
-pub struct UpdateCategoryChangeset {
-    pub core: UpdateCategoryCore,
-    pub nullable: UpdateCategoryNullable,
 }
 
 impl From<Category> for DomainCategory {
@@ -70,23 +59,17 @@ impl<'a> From<&'a DomainNewCategory> for NewCategory<'a> {
             parent_id: value.parent_id,
             name: value.name.as_str(),
             description: value.description.as_deref(),
-            updated_at: value.updated_at,
         }
     }
 }
 
-impl From<&DomainUpdateCategory> for UpdateCategoryChangeset {
+impl From<&DomainUpdateCategory> for UpdateCategory {
     fn from(value: &DomainUpdateCategory) -> Self {
-        let core = UpdateCategoryCore {
-            name: Some(value.name.clone()),
+        Self {
+            name: value.name.clone(),
             is_archived: value.is_archived,
             updated_at: value.updated_at,
-        };
-
-        let nullable = UpdateCategoryNullable {
             description: value.description.clone(),
-        };
-
-        Self { core, nullable }
+        }
     }
 }

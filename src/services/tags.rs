@@ -83,11 +83,12 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
-    let payload = form
+    let tag_id = form.tag_id;
+    let update = form
         .into_update_tag(Utc::now().naive_utc())
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    repo.update_tag(payload.tag_id, user.hub_id, &payload.update)
+    repo.update_tag(tag_id, user.hub_id, &update)
         .map_err(ServiceError::from)
 }
 

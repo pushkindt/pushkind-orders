@@ -155,6 +155,7 @@ mod tests {
             name: name.to_string(),
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
+            is_default: false,
         }
     }
 
@@ -258,6 +259,7 @@ mod tests {
         let user = user_with_roles(&[]);
         let form = AddPriceLevelForm {
             name: "Retail".to_string(),
+            default: false,
         };
 
         let result = create_price_level(&repo, &user, form);
@@ -271,6 +273,7 @@ mod tests {
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "Retail".to_string(),
+            default: false,
         };
 
         let expected_hub = user.hub_id;
@@ -292,6 +295,7 @@ mod tests {
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "   ".to_string(),
+            default: false,
         };
 
         let result = create_price_level(&repo, &user, form);

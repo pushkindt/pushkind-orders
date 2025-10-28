@@ -108,21 +108,12 @@ impl CustomerWriter for DieselRepository {
         &self,
         new_customer: &DomainNewCustomer,
     ) -> RepositoryResult<DomainCustomer> {
-        use crate::schema::{customers, price_levels};
+        use crate::schema::customers;
 
         let mut conn = self.conn()?;
 
-        if let Some(price_level_id) = new_customer.price_level_id {
-            let level_exists: bool = select(exists(
-                price_levels::table
-                    .filter(price_levels::id.eq(price_level_id))
-                    .filter(price_levels::hub_id.eq(new_customer.hub_id)),
-            ))
-            .get_result(&mut conn)?;
-
-            if !level_exists {
-                return Err(RepositoryError::NotFound);
-            }
+        if let Some(level_id) = new_customer.price_level_id {
+            ensure_price_level_with_hub(&mut conn, new_customer.hub_id, level_id)?;
         }
 
         let db_new = DbNewCustomer::from(new_customer);
@@ -140,7 +131,7 @@ impl CustomerWriter for DieselRepository {
         customer_ids: &[i32],
         price_level_id: Option<i32>,
     ) -> RepositoryResult<()> {
-        use crate::schema::{customers, price_levels};
+        use crate::schema::customers;
 
         if customer_ids.is_empty() {
             return Ok(());
@@ -149,16 +140,7 @@ impl CustomerWriter for DieselRepository {
         let mut conn = self.conn()?;
 
         if let Some(level_id) = price_level_id {
-            let level_exists: bool = select(exists(
-                price_levels::table
-                    .filter(price_levels::id.eq(level_id))
-                    .filter(price_levels::hub_id.eq(hub_id)),
-            ))
-            .get_result(&mut conn)?;
-
-            if !level_exists {
-                return Err(RepositoryError::NotFound);
-            }
+            ensure_price_level_with_hub(&mut conn, hub_id, level_id)?;
         }
 
         let target = customers::table
@@ -174,5 +156,26 @@ impl CustomerWriter for DieselRepository {
         }
 
         Ok(())
+    }
+}
+
+fn ensure_price_level_with_hub(
+    conn: &mut SqliteConnection,
+    hub_id: i32,
+    price_level_id: i32,
+) -> RepositoryResult<()> {
+    use crate::schema::price_levels;
+
+    let exists: bool = select(exists(
+        price_levels::table
+            .filter(price_levels::id.eq(price_level_id))
+            .filter(price_levels::hub_id.eq(hub_id)),
+    ))
+    .get_result(conn)?;
+
+    if exists {
+        Ok(())
+    } else {
+        Err(RepositoryError::NotFound)
     }
 }

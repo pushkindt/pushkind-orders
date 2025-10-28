@@ -14,6 +14,7 @@ pub struct PriceLevel {
     pub name: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub is_default: bool,
 }
 
 #[derive(Insertable)]
@@ -21,6 +22,7 @@ pub struct PriceLevel {
 pub struct NewPriceLevel<'a> {
     pub hub_id: i32,
     pub name: &'a str,
+    pub is_default: bool,
 }
 
 #[derive(AsChangeset)]
@@ -29,6 +31,7 @@ pub struct NewPriceLevel<'a> {
 pub struct UpdatePriceLevel<'a> {
     pub name: &'a str,
     pub updated_at: NaiveDateTime,
+    pub is_default: bool,
 }
 
 impl From<PriceLevel> for DomainPriceLevel {
@@ -39,6 +42,7 @@ impl From<PriceLevel> for DomainPriceLevel {
             name: value.name,
             created_at: value.created_at,
             updated_at: value.updated_at,
+            is_default: value.is_default,
         }
     }
 }
@@ -48,6 +52,7 @@ impl<'a> From<&'a DomainNewPriceLevel> for NewPriceLevel<'a> {
         Self {
             hub_id: value.hub_id,
             name: value.name.as_str(),
+            is_default: value.is_default,
         }
     }
 }
@@ -57,6 +62,7 @@ impl<'a> From<&'a DomainUpdatePriceLevel> for UpdatePriceLevel<'a> {
         Self {
             name: value.name.as_str(),
             updated_at: value.updated_at,
+            is_default: value.is_default,
         }
     }
 }

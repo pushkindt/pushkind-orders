@@ -882,6 +882,7 @@ Banana,usd,,Ripe banana,,8.50,
             name: name.to_string(),
             created_at: epoch,
             updated_at: epoch,
+            is_default: false,
         }
     }
 
