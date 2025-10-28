@@ -30,7 +30,6 @@ pub struct NewProduct<'a> {
     pub description: Option<&'a str>,
     pub units: Option<&'a str>,
     pub currency: &'a str,
-    pub updated_at: NaiveDateTime,
     pub category_id: Option<i32>,
 }
 
@@ -75,7 +74,6 @@ impl<'a> From<&'a DomainNewProduct> for NewProduct<'a> {
             description: value.description.as_deref(),
             units: value.units.as_deref(),
             currency: value.currency.as_str(),
-            updated_at: value.updated_at,
             category_id: value.category_id,
         }
     }

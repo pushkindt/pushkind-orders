@@ -43,6 +43,15 @@ pub struct UpdateTag {
     pub updated_at: NaiveDateTime,
 }
 
+impl UpdateTag {
+    /// Construct a new patch payload with a trimmed name.
+    pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into().trim().to_string();
+        let updated_at = chrono::Utc::now().naive_utc();
+        Self { name, updated_at }
+    }
+}
+
 /// Query definition used to list tags for a hub.
 #[derive(Debug, Clone)]
 pub struct TagListQuery {

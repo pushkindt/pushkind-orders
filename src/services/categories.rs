@@ -494,7 +494,7 @@ mod tests {
             category_id: 1,
             name: "Updated".to_string(),
             description: None,
-            is_archived: None,
+            is_archived: false,
         };
 
         let result = modify_category(&repo, &user, form);
@@ -523,7 +523,7 @@ mod tests {
             category_id: 3,
             name: " Dry Goods ".to_string(),
             description: Some(" pantry items ".to_string()),
-            is_archived: Some(false),
+            is_archived: false,
         };
 
         let updated = modify_category(&repo, &user, form).expect("expected success");

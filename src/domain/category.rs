@@ -1,4 +1,4 @@
-use chrono::{Local, NaiveDateTime};
+use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
@@ -34,20 +34,17 @@ pub struct NewCategory {
     pub name: String,
     /// Optional description that expands upon the category name.
     pub description: Option<String>,
-    /// Timestamp captured when the category payload was created.
-    pub updated_at: NaiveDateTime,
 }
 
 impl NewCategory {
     /// Build a new category payload with the supplied details and current timestamp.
     pub fn new(hub_id: i32, name: impl Into<String>) -> Self {
-        let now = Local::now().naive_utc();
+        let name = name.into().trim().into();
         Self {
             hub_id,
             parent_id: None,
-            name: name.into(),
+            name,
             description: None,
-            updated_at: now,
         }
     }
 
@@ -72,19 +69,21 @@ pub struct UpdateCategory {
     /// New description value; `None` clears the description.
     pub description: Option<String>,
     /// Optional archive flag toggle.
-    pub is_archived: Option<bool>,
+    pub is_archived: bool,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }
 
 impl UpdateCategory {
     /// Build a category update payload with the supplied values.
-    pub fn new(name: String, description: Option<String>, is_archived: Option<bool>) -> Self {
+    pub fn new(name: String, description: Option<String>, is_archived: bool) -> Self {
+        let name = name.trim().into();
+        let updated_at = chrono::Local::now().naive_utc();
         Self {
             name,
             description,
             is_archived,
-            updated_at: Local::now().naive_utc(),
+            updated_at,
         }
     }
 }

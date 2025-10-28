@@ -50,23 +50,21 @@ pub struct NewProduct {
     pub currency: String,
     /// Optional identifier of the category the product belongs to.
     pub category_id: Option<i32>,
-    /// Timestamp captured when the product payload was created.
-    pub updated_at: NaiveDateTime,
 }
 
 impl NewProduct {
     /// Build a new product payload with the supplied details and current timestamp.
     pub fn new(hub_id: i32, name: impl Into<String>, currency: impl Into<String>) -> Self {
-        let now = chrono::Local::now().naive_utc();
+        let name = name.into().trim().to_string();
+        let currency = currency.into().trim().to_string();
         Self {
             hub_id,
-            name: name.into(),
+            name,
             sku: None,
             description: None,
             units: None,
-            currency: currency.into(),
+            currency,
             category_id: None,
-            updated_at: now,
         }
     }
 
@@ -114,6 +112,55 @@ pub struct UpdateProduct {
     pub category_id: Option<i32>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
+}
+
+impl UpdateProduct {
+    /// Build a patch payload with the supplied details and current timestamp.
+    pub fn new(name: impl Into<String>, currency: impl Into<String>) -> Self {
+        let now = chrono::Local::now().naive_utc();
+        let name = name.into().trim().to_string();
+        let currency = currency.into().trim().to_string();
+        Self {
+            name,
+            sku: None,
+            description: None,
+            units: None,
+            currency,
+            is_archived: false,
+            category_id: None,
+            updated_at: now,
+        }
+    }
+
+    /// Attach an SKU identifier to the patch payload.
+    pub fn with_sku(mut self, sku: impl Into<String>) -> Self {
+        self.sku = Some(sku.into());
+        self
+    }
+
+    /// Attach a descriptive text to the patch payload.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Attach a unit of measure to the patch payload.
+    pub fn with_units(mut self, units: impl Into<String>) -> Self {
+        self.units = Some(units.into());
+        self
+    }
+
+    /// Assign the product to a category.
+    pub fn with_category_id(mut self, category_id: i32) -> Self {
+        self.category_id = Some(category_id);
+        self
+    }
+
+    /// Mark the product as archived.
+    pub fn archive(mut self) -> Self {
+        self.is_archived = true;
+        self
+    }
 }
 
 /// Query definition used to list products for a hub.

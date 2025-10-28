@@ -2,6 +2,7 @@ use diesel::prelude::*;
 use pushkind_common::repository::errors::RepositoryError;
 use pushkind_orders::domain::{
     category::NewCategory as DomainNewCategory,
+    customer::CustomerListQuery,
     customer::NewCustomer,
     order::{NewOrder, OrderListQuery, OrderProduct, OrderStatus, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevelListQuery, UpdatePriceLevel},
@@ -13,8 +14,8 @@ use pushkind_orders::models::category::NewCategory as DbNewCategory;
 use pushkind_orders::models::product_price_level::NewProductPriceLevel as DbNewProductPriceLevel;
 use pushkind_orders::repository::DieselRepository;
 use pushkind_orders::repository::{
-    CustomerListQuery, CustomerReader, CustomerWriter, OrderReader, OrderWriter, PriceLevelReader,
-    PriceLevelWriter, ProductReader, ProductWriter, UserListQuery, UserReader, UserWriter,
+    CustomerReader, CustomerWriter, OrderReader, OrderWriter, PriceLevelReader, PriceLevelWriter,
+    ProductReader, ProductWriter, UserListQuery, UserReader, UserWriter,
 };
 use pushkind_orders::schema::categories;
 
@@ -112,7 +113,7 @@ fn test_customer_repository_crud() {
     let repo = DieselRepository::new(test_db.pool());
 
     let vip_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "VIP"))
+        .create_price_level(&NewPriceLevel::new(1, "VIP", false))
         .expect("failed to create price level");
 
     let alice_new = NewCustomer::new(1, "Alice", "ALICE@example.com");
@@ -335,10 +336,10 @@ fn test_replace_product_price_levels() {
     let repo = DieselRepository::new(test_db.pool());
 
     let retail_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Retail"))
+        .create_price_level(&NewPriceLevel::new(1, "Retail", false))
         .expect("failed to create price level");
     let wholesale_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Wholesale"))
+        .create_price_level(&NewPriceLevel::new(1, "Wholesale", false))
         .expect("failed to create price level");
 
     let product = repo
@@ -377,8 +378,8 @@ fn test_price_level_repository_crud() {
     let test_db = common::TestDb::new("test_price_level_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    let bronze_new = NewPriceLevel::new(1, " Bronze ");
-    let silver_new = NewPriceLevel::new(1, "Silver");
+    let bronze_new = NewPriceLevel::new(1, " Bronze ", false);
+    let silver_new = NewPriceLevel::new(1, "Silver", false);
 
     let bronze = repo
         .create_price_level(&bronze_new)
@@ -418,6 +419,7 @@ fn test_price_level_repository_crud() {
     let updates = UpdatePriceLevel {
         name: "Gold".to_string(),
         updated_at: chrono::Utc::now().naive_utc(),
+        is_default: false,
     };
 
     let updated = repo
@@ -465,7 +467,7 @@ fn deleting_price_level_removes_product_rates() {
         .create_product(&NewProduct::new(1, "Cascade Product", "USD"))
         .expect("failed to create product");
     let price_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Cascade Level"))
+        .create_price_level(&NewPriceLevel::new(1, "Cascade Level", false))
         .expect("failed to create price level");
 
     {

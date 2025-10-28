@@ -51,7 +51,6 @@ pub struct NewOrder<'a> {
     pub notes: Option<&'a str>,
     pub total_cents: i32,
     pub currency: &'a str,
-    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Insertable)]
@@ -131,7 +130,6 @@ impl<'a> From<&'a DomainNewOrder> for NewOrder<'a> {
             notes: value.notes.as_deref(),
             total_cents: value.total_cents,
             currency: value.currency.as_str(),
-            updated_at: value.updated_at,
         }
     }
 }

@@ -98,7 +98,7 @@ pub struct EditCategoryForm {
     #[validate(length(max = DESCRIPTION_MAX_LEN_VALIDATOR))]
     pub description: Option<String>,
     /// Optional archive toggle for the category.
-    pub is_archived: Option<bool>,
+    pub is_archived: bool,
 }
 
 impl EditCategoryForm {
@@ -336,7 +336,7 @@ mod tests {
             category_id: 42,
             name: "  Pantry  ".to_string(),
             description: Some(" Dry goods ".to_string()),
-            is_archived: Some(true),
+            is_archived: true,
         };
 
         let payload = form
@@ -347,7 +347,7 @@ mod tests {
         let update = payload.update;
         assert_eq!(update.name, "Pantry");
         assert_eq!(update.description.as_deref(), Some("Dry goods"));
-        assert_eq!(update.is_archived, Some(true));
+        assert!(update.is_archived);
     }
 
     #[test]
@@ -356,7 +356,7 @@ mod tests {
             category_id: 1,
             name: "   ".to_string(),
             description: None,
-            is_archived: None,
+            is_archived: false,
         };
 
         let result = form.into_update_category();
@@ -370,7 +370,7 @@ mod tests {
             category_id: 2,
             name: " Pantry ".to_string(),
             description: Some("  ".to_string()),
-            is_archived: None,
+            is_archived: false,
         };
 
         let payload = form

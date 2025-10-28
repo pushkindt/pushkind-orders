@@ -9,7 +9,7 @@ use crate::domain::category::{
     UpdateCategory as DomainUpdateCategory,
 };
 use crate::models::category::{
-    Category as DbCategory, NewCategory as DbNewCategory, UpdateCategoryChangeset,
+    Category as DbCategory, NewCategory as DbNewCategory, UpdateCategory,
 };
 use crate::repository::{CategoryReader, CategoryWriter, DieselRepository};
 
@@ -124,14 +124,14 @@ impl CategoryWriter for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        let db_updates = UpdateCategoryChangeset::from(updates);
+        let db_updates = UpdateCategory::from(updates);
 
         let target = categories::table
             .filter(categories::id.eq(category_id))
             .filter(categories::hub_id.eq(hub_id));
 
         let updated = diesel::update(target)
-            .set((&db_updates.core, &db_updates.nullable))
+            .set(&db_updates)
             .get_result::<DbCategory>(&mut conn)?;
 
         Ok(updated.into())
