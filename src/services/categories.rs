@@ -126,27 +126,6 @@ where
         .into_update_category()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    if matches!(payload.update.parent_id, Some(value) if value == payload.category_id) {
-        return Err(ServiceError::Form(
-            "Категория не может быть родителем самой себя.".to_string(),
-        ));
-    }
-
-    if let Some(new_parent_id) = payload.update.parent_id {
-        let (_, categories) = repo
-            .list_categories(CategoryTreeQuery::new(user.hub_id).include_archived())
-            .map_err(ServiceError::from)?;
-
-        let children_by_parent = build_children_map(&categories);
-        let descendants = collect_descendants(payload.category_id, &children_by_parent);
-
-        if descendants.contains(&new_parent_id) {
-            return Err(ServiceError::Form(
-                "Категория не может быть родителем своей дочерней категории.".to_string(),
-            ));
-        }
-    }
-
     repo.update_category(payload.category_id, user.hub_id, &payload.update)
         .map_err(ServiceError::from)
 }
@@ -218,39 +197,6 @@ fn collect_ancestors(category_id: i32, parent_map: &HashMap<i32, Option<i32>>) -
     }
 
     ancestors
-}
-
-fn build_children_map(categories: &[Category]) -> HashMap<i32, Vec<i32>> {
-    let mut children_by_parent: HashMap<i32, Vec<i32>> = HashMap::new();
-
-    for category in categories {
-        if let Some(parent_id) = category.parent_id {
-            children_by_parent
-                .entry(parent_id)
-                .or_default()
-                .push(category.id);
-        }
-    }
-
-    children_by_parent
-}
-
-fn collect_descendants(
-    category_id: i32,
-    children_by_parent: &HashMap<i32, Vec<i32>>,
-) -> HashSet<i32> {
-    let mut stack = vec![category_id];
-    let mut visited = HashSet::new();
-
-    while let Some(current) = stack.pop() {
-        if visited.insert(current)
-            && let Some(children) = children_by_parent.get(&current)
-        {
-            stack.extend(children.iter().copied());
-        }
-    }
-
-    visited
 }
 
 #[cfg(test)]
@@ -548,85 +494,12 @@ mod tests {
             category_id: 1,
             name: "Updated".to_string(),
             description: None,
-            parent_id: None,
             is_archived: None,
         };
 
         let result = modify_category(&repo, &user, form);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
-    }
-
-    #[test]
-    fn modify_category_rejects_self_parent() {
-        let repo = MockCategoryRepo::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-        let form = EditCategoryForm {
-            category_id: 3,
-            name: "Pantry".to_string(),
-            description: None,
-            parent_id: Some("3".to_string()),
-            is_archived: None,
-        };
-
-        let result = modify_category(&repo, &user, form);
-
-        assert!(matches!(result, Err(ServiceError::Form(_))));
-    }
-
-    #[test]
-    fn modify_category_rejects_descendant_parent() {
-        let mut repo = MockCategoryRepo::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-
-        repo.reader
-            .expect_list_categories()
-            .times(1)
-            .withf(|query| {
-                assert_eq!(query.hub_id, 9);
-                assert!(query.include_archived);
-                true
-            })
-            .returning(|_| {
-                Ok((
-                    3,
-                    vec![
-                        sample_category(1, 9, "Root"),
-                        Category {
-                            id: 2,
-                            hub_id: 9,
-                            parent_id: Some(1),
-                            name: "Child".to_string(),
-                            description: None,
-                            is_archived: false,
-                            created_at: fixed_datetime(),
-                            updated_at: fixed_datetime(),
-                        },
-                        Category {
-                            id: 3,
-                            hub_id: 9,
-                            parent_id: Some(2),
-                            name: "Grandchild".to_string(),
-                            description: None,
-                            is_archived: false,
-                            created_at: fixed_datetime(),
-                            updated_at: fixed_datetime(),
-                        },
-                    ],
-                ))
-            });
-
-        let form = EditCategoryForm {
-            category_id: 1,
-            name: "Root".to_string(),
-            description: None,
-            parent_id: Some("3".to_string()),
-            is_archived: None,
-        };
-
-        let result = modify_category(&repo, &user, form);
-
-        assert!(matches!(result, Err(ServiceError::Form(_))));
     }
 
     #[test]
@@ -642,7 +515,6 @@ mod tests {
                 assert_eq!(*hub_id, 9);
                 assert_eq!(updates.name, "Dry Goods");
                 assert_eq!(updates.description.as_deref(), Some("pantry items"));
-                assert!(updates.parent_id.is_none());
                 true
             })
             .returning(|_, _, _| Ok(sample_category(3, 9, "Dry Goods")));
@@ -651,7 +523,6 @@ mod tests {
             category_id: 3,
             name: " Dry Goods ".to_string(),
             description: Some(" pantry items ".to_string()),
-            parent_id: Some("".to_string()),
             is_archived: Some(false),
         };
 

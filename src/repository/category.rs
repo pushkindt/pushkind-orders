@@ -124,15 +124,6 @@ impl CategoryWriter for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        if let Some(parent_id) = updates.parent_id {
-            if parent_id == category_id {
-                return Err(RepositoryError::ConstraintViolation(
-                    "category cannot be its own parent".into(),
-                ));
-            }
-            ensure_category_with_hub(&mut conn, hub_id, parent_id)?;
-        }
-
         let db_updates = UpdateCategoryChangeset::from(updates);
 
         let target = categories::table

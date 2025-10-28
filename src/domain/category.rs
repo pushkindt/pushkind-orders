@@ -71,8 +71,6 @@ pub struct UpdateCategory {
     pub name: String,
     /// New description value; `None` clears the description.
     pub description: Option<String>,
-    /// New parent category identifier; `None` clears the relationship.
-    pub parent_id: Option<i32>,
     /// Optional archive flag toggle.
     pub is_archived: Option<bool>,
     /// Timestamp captured when the patch was created.
@@ -81,16 +79,10 @@ pub struct UpdateCategory {
 
 impl UpdateCategory {
     /// Build a category update payload with the supplied values.
-    pub fn new(
-        name: String,
-        description: Option<String>,
-        parent_id: Option<i32>,
-        is_archived: Option<bool>,
-    ) -> Self {
+    pub fn new(name: String, description: Option<String>, is_archived: Option<bool>) -> Self {
         Self {
             name,
             description,
-            parent_id,
             is_archived,
             updated_at: Local::now().naive_utc(),
         }
