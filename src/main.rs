@@ -16,7 +16,7 @@ use tera::Tera;
 
 use pushkind_orders::repository::DieselRepository;
 use pushkind_orders::routes::categories::{
-    add_category, assign_category, delete_category, edit_category, show_categories,
+    add_category, delete_category, edit_category, show_categories,
 };
 use pushkind_orders::routes::main::show_index;
 use pushkind_orders::routes::price_levels::{
@@ -100,7 +100,6 @@ async fn main() -> std::io::Result<()> {
                     .service(show_index)
                     .service(show_categories)
                     .service(add_category)
-                    .service(assign_category)
                     .service(edit_category)
                     .service(delete_category)
                     .service(show_tags)
