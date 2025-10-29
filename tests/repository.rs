@@ -390,6 +390,14 @@ fn test_price_level_repository_crud() {
 
     assert_eq!(bronze.name, "Bronze");
     assert_eq!(silver.name, "Silver");
+    assert!(
+        bronze.is_default,
+        "first price level should default to true"
+    );
+    assert!(
+        !silver.is_default,
+        "subsequent price level should respect provided default flag"
+    );
 
     let fetched = repo
         .get_price_level_by_id(bronze.id, 1)
