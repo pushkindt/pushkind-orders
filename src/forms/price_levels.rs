@@ -7,7 +7,7 @@ use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
-use crate::domain::price_level::NewPriceLevel;
+use crate::domain::price_level::{NewPriceLevel, UpdatePriceLevel};
 
 /// Maximum length allowed for a price level name.
 const NAME_MAX_LEN: usize = 128;
@@ -61,6 +61,31 @@ impl AddPriceLevelForm {
         }
 
         Ok(NewPriceLevel::new(hub_id, sanitized_name, self.default))
+    }
+}
+
+/// Form payload emitted when submitting the "Edit price level" form.
+#[derive(Debug, Deserialize, Validate)]
+pub struct EditPriceLevelForm {
+    /// Updated name entered by the user.
+    #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
+    pub name: String,
+    /// Updated default flag for the price level.
+    #[serde(default)]
+    pub default: bool,
+}
+
+impl EditPriceLevelForm {
+    /// Validates and sanitizes the payload into a domain `UpdatePriceLevel`.
+    pub fn into_update_price_level(self) -> PriceLevelFormResult<UpdatePriceLevel> {
+        self.validate()?;
+
+        let sanitized_name = sanitize_plain_text(&self.name);
+        if sanitized_name.is_empty() {
+            return Err(PriceLevelFormError::EmptyName);
+        }
+
+        Ok(UpdatePriceLevel::new(sanitized_name, self.default))
     }
 }
 
@@ -183,6 +208,31 @@ mod tests {
         };
 
         let result = form.into_new_price_level(1);
+
+        assert!(matches!(result, Err(PriceLevelFormError::EmptyName)));
+    }
+
+    #[test]
+    fn edit_price_level_form_sanitizes_and_converts() {
+        let form = EditPriceLevelForm {
+            name: "  Updated\nName  ".to_string(),
+            default: true,
+        };
+
+        let update = form.into_update_price_level().expect("expected success");
+
+        assert_eq!(update.name, "Updated Name");
+        assert!(update.is_default);
+    }
+
+    #[test]
+    fn edit_price_level_form_rejects_empty() {
+        let form = EditPriceLevelForm {
+            name: " \t".to_string(),
+            default: false,
+        };
+
+        let result = form.into_update_price_level();
 
         assert!(matches!(result, Err(PriceLevelFormError::EmptyName)));
     }

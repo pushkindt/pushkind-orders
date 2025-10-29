@@ -6,12 +6,12 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
-use crate::forms::price_levels::{AddPriceLevelForm, UploadPriceLevelsForm};
+use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm, UploadPriceLevelsForm};
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::price_levels::{
     PriceLevelsQuery, create_price_level, import_price_levels, load_price_levels,
-    remove_price_level,
+    remove_price_level, update_price_level,
 };
 
 #[get("/price-levels")]
@@ -73,6 +73,44 @@ pub async fn add_price_level(
         Err(err) => {
             log::error!("Failed to create price level: {err}");
             FlashMessage::error("Не удалось создать уровень цен.").send();
+            redirect("/price-levels")
+        }
+    }
+}
+
+#[post("/price-levels/{price_level_id}/edit")]
+pub async fn edit_price_level(
+    path: web::Path<i32>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+    form: web::Form<EditPriceLevelForm>,
+) -> impl Responder {
+    let price_level_id = path.into_inner();
+
+    match update_price_level(repo.get_ref(), &user, price_level_id, form.into_inner()) {
+        Ok(price_level) => {
+            FlashMessage::success(format!("Уровень «{}» обновлен.", price_level.name)).send();
+            redirect("/price-levels")
+        }
+        Err(ServiceError::Unauthorized) => {
+            FlashMessage::error("Недостаточно прав.").send();
+            redirect("/na")
+        }
+        Err(ServiceError::Form(message)) => {
+            FlashMessage::error(message).send();
+            redirect("/price-levels")
+        }
+        Err(ServiceError::NotFound) => {
+            FlashMessage::error("Уровень не найден или недоступен.").send();
+            redirect("/price-levels")
+        }
+        Err(ServiceError::Conflict) => {
+            FlashMessage::error("Уровень с таким названием уже существует.").send();
+            redirect("/price-levels")
+        }
+        Err(err) => {
+            log::error!("Failed to update price level {price_level_id}: {err}");
+            FlashMessage::error("Не удалось обновить уровень цен.").send();
             redirect("/price-levels")
         }
     }

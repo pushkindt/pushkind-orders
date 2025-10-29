@@ -1,7 +1,7 @@
 <div class="modal fade" id="editPriceModal" tabindex="-1" aria-labelledby="editPriceModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
-            <form action="/price-levels/edit" method="POST">
+            <form method="POST" data-action-base="/price-levels">
                 <div class="modal-header">
                     <h1 class="modal-title fs-5" id="editPriceModalLabel">Редактировать уровень цен</h1>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
@@ -46,6 +46,17 @@
         const idInput = modalElement.querySelector("#editPriceId");
         const nameInput = modalElement.querySelector("#editPriceName");
         const defaultCheckbox = modalElement.querySelector("#editPriceDefault");
+        const baseAction = (() => {
+            if (!form) {
+                return "";
+            }
+            const base = form.getAttribute("data-action-base") || "";
+            const trimmed = base.endsWith("/") ? base.slice(0, -1) : base;
+            if (trimmed) {
+                form.setAttribute("action", trimmed);
+            }
+            return trimmed;
+        })();
 
         const toBoolean = (value) => {
             if (typeof value !== "string") {
@@ -62,8 +73,10 @@
 
             const dataset = trigger.dataset || {};
 
+            const priceId = dataset.priceId || dataset.id || "";
+
             if (idInput) {
-                idInput.value = dataset.priceId || dataset.id || "";
+                idInput.value = priceId;
             }
 
             if (nameInput) {
@@ -72,6 +85,14 @@
 
             if (defaultCheckbox) {
                 defaultCheckbox.checked = toBoolean(dataset.priceDefault || "false");
+            }
+
+            if (form) {
+                if (priceId && baseAction) {
+                    form.setAttribute("action", `${baseAction}/${priceId}/edit`);
+                } else if (baseAction) {
+                    form.setAttribute("action", baseAction);
+                }
             }
         });
 
@@ -84,6 +105,9 @@
         modalElement.addEventListener("hidden.bs.modal", () => {
             if (form) {
                 form.reset();
+                if (baseAction) {
+                    form.setAttribute("action", baseAction);
+                }
             }
             if (idInput) {
                 idInput.value = "";

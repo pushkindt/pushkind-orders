@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
-use crate::forms::price_levels::{AddPriceLevelForm, UploadPriceLevelsForm};
+use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm, UploadPriceLevelsForm};
 use crate::repository::{PriceLevelReader, PriceLevelWriter};
 use crate::services::{ServiceError, ServiceResult};
 
@@ -79,6 +79,28 @@ where
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
     repo.create_price_level(&new_price_level)
+        .map_err(ServiceError::from)
+}
+
+/// Updates an existing price level for the authenticated user's hub.
+pub fn update_price_level<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    price_level_id: i32,
+    form: EditPriceLevelForm,
+) -> ServiceResult<PriceLevel>
+where
+    R: PriceLevelWriter + ?Sized,
+{
+    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    let updates = form
+        .into_update_price_level()
+        .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    repo.update_price_level(price_level_id, user.hub_id, &updates)
         .map_err(ServiceError::from)
 }
 
@@ -309,6 +331,86 @@ mod tests {
             }
             other => panic!("expected form error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn update_price_level_requires_role() {
+        let repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[]);
+        let form = EditPriceLevelForm {
+            name: "Retail".to_string(),
+            default: false,
+        };
+
+        let result = update_price_level(&repo, &user, 7, form);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn update_price_level_updates_record() {
+        let mut repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = EditPriceLevelForm {
+            name: "  Retail Plus  ".to_string(),
+            default: true,
+        };
+
+        let expected_hub = user.hub_id;
+        repo.expect_update_price_level()
+            .times(1)
+            .withf(move |id, hub, updates| {
+                *id == 7
+                    && *hub == expected_hub
+                    && updates.name == "Retail Plus"
+                    && updates.is_default
+            })
+            .return_once(move |_, _, _| Ok(sample_level(7, expected_hub, "Retail Plus")));
+
+        let result = update_price_level(&repo, &user, 7, form).expect("expected success");
+
+        assert_eq!(result.id, 7);
+        assert_eq!(result.name, "Retail Plus");
+    }
+
+    #[test]
+    fn update_price_level_propagates_form_errors() {
+        let repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = EditPriceLevelForm {
+            name: "   ".to_string(),
+            default: false,
+        };
+
+        let result = update_price_level(&repo, &user, 3, form);
+
+        match result {
+            Err(ServiceError::Form(message)) => {
+                assert!(
+                    message.contains("cannot be empty"),
+                    "unexpected message: {message}"
+                );
+            }
+            other => panic!("expected form error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn update_price_level_bubbles_not_found() {
+        let mut repo = MockPriceLevelWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = EditPriceLevelForm {
+            name: "Retail".to_string(),
+            default: false,
+        };
+
+        repo.expect_update_price_level()
+            .times(1)
+            .return_once(|_, _, _| Err(RepositoryError::NotFound));
+
+        let result = update_price_level(&repo, &user, 11, form);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
     }
 
     #[test]

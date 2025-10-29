@@ -465,9 +465,7 @@ fn test_price_level_repository_crud() {
 
 #[test]
 fn updating_price_level_default_resets_previous_default() {
-    let test_db = common::TestDb::new(
-        "updating_price_level_default_resets_previous_default.db",
-    );
+    let test_db = common::TestDb::new("updating_price_level_default_resets_previous_default.db");
     let repo = DieselRepository::new(test_db.pool());
 
     let original_default = repo
@@ -477,8 +475,14 @@ fn updating_price_level_default_resets_previous_default() {
         .create_price_level(&NewPriceLevel::new(1, "Secondary", false))
         .expect("failed to create secondary level");
 
-    assert!(original_default.is_default, "expected first level to be default");
-    assert!(!secondary.is_default, "expected second level to respect payload flag");
+    assert!(
+        original_default.is_default,
+        "expected first level to be default"
+    );
+    assert!(
+        !secondary.is_default,
+        "expected second level to respect payload flag"
+    );
 
     let updates = UpdatePriceLevel {
         name: secondary.name.clone(),
