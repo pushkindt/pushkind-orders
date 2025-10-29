@@ -1,0 +1,117 @@
+<div class="modal fade" id="editPriceModal" tabindex="-1" aria-labelledby="editPriceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" data-action-base="/price-levels">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="editPriceModalLabel">Редактировать уровень цен</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editPriceId" name="price_level_id">
+                    <div class="row mb-3">
+                        <label for="editPriceName" class="col-md-4 col-form-label">Название</label>
+                        <div class="col-md-8">
+                            <input name="name" type="text" class="form-control" id="editPriceName"
+                                placeholder="Например: «Розница»" maxlength="128" required>
+                            <div class="form-text">Название должно быть уникальным в пределах хаба.</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-8 offset-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="true" id="editPriceDefault" name="default">
+                                <label class="form-check-label" for="editPriceDefault">По умолчанию</label>
+                            </div>
+                            <div class="form-text">Сделайте уровень цен основным для всех новых клиентов.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const modalElement = document.getElementById("editPriceModal");
+        if (!modalElement) {
+            return;
+        }
+
+        const form = modalElement.querySelector("form");
+        const idInput = modalElement.querySelector("#editPriceId");
+        const nameInput = modalElement.querySelector("#editPriceName");
+        const defaultCheckbox = modalElement.querySelector("#editPriceDefault");
+        const baseAction = (() => {
+            if (!form) {
+                return "";
+            }
+            const base = form.getAttribute("data-action-base") || "";
+            const trimmed = base.endsWith("/") ? base.slice(0, -1) : base;
+            if (trimmed) {
+                form.setAttribute("action", trimmed);
+            }
+            return trimmed;
+        })();
+
+        const toBoolean = (value) => {
+            if (typeof value !== "string") {
+                return false;
+            }
+            return ["1", "true", "yes"].includes(value.toLowerCase());
+        };
+
+        modalElement.addEventListener("show.bs.modal", (event) => {
+            const trigger = event.relatedTarget;
+            if (!trigger) {
+                return;
+            }
+
+            const dataset = trigger.dataset || {};
+
+            const priceId = dataset.priceId || dataset.id || "";
+
+            if (idInput) {
+                idInput.value = priceId;
+            }
+
+            if (nameInput) {
+                nameInput.value = dataset.priceName || dataset.name || "";
+            }
+
+            if (defaultCheckbox) {
+                defaultCheckbox.checked = toBoolean(dataset.priceDefault || "false");
+            }
+
+            if (form) {
+                if (priceId && baseAction) {
+                    form.setAttribute("action", `${baseAction}/${priceId}/edit`);
+                } else if (baseAction) {
+                    form.setAttribute("action", baseAction);
+                }
+            }
+        });
+
+        modalElement.addEventListener("shown.bs.modal", () => {
+            if (nameInput) {
+                nameInput.focus();
+            }
+        });
+
+        modalElement.addEventListener("hidden.bs.modal", () => {
+            if (form) {
+                form.reset();
+                if (baseAction) {
+                    form.setAttribute("action", baseAction);
+                }
+            }
+            if (idInput) {
+                idInput.value = "";
+            }
+        });
+    });
+</script>
