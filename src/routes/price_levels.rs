@@ -7,6 +7,7 @@ use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
 use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm, UploadPriceLevelsForm};
+use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::price_levels::{
@@ -20,7 +21,8 @@ pub async fn show_price_levels(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
     flash_messages: IncomingFlashMessages,
-    server_config: web::Data<CommonServerConfig>,
+    common_config: web::Data<CommonServerConfig>,
+    server_config: web::Data<ServerConfig>,
     tera: web::Data<Tera>,
 ) -> impl Responder {
     match load_price_levels(repo.get_ref(), &user, params.0) {
@@ -29,11 +31,12 @@ pub async fn show_price_levels(
                 &flash_messages,
                 &user,
                 "price_levels",
-                &server_config.auth_service_url,
+                &common_config.auth_service_url,
             );
             context.insert("price_levels", &data.price_levels);
             context.insert("search", &data.search);
             context.insert("search_action", "/price-levels");
+            context.insert("crm_service_url", &server_config.crm_service_url);
             render_template(&tera, "price_levels/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {
