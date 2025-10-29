@@ -85,13 +85,25 @@ impl PriceLevelWriter for DieselRepository {
         use crate::schema::price_levels;
 
         let mut conn = self.conn()?;
-        let db_new = DbNewPriceLevel::from(new_price_level);
+        conn.transaction(|conn| {
+            let mut db_new = DbNewPriceLevel::from(new_price_level);
 
-        let created = diesel::insert_into(price_levels::table)
-            .values(&db_new)
-            .get_result::<DbPriceLevel>(&mut conn)?;
+            let existing_count = price_levels::table
+                .filter(price_levels::hub_id.eq(new_price_level.hub_id))
+                .count()
+                .get_result::<i64>(conn)?;
 
-        Ok(created.into())
+            if existing_count == 0 {
+                db_new.is_default = true;
+            }
+
+            let created = diesel::insert_into(price_levels::table)
+                .values(&db_new)
+                .get_result::<DbPriceLevel>(conn)?;
+
+            Ok::<DomainPriceLevel, diesel::result::Error>(created.into())
+        })
+        .map_err(Into::into)
     }
 
     fn update_price_level(
