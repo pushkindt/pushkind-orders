@@ -464,6 +464,46 @@ fn test_price_level_repository_crud() {
 }
 
 #[test]
+fn updating_price_level_default_resets_previous_default() {
+    let test_db = common::TestDb::new(
+        "updating_price_level_default_resets_previous_default.db",
+    );
+    let repo = DieselRepository::new(test_db.pool());
+
+    let original_default = repo
+        .create_price_level(&NewPriceLevel::new(1, "Default", false))
+        .expect("failed to create initial default level");
+    let secondary = repo
+        .create_price_level(&NewPriceLevel::new(1, "Secondary", false))
+        .expect("failed to create secondary level");
+
+    assert!(original_default.is_default, "expected first level to be default");
+    assert!(!secondary.is_default, "expected second level to respect payload flag");
+
+    let updates = UpdatePriceLevel {
+        name: secondary.name.clone(),
+        updated_at: chrono::Utc::now().naive_utc(),
+        is_default: true,
+    };
+
+    let updated = repo
+        .update_price_level(secondary.id, 1, &updates)
+        .expect("failed to promote second level to default");
+
+    assert!(updated.is_default, "expected updated level to be default");
+
+    let demoted = repo
+        .get_price_level_by_id(original_default.id, 1)
+        .expect("failed to fetch original default")
+        .expect("expected original level to exist after update");
+
+    assert!(
+        !demoted.is_default,
+        "expected repository to clear default flag on other levels",
+    );
+}
+
+#[test]
 fn deleting_price_level_removes_product_rates() {
     use diesel::prelude::*;
     use pushkind_orders::schema::product_price_levels::dsl as product_rates;
