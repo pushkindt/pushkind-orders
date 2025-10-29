@@ -14,13 +14,17 @@
         .category-tree-toggle[aria-expanded="true"] .icon-closed {
             display: none;
         }
+
+        .category-archived {
+            opacity: 0.6;
+        }
     </style>
 {% endblock %}
 
 {% macro node(n) %}
 
     <div class="mb-2">
-        <div class="d-flex align-items-center bg-white p-2 rounded-3 shadow-sm">
+        <div class="d-flex align-items-center bg-white p-2 rounded-3 shadow-sm{% if n.category.is_archived %} category-archived{% endif %}">
             <div class="d-flex align-items-center flex-grow-1">
                 {% if n.children | length > 0 %}
                     <button
@@ -37,8 +41,11 @@
                     </button>
                 {% endif %}
                 <div class="ms-2">
-                    <p class="fw-semibold mb-0">
+                    <p class="fw-semibold mb-0 d-flex align-items-center gap-2">
                         {{ n.category.name }}
+                        {% if n.category.is_archived %}
+                            <span class="badge text-bg-warning-subtle text-warning-emphasis border-0">Архивирована</span>
+                        {% endif %}
                     </p>
                     <p class="small text-muted mb-0">
                         {{ n.category.description | default(value='') }}

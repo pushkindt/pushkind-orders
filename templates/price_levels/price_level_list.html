@@ -6,10 +6,15 @@
 </div>
 <div id="priceList">
     {% for price in price_levels.items %}
-    <div class="row my-1 py-1 border-top" data-id="{{ price.id }}">
+    <div class="row my-1 py-1 border-top{% if price.is_default %} price-level-default{% endif %}" data-id="{{ price.id }}">
         <div class="col-sm">
             <span class="d-sm-none fw-bold">Название:</span>
-            {{ price.name }}
+            <span class="d-flex align-items-center gap-2">
+                {{ price.name }}
+                {% if price.is_default %}
+                    <span class="badge text-bg-success-subtle text-success-emphasis border-success-subtle border">По умолчанию</span>
+                {% endif %}
+            </span>
         </div>
         <div class="col-sm">
             <span class="d-sm-none fw-bold">Добавлено:</span>
