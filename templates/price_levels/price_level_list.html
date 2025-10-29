@@ -26,7 +26,15 @@
         </div>
         <div class="col-sm-2 col-12 d-flex justify-content-sm-end align-items-center mt-2 mt-sm-0">
             <span class="d-sm-none fw-bold me-2">Действия:</span>
-            <button class="btn btn-sm btn-outline-warning d-flex align-items-center gap-2 me-2">
+            <button
+                class="btn btn-sm btn-outline-warning d-flex align-items-center gap-2 me-2"
+                type="button"
+                data-bs-toggle="modal"
+                data-bs-target="#editPriceModal"
+                data-price-id="{{ price.id }}"
+                data-price-name="{{ price.name }}"
+                data-price-default="{{ price.is_default }}"
+            >
                 <i class="bi bi-pen"></i>
                 <span class="d-none d-sm-inline">Изменить</span>
             </button>
