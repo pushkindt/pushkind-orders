@@ -1,5 +1,15 @@
 {% extends 'base.html' %}
 
+{% block styles %}
+    {{ super() }}
+    <style>
+        .price-level-default {
+            border-left: 4px solid var(--bs-success);
+            background-color: rgba(var(--bs-success-rgb), 0.08);
+        }
+    </style>
+{% endblock %}
+
 {% block content %}
 {% include 'components/navigation.html' %}
 
