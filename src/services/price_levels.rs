@@ -235,8 +235,11 @@ where
     {
         Some(existing) => existing,
         None => {
-            let mut new_customer =
-                NewCustomer::new(assignment.hub_id, assignment.name.clone(), &assignment.email);
+            let mut new_customer = NewCustomer::new(
+                assignment.hub_id,
+                assignment.name.clone(),
+                &assignment.email,
+            );
 
             if let Some(phone) = assignment.phone.as_ref() {
                 new_customer = new_customer.with_phone(phone.clone());
