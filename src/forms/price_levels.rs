@@ -60,15 +60,15 @@ pub struct AssignClientPriceLevelPayload {
 impl AssignClientPriceLevelPayload {
     /// Validates the payload and returns the optional price level identifier.
     pub fn into_price_level_id(self) -> PriceLevelFormResult<Option<i32>> {
-        if let Some(id) = self.price_level_id {
-            if id < 1 {
-                let mut errors = ValidationErrors::new();
-                errors.add(
-                    "price_level_id",
-                    ValidationError::new("invalid_price_level_id"),
-                );
-                return Err(PriceLevelFormError::Validation(errors));
-            }
+        if let Some(id) = self.price_level_id
+            && id < 1
+        {
+            let mut errors = ValidationErrors::new();
+            errors.add(
+                "price_level_id",
+                ValidationError::new("invalid_price_level_id"),
+            );
+            return Err(PriceLevelFormError::Validation(errors));
         }
 
         Ok(self.price_level_id)

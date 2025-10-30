@@ -657,7 +657,7 @@ mod tests {
 
         repo.expect_assign_price_level_to_customers()
             .withf(move |target_hub, ids, price_level_id| {
-                *target_hub == hub_id && ids == &[7] && price_level_id == &Some(8)
+                *target_hub == hub_id && ids == [7] && price_level_id == &Some(8)
             })
             .returning(|_, _, _| Ok(()));
 
@@ -675,7 +675,7 @@ mod tests {
 
         repo.expect_assign_price_level_to_customers()
             .withf(move |target_hub, ids, price_level_id| {
-                *target_hub == hub_id && ids == &[3] && price_level_id.is_none()
+                *target_hub == hub_id && ids == [3] && price_level_id.is_none()
             })
             .returning(|_, _, _| Ok(()));
 
