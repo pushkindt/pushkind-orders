@@ -43,6 +43,12 @@ mock! {
     impl CustomerReader for CustomerReader {
         fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Customer>>;
         fn get_customer_by_email(&self, email: &str, hub_id: i32) -> RepositoryResult<Option<Customer>>;
+        fn get_customer_by_email_and_phone<'a>(
+            &self,
+            email: &'a str,
+            phone: Option<&'a str>,
+            hub_id: i32,
+        ) -> RepositoryResult<Option<Customer>>;
         fn list_customers(&self, query: CustomerListQuery) -> RepositoryResult<(usize, Vec<Customer>)>;
     }
 }

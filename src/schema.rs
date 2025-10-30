@@ -19,6 +19,7 @@ diesel::table! {
         hub_id -> Integer,
         name -> Text,
         email -> Text,
+        phone -> Nullable<Text>,
         price_level_id -> Nullable<Integer>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
