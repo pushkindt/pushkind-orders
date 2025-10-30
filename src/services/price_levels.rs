@@ -1,12 +1,15 @@
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::check_role;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::SERVICE_ACCESS_ROLE;
+use crate::domain::customer::CustomerListQuery;
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
-use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm, UploadPriceLevelsForm};
-use crate::repository::{PriceLevelReader, PriceLevelWriter};
+use crate::forms::price_levels::{
+    AddPriceLevelForm, AssignClientPriceLevelPayload, EditPriceLevelForm, UploadPriceLevelsForm,
+};
+use crate::repository::{CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter};
 use crate::services::{ServiceError, ServiceResult};
 
 /// Query parameters accepted by the price levels index page.
@@ -24,6 +27,24 @@ pub struct PriceLevelsPageData {
     pub price_levels: Paginated<PriceLevel>,
     /// Search query echoed back to the template when present.
     pub search: Option<String>,
+}
+
+/// Saved price level assignment for a specific customer.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ClientPriceLevelAssignment {
+    /// Identifier of the customer that owns the assignment.
+    pub customer_id: i32,
+    /// Selected price level identifier, if any.
+    pub price_level_id: Option<i32>,
+}
+
+/// Aggregated client assignments together with the hub default.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ClientPriceLevelAssignments {
+    /// Default price level identifier configured for the hub.
+    pub default_price_level_id: Option<i32>,
+    /// Saved assignments for customers belonging to the hub.
+    pub assignments: Vec<ClientPriceLevelAssignment>,
 }
 
 /// Loads the price levels list for the index page.
@@ -58,6 +79,45 @@ where
     Ok(PriceLevelsPageData {
         price_levels,
         search: query.search,
+    })
+}
+
+/// Loads saved price level assignments for all hub customers.
+pub fn load_client_price_level_assignments<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+) -> ServiceResult<ClientPriceLevelAssignments>
+where
+    R: PriceLevelReader + CustomerReader + ?Sized,
+{
+    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    let (_, price_levels) = repo
+        .list_price_levels(PriceLevelListQuery::new(user.hub_id))
+        .map_err(ServiceError::from)?;
+
+    let default_price_level_id = price_levels
+        .iter()
+        .find(|level| level.is_default)
+        .map(|level| level.id);
+
+    let (_, customers) = repo
+        .list_customers(CustomerListQuery::new(user.hub_id))
+        .map_err(ServiceError::from)?;
+
+    let assignments = customers
+        .into_iter()
+        .map(|customer| ClientPriceLevelAssignment {
+            customer_id: customer.id,
+            price_level_id: customer.price_level_id,
+        })
+        .collect();
+
+    Ok(ClientPriceLevelAssignments {
+        default_price_level_id,
+        assignments,
     })
 }
 
@@ -147,6 +207,28 @@ where
         .map_err(ServiceError::from)
 }
 
+/// Persists a price level assignment for a single customer.
+pub fn assign_price_level_to_client<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    customer_id: i32,
+    payload: AssignClientPriceLevelPayload,
+) -> ServiceResult<()>
+where
+    R: CustomerWriter + ?Sized,
+{
+    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    let price_level_id = payload
+        .into_price_level_id()
+        .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    repo.assign_price_level_to_customers(user.hub_id, &[customer_id], price_level_id)
+        .map_err(ServiceError::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,9 +240,14 @@ mod tests {
     use actix_multipart::form::tempfile::TempFile;
     use tempfile::NamedTempFile;
 
+    use crate::domain::customer::Customer;
     use crate::domain::price_level::PriceLevel;
-    use crate::forms::price_levels::{AddPriceLevelForm, UploadPriceLevelsForm};
-    use crate::repository::mock::{MockPriceLevelReader, MockPriceLevelWriter};
+    use crate::forms::price_levels::{
+        AddPriceLevelForm, AssignClientPriceLevelPayload, UploadPriceLevelsForm,
+    };
+    use crate::repository::mock::{
+        MockCustomerReader, MockCustomerWriter, MockPriceLevelReader, MockPriceLevelWriter,
+    };
     use pushkind_common::repository::errors::RepositoryError;
 
     fn fixed_datetime() -> NaiveDateTime {
@@ -178,6 +265,16 @@ mod tests {
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
             is_default: false,
+        }
+    }
+
+    fn sample_customer(id: i32, hub_id: i32, price_level_id: Option<i32>) -> Customer {
+        Customer {
+            id,
+            hub_id,
+            name: format!("Customer {id}"),
+            email: format!("customer{id}@example.com"),
+            price_level_id,
         }
     }
 
@@ -411,6 +508,196 @@ mod tests {
         let result = update_price_level(&repo, &user, 11, form);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
+    }
+
+    struct ClientAssignmentRepo {
+        customer_reader: MockCustomerReader,
+        price_level_reader: MockPriceLevelReader,
+    }
+
+    impl ClientAssignmentRepo {
+        fn new() -> Self {
+            Self {
+                customer_reader: MockCustomerReader::new(),
+                price_level_reader: MockPriceLevelReader::new(),
+            }
+        }
+    }
+
+    impl CustomerReader for ClientAssignmentRepo {
+        fn get_customer_by_id(
+            &self,
+            id: i32,
+            hub_id: i32,
+        ) -> pushkind_common::repository::errors::RepositoryResult<Option<Customer>> {
+            self.customer_reader.get_customer_by_id(id, hub_id)
+        }
+
+        fn get_customer_by_email(
+            &self,
+            email: &str,
+            hub_id: i32,
+        ) -> pushkind_common::repository::errors::RepositoryResult<Option<Customer>> {
+            self.customer_reader.get_customer_by_email(email, hub_id)
+        }
+
+        fn list_customers(
+            &self,
+            query: CustomerListQuery,
+        ) -> pushkind_common::repository::errors::RepositoryResult<(usize, Vec<Customer>)> {
+            self.customer_reader.list_customers(query)
+        }
+    }
+
+    impl PriceLevelReader for ClientAssignmentRepo {
+        fn get_price_level_by_id(
+            &self,
+            id: i32,
+            hub_id: i32,
+        ) -> pushkind_common::repository::errors::RepositoryResult<Option<PriceLevel>> {
+            self.price_level_reader.get_price_level_by_id(id, hub_id)
+        }
+
+        fn list_price_levels(
+            &self,
+            query: PriceLevelListQuery,
+        ) -> pushkind_common::repository::errors::RepositoryResult<(usize, Vec<PriceLevel>)>
+        {
+            self.price_level_reader.list_price_levels(query)
+        }
+    }
+
+    #[test]
+    fn load_client_price_level_assignments_requires_role() {
+        let repo = ClientAssignmentRepo::new();
+        let user = user_with_roles(&[]);
+
+        let result = load_client_price_level_assignments(&repo, &user);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn load_client_price_level_assignments_returns_assignments() {
+        let mut repo = ClientAssignmentRepo::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let hub_id = user.hub_id;
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .withf(move |query| query.hub_id == hub_id)
+            .returning(move |_| {
+                Ok((
+                    2,
+                    vec![
+                        PriceLevel {
+                            is_default: true,
+                            ..sample_level(10, hub_id, "Retail")
+                        },
+                        sample_level(11, hub_id, "Wholesale"),
+                    ],
+                ))
+            });
+
+        repo.customer_reader
+            .expect_list_customers()
+            .withf(move |query| query.hub_id == hub_id)
+            .returning(move |_| {
+                Ok((
+                    2,
+                    vec![
+                        sample_customer(1, hub_id, Some(11)),
+                        sample_customer(2, hub_id, None),
+                    ],
+                ))
+            });
+
+        let assignments =
+            load_client_price_level_assignments(&repo, &user).expect("expected success");
+
+        assert_eq!(assignments.default_price_level_id, Some(10));
+        assert_eq!(assignments.assignments.len(), 2);
+        assert_eq!(
+            assignments.assignments[0],
+            ClientPriceLevelAssignment {
+                customer_id: 1,
+                price_level_id: Some(11),
+            }
+        );
+        assert_eq!(
+            assignments.assignments[1],
+            ClientPriceLevelAssignment {
+                customer_id: 2,
+                price_level_id: None,
+            }
+        );
+    }
+
+    #[test]
+    fn assign_price_level_to_client_requires_role() {
+        let repo = MockCustomerWriter::new();
+        let user = user_with_roles(&[]);
+        let payload = AssignClientPriceLevelPayload {
+            price_level_id: Some(5),
+        };
+
+        let result = assign_price_level_to_client(&repo, &user, 7, payload);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn assign_price_level_to_client_updates_assignment() {
+        let mut repo = MockCustomerWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let payload = AssignClientPriceLevelPayload {
+            price_level_id: Some(8),
+        };
+        let hub_id = user.hub_id;
+
+        repo.expect_assign_price_level_to_customers()
+            .withf(move |target_hub, ids, price_level_id| {
+                *target_hub == hub_id && ids == &[7] && price_level_id == &Some(8)
+            })
+            .returning(|_, _, _| Ok(()));
+
+        assign_price_level_to_client(&repo, &user, 7, payload).expect("expected success");
+    }
+
+    #[test]
+    fn assign_price_level_to_client_clears_assignment() {
+        let mut repo = MockCustomerWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let payload = AssignClientPriceLevelPayload {
+            price_level_id: None,
+        };
+        let hub_id = user.hub_id;
+
+        repo.expect_assign_price_level_to_customers()
+            .withf(move |target_hub, ids, price_level_id| {
+                *target_hub == hub_id && ids == &[3] && price_level_id.is_none()
+            })
+            .returning(|_, _, _| Ok(()));
+
+        assign_price_level_to_client(&repo, &user, 3, payload).expect("expected success");
+    }
+
+    #[test]
+    fn assign_price_level_to_client_propagates_form_errors() {
+        let repo = MockCustomerWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let payload = AssignClientPriceLevelPayload {
+            price_level_id: Some(0),
+        };
+
+        let result = assign_price_level_to_client(&repo, &user, 3, payload);
+
+        match result {
+            Err(ServiceError::Form(message)) => {
+                assert!(message.contains("invalid_price_level_id"));
+            }
+            other => panic!("expected form error, got {other:?}"),
+        }
     }
 
     #[test]

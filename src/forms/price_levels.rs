@@ -5,7 +5,7 @@ use csv::Trim;
 use pushkind_common::routes::empty_string_as_none;
 use serde::Deserialize;
 use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::domain::price_level::{NewPriceLevel, UpdatePriceLevel};
 
@@ -48,6 +48,31 @@ pub struct AddPriceLevelForm {
     /// Is this a default price level?
     #[serde(default)]
     pub default: bool,
+}
+
+/// Payload emitted when assigning a price level to a client.
+#[derive(Debug, Deserialize)]
+pub struct AssignClientPriceLevelPayload {
+    /// Selected price level identifier. `None` restores the default hub level.
+    pub price_level_id: Option<i32>,
+}
+
+impl AssignClientPriceLevelPayload {
+    /// Validates the payload and returns the optional price level identifier.
+    pub fn into_price_level_id(self) -> PriceLevelFormResult<Option<i32>> {
+        if let Some(id) = self.price_level_id {
+            if id < 1 {
+                let mut errors = ValidationErrors::new();
+                errors.add(
+                    "price_level_id",
+                    ValidationError::new("invalid_price_level_id"),
+                );
+                return Err(PriceLevelFormError::Validation(errors));
+            }
+        }
+
+        Ok(self.price_level_id)
+    }
 }
 
 impl AddPriceLevelForm {
@@ -198,6 +223,30 @@ mod tests {
 
         assert_eq!(new_level.hub_id, 5);
         assert_eq!(new_level.name, "Premium Level");
+    }
+
+    #[test]
+    fn assign_client_price_level_payload_validates_positive_ids() {
+        let payload = AssignClientPriceLevelPayload {
+            price_level_id: Some(3),
+        };
+
+        let price_level_id = payload
+            .into_price_level_id()
+            .expect("expected valid payload");
+
+        assert_eq!(price_level_id, Some(3));
+    }
+
+    #[test]
+    fn assign_client_price_level_payload_rejects_invalid_ids() {
+        let payload = AssignClientPriceLevelPayload {
+            price_level_id: Some(0),
+        };
+
+        let result = payload.into_price_level_id();
+
+        assert!(result.is_err(), "expected validation error");
     }
 
     #[test]

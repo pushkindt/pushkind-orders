@@ -15,6 +15,9 @@ use pushkind_orders::models::config::ServerConfig;
 use tera::Tera;
 
 use pushkind_orders::repository::DieselRepository;
+use pushkind_orders::routes::api::{
+    api_v1_client_price_levels, api_v1_orders, api_v1_update_client_price_level,
+};
 use pushkind_orders::routes::categories::{
     add_category, delete_category, edit_category, show_categories,
 };
@@ -115,6 +118,13 @@ async fn main() -> std::io::Result<()> {
                     .service(add_product)
                     .service(upload_products)
                     .service(logout),
+            )
+            .service(
+                web::scope("/api")
+                    .wrap(RedirectUnauthorized)
+                    .service(api_v1_orders)
+                    .service(api_v1_client_price_levels)
+                    .service(api_v1_update_client_price_level),
             )
             .app_data(web::Data::new(tera.clone()))
             .app_data(web::Data::new(repo.clone()))
