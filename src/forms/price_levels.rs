@@ -5,7 +5,7 @@ use csv::Trim;
 use pushkind_common::routes::empty_string_as_none;
 use serde::Deserialize;
 use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::domain::price_level::{NewPriceLevel, UpdatePriceLevel};
 
@@ -48,6 +48,83 @@ pub struct AddPriceLevelForm {
     /// Is this a default price level?
     #[serde(default)]
     pub default: bool,
+}
+
+/// Payload emitted when assigning a price level to a client.
+#[derive(Debug, Deserialize)]
+pub struct AssignClientPriceLevelPayload {
+    /// Hub identifier to scope the assignment.
+    pub hub_id: i32,
+    /// Customer name used when creating missing records.
+    pub name: String,
+    /// Customer email used as part of the composite key.
+    pub email: String,
+    /// Customer phone used as part of the composite key.
+    #[serde(default)]
+    pub phone: Option<String>,
+    /// Selected price level identifier. `None` restores the default hub level.
+    pub price_level_id: Option<i32>,
+}
+
+impl AssignClientPriceLevelPayload {
+    /// Validates and normalizes the payload into an assignment request.
+    pub fn into_assignment_request(self) -> PriceLevelFormResult<AssignClientPriceLevelInput> {
+        let mut errors = ValidationErrors::new();
+
+        if self.hub_id < 1 {
+            errors.add("hub_id", ValidationError::new("invalid_hub_id"));
+        }
+
+        let sanitized_name = sanitize_plain_text(&self.name);
+        if sanitized_name.is_empty() {
+            errors.add("name", ValidationError::new("empty_name"));
+        }
+
+        let normalized_email = self.email.trim().to_lowercase();
+        if normalized_email.is_empty() {
+            errors.add("email", ValidationError::new("empty_email"));
+        }
+
+        if let Some(id) = self.price_level_id
+            && id < 1
+        {
+            errors.add(
+                "price_level_id",
+                ValidationError::new("invalid_price_level_id"),
+            );
+        }
+
+        if !errors.is_empty() {
+            return Err(PriceLevelFormError::Validation(errors));
+        }
+
+        let normalized_phone = self.phone.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+
+        Ok(AssignClientPriceLevelInput {
+            hub_id: self.hub_id,
+            name: sanitized_name,
+            email: normalized_email,
+            phone: normalized_phone,
+            price_level_id: self.price_level_id,
+        })
+    }
+}
+
+/// Normalized payload that can be passed to the service layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignClientPriceLevelInput {
+    pub hub_id: i32,
+    pub name: String,
+    pub email: String,
+    pub phone: Option<String>,
+    pub price_level_id: Option<i32>,
 }
 
 impl AddPriceLevelForm {
@@ -198,6 +275,42 @@ mod tests {
 
         assert_eq!(new_level.hub_id, 5);
         assert_eq!(new_level.name, "Premium Level");
+    }
+
+    #[test]
+    fn assign_client_price_level_payload_validates_positive_ids() {
+        let payload = AssignClientPriceLevelPayload {
+            hub_id: 9,
+            name: "   User Name  ".to_string(),
+            email: "USER@example.com".to_string(),
+            phone: Some("  +1999  ".to_string()),
+            price_level_id: Some(3),
+        };
+
+        let assignment = payload
+            .into_assignment_request()
+            .expect("expected valid payload");
+
+        assert_eq!(assignment.hub_id, 9);
+        assert_eq!(assignment.name, "User Name");
+        assert_eq!(assignment.email, "user@example.com");
+        assert_eq!(assignment.phone.as_deref(), Some("+1999"));
+        assert_eq!(assignment.price_level_id, Some(3));
+    }
+
+    #[test]
+    fn assign_client_price_level_payload_rejects_invalid_ids() {
+        let payload = AssignClientPriceLevelPayload {
+            hub_id: 0,
+            name: "".to_string(),
+            email: "".to_string(),
+            phone: None,
+            price_level_id: Some(0),
+        };
+
+        let result = payload.into_assignment_request();
+
+        assert!(result.is_err(), "expected validation error");
     }
 
     #[test]

@@ -13,6 +13,7 @@ pub struct Customer {
     pub hub_id: i32,
     pub name: String,
     pub email: String,
+    pub phone: Option<String>,
     pub price_level_id: Option<i32>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -24,6 +25,7 @@ pub struct NewCustomer<'a> {
     pub hub_id: i32,
     pub name: &'a str,
     pub email: &'a str,
+    pub phone: Option<&'a str>,
     pub price_level_id: Option<i32>,
 }
 
@@ -34,6 +36,7 @@ impl From<Customer> for DomainCustomer {
             hub_id: value.hub_id,
             name: value.name,
             email: value.email,
+            phone: value.phone,
             price_level_id: value.price_level_id,
         }
     }
@@ -45,6 +48,7 @@ impl<'a> From<&'a DomainNewCustomer> for NewCustomer<'a> {
             hub_id: value.hub_id,
             name: value.name.as_str(),
             email: value.email.as_str(),
+            phone: value.phone.as_deref(),
             price_level_id: value.price_level_id,
         }
     }

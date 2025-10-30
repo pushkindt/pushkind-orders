@@ -29,7 +29,7 @@ impl CustomerReader for DieselRepository {
     ) -> RepositoryResult<Option<DomainCustomer>> {
         use crate::schema::customers;
 
-        let normalized_email = email.to_lowercase();
+        let normalized_email = email.trim().to_lowercase();
 
         let mut conn = self.conn()?;
         let customer = customers::table
@@ -37,6 +37,41 @@ impl CustomerReader for DieselRepository {
             .filter(customers::hub_id.eq(hub_id))
             .first::<DbCustomer>(&mut conn)
             .optional()?;
+
+        Ok(customer.map(Into::into))
+    }
+
+    fn get_customer_by_email_and_phone(
+        &self,
+        email: &str,
+        phone: Option<&str>,
+        hub_id: i32,
+    ) -> RepositoryResult<Option<DomainCustomer>> {
+        use crate::schema::customers;
+
+        let normalized_email = email.trim().to_lowercase();
+        let normalized_phone = phone.and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
+        let mut conn = self.conn()?;
+        let mut query = customers::table
+            .filter(customers::hub_id.eq(hub_id))
+            .filter(customers::email.eq(&normalized_email))
+            .into_boxed::<diesel::sqlite::Sqlite>();
+
+        if let Some(ref value) = normalized_phone {
+            query = query.filter(customers::phone.eq(value));
+        } else {
+            query = query.filter(customers::phone.is_null());
+        }
+
+        let customer = query.first::<DbCustomer>(&mut conn).optional()?;
 
         Ok(customer.map(Into::into))
     }
