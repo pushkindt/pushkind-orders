@@ -116,9 +116,9 @@ fn test_customer_repository_crud() {
         .create_price_level(&NewPriceLevel::new(1, "VIP", false))
         .expect("failed to create price level");
 
-    let alice_new = NewCustomer::new(1, "Alice", "ALICE@example.com");
+    let alice_new = NewCustomer::new(1, "Alice", "ALICE@example.com").with_phone("+15551234");
     let bob_new = NewCustomer::new(1, "Bob", "bob@example.com");
-    let carla_new = NewCustomer::new(2, "Carla", "carla@example.com");
+    let carla_new = NewCustomer::new(2, "Carla", "carla@example.com").with_phone("+18880000");
 
     let alice = repo
         .create_customer(&alice_new)
@@ -131,6 +131,7 @@ fn test_customer_repository_crud() {
         .expect("failed to create Carla");
 
     assert_eq!(alice.email, "alice@example.com");
+    assert_eq!(alice.phone.as_deref(), Some("+15551234"));
     assert_eq!(bob.price_level_id, None);
     assert_eq!(carla.hub_id, 2);
 
@@ -139,6 +140,7 @@ fn test_customer_repository_crud() {
         .expect("failed to fetch customer")
         .expect("expected Alice to exist");
     assert_eq!(fetched.id, alice.id);
+    assert_eq!(fetched.phone.as_deref(), Some("+15551234"));
 
     assert!(
         repo.get_customer_by_id(alice.id, 2)
@@ -151,6 +153,30 @@ fn test_customer_repository_crud() {
         .expect("failed to fetch by email")
         .expect("expected Alice via email");
     assert_eq!(fetched_by_email.id, alice.id);
+
+    let fetched_by_contact = repo
+        .get_customer_by_email_and_phone("alice@example.com", Some("+15551234"), 1)
+        .expect("failed to fetch by contact")
+        .expect("expected Alice via contact");
+    assert_eq!(fetched_by_contact.id, alice.id);
+
+    assert!(
+        repo.get_customer_by_email_and_phone("alice@example.com", Some("+999"), 1)
+            .expect("failed to fetch missing contact")
+            .is_none()
+    );
+
+    assert!(
+        repo.get_customer_by_email_and_phone("alice@example.com", Some("+15551234"), 2)
+            .expect("failed to fetch scoped contact")
+            .is_none()
+    );
+
+    let fetched_bob_by_contact = repo
+        .get_customer_by_email_and_phone("bob@example.com", None, 1)
+        .expect("failed to fetch bob by contact")
+        .expect("expected Bob via contact");
+    assert_eq!(fetched_bob_by_contact.id, bob.id);
 
     let (total_all, customers_all) = repo
         .list_customers(CustomerListQuery::new(1))

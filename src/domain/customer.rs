@@ -12,6 +12,8 @@ pub struct Customer {
     pub name: String,
     /// Primary email address stored in lowercase for comparisons.
     pub email: String,
+    /// Optional contact phone number associated with the customer.
+    pub phone: Option<String>,
     /// Optional price level assigned to the customer.
     /// If None, than a default price level is used
     pub price_level_id: Option<i32>,
@@ -26,6 +28,8 @@ pub struct NewCustomer {
     pub name: String,
     /// Primary email address stored in lowercase for comparisons.
     pub email: String,
+    /// Optional contact phone number associated with the customer.
+    pub phone: Option<String>,
     /// Optional price level assigned to the customer.
     pub price_level_id: Option<i32>,
 }
@@ -40,8 +44,17 @@ impl NewCustomer {
             hub_id,
             name,
             email,
+            phone: None,
             price_level_id: None,
         }
+    }
+
+    /// Attach a phone number to the customer payload.
+    #[must_use]
+    pub fn with_phone(mut self, phone: impl Into<String>) -> Self {
+        let value = phone.into().trim().to_string();
+        self.phone = if value.is_empty() { None } else { Some(value) };
+        self
     }
 
     /// Attach a price level identifier to the customer payload.
