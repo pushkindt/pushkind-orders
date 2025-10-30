@@ -91,6 +91,13 @@
                 return value.trim();
             }
 
+            function normalizeName(value) {
+                if (typeof value !== 'string') {
+                    return '';
+                }
+                return value.replace(/\s+/g, ' ').trim();
+            }
+
             function buildContactKey(email, phone) {
                 return `${normalizeEmail(email)}::${normalizePhone(phone ?? '')}`;
             }
@@ -124,6 +131,7 @@
                 select.className = 'form-select form-select-sm';
 
                 const contactValid = Number.isInteger(contact.hubId)
+                    && contact.name.length > 0
                     && typeof contact.email === 'string'
                     && contact.email.length > 0;
 
@@ -179,6 +187,7 @@
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
                             hub_id: contact.hubId,
+                            name: contact.name,
                             email: contact.email,
                             phone: contact.phone ?? null,
                             price_level_id: parsedValue,
@@ -298,6 +307,7 @@
                         const normalizedPhone = normalizePhone(client.phone);
                         const contact = {
                             hubId,
+                            name: normalizeName(client.name),
                             email: normalizedEmail,
                             phone: normalizedPhone === '' ? null : normalizedPhone,
                         };

@@ -3,7 +3,7 @@ use pushkind_common::routes::check_role;
 use serde::{Deserialize, Serialize};
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::customer::CustomerListQuery;
+use crate::domain::customer::{CustomerListQuery, NewCustomer};
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
 use crate::forms::price_levels::{
     AddPriceLevelForm, AssignClientPriceLevelPayload, EditPriceLevelForm, UploadPriceLevelsForm,
@@ -225,14 +225,31 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
-    let customer = repo
+    let customer = match repo
         .get_customer_by_email_and_phone(
             &assignment.email,
             assignment.phone.as_deref(),
             user.hub_id,
         )
         .map_err(ServiceError::from)?
-        .ok_or(ServiceError::NotFound)?;
+    {
+        Some(existing) => existing,
+        None => {
+            let mut new_customer =
+                NewCustomer::new(assignment.hub_id, assignment.name.clone(), &assignment.email);
+
+            if let Some(phone) = assignment.phone.as_ref() {
+                new_customer = new_customer.with_phone(phone.clone());
+            }
+
+            if let Some(price_level_id) = assignment.price_level_id {
+                new_customer = new_customer.with_price_level_id(price_level_id);
+            }
+
+            repo.create_customer(&new_customer)
+                .map_err(ServiceError::from)?
+        }
+    };
 
     repo.assign_price_level_to_customers(user.hub_id, &[customer.id], assignment.price_level_id)
         .map_err(ServiceError::from)
@@ -680,6 +697,7 @@ mod tests {
         let user = user_with_roles(&[]);
         let payload = AssignClientPriceLevelPayload {
             hub_id: user.hub_id,
+            name: "Client Example".to_string(),
             email: "example@client.com".to_string(),
             phone: Some("+1234567890".to_string()),
             price_level_id: Some(5),
@@ -724,6 +742,7 @@ mod tests {
         let repo = CombinedCustomerRepo::new(reader, writer);
         let payload = AssignClientPriceLevelPayload {
             hub_id,
+            name: "Customer Seven".to_string(),
             email: "Customer7@Example.com ".to_string(),
             phone: Some("  +15550007 ".to_string()),
             price_level_id: Some(8),
@@ -767,6 +786,7 @@ mod tests {
         let repo = CombinedCustomerRepo::new(reader, writer);
         let payload = AssignClientPriceLevelPayload {
             hub_id,
+            name: "Client 55".to_string(),
             email: "client55@example.com".to_string(),
             phone: None,
             price_level_id: None,
@@ -776,28 +796,61 @@ mod tests {
     }
 
     #[test]
-    fn assign_price_level_to_client_returns_not_found_when_lookup_missing() {
+    fn assign_price_level_to_client_creates_customer_when_lookup_missing() {
         let mut reader = MockCustomerReader::new();
-        let writer = MockCustomerWriter::new();
+        let mut writer = MockCustomerWriter::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let hub_id = user.hub_id;
+        let expected_customer_id = 777;
 
         reader
             .expect_get_customer_by_email_and_phone()
             .times(1)
             .returning(|_, _, _| Ok(None));
 
+        writer
+            .expect_create_customer()
+            .times(1)
+            .withf(move |new_customer| {
+                new_customer.hub_id == hub_id
+                    && new_customer.email == "missing@example.com"
+                    && new_customer.name == "Missing User"
+                    && new_customer
+                        .phone
+                        .as_ref()
+                        .map(|value| value == "+1999000")
+                        .unwrap_or(false)
+                    && new_customer.price_level_id == Some(1)
+            })
+            .returning(move |new_customer| {
+                Ok(Customer {
+                    id: expected_customer_id,
+                    hub_id,
+                    name: new_customer.name.clone(),
+                    email: new_customer.email.clone(),
+                    phone: new_customer.phone.clone(),
+                    price_level_id: new_customer.price_level_id,
+                })
+            });
+
+        writer
+            .expect_assign_price_level_to_customers()
+            .times(1)
+            .withf(move |target_hub, ids, price_level_id| {
+                *target_hub == hub_id && ids == [expected_customer_id] && price_level_id == &Some(1)
+            })
+            .return_once(|_, _, _| Ok(()));
+
         let repo = CombinedCustomerRepo::new(reader, writer);
         let payload = AssignClientPriceLevelPayload {
             hub_id,
-            email: "missing@example.com".to_string(),
-            phone: Some("+1999000".to_string()),
+            name: "  Missing User  ".to_string(),
+            email: " Missing@Example.com ".to_string(),
+            phone: Some(" +1999000 ".to_string()),
             price_level_id: Some(1),
         };
 
-        let result = assign_price_level_to_client(&repo, &user, payload);
-
-        assert!(matches!(result, Err(ServiceError::NotFound)));
+        assign_price_level_to_client(&repo, &user, payload).expect("expected success");
     }
 
     #[test]
@@ -806,6 +859,7 @@ mod tests {
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let payload = AssignClientPriceLevelPayload {
             hub_id: user.hub_id,
+            name: "".to_string(),
             email: "".to_string(),
             phone: None,
             price_level_id: Some(0),
@@ -817,6 +871,7 @@ mod tests {
             Err(ServiceError::Form(message)) => {
                 assert!(message.contains("invalid_price_level_id"));
                 assert!(message.contains("empty_email"));
+                assert!(message.contains("empty_name"));
             }
             other => panic!("expected form error, got {other:?}"),
         }
