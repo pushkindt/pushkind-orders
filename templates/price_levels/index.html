@@ -62,7 +62,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             const clientsTableBody = document.getElementById('clientsTableBody');
             const statusMessage = document.getElementById('clientsStatusMessage');
-            const priceLevels = {{ price_levels.items | json_encode() | safe }};
+            const priceLevels = {{ price_levels | json_encode() | safe }};
             const priceLevelById = new Map(priceLevels.map(level => [level.id, level]));
             const defaultLevelFromList = priceLevels.find(level => level.is_default) ?? null;
 

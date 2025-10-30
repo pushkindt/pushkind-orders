@@ -1,5 +1,4 @@
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::check_role;
 use serde::{Deserialize, Serialize};
 
@@ -17,14 +16,12 @@ use crate::services::{ServiceError, ServiceResult};
 pub struct PriceLevelsQuery {
     /// Optional search string entered by the user.
     pub search: Option<String>,
-    /// Page number requested by the user interface.
-    pub page: Option<usize>,
 }
 
 /// Data required to render the price levels index template.
 pub struct PriceLevelsPageData {
     /// Paginated list of price levels to show in the table.
-    pub price_levels: Paginated<PriceLevel>,
+    pub price_levels: Vec<PriceLevel>,
     /// Search query echoed back to the template when present.
     pub search: Option<String>,
 }
@@ -60,21 +57,15 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
-    let page = query.page.unwrap_or(1);
     let mut list_query = PriceLevelListQuery::new(user.hub_id);
 
     if let Some(value) = query.search.as_ref() {
         list_query = list_query.search(value);
     }
 
-    list_query = list_query.paginate(page, DEFAULT_ITEMS_PER_PAGE);
-
-    let (total, price_levels) = repo
+    let (_total, price_levels) = repo
         .list_price_levels(list_query)
         .map_err(ServiceError::from)?;
-
-    let total_pages = total.div_ceil(DEFAULT_ITEMS_PER_PAGE);
-    let price_levels = Paginated::new(price_levels, page, total_pages);
 
     Ok(PriceLevelsPageData {
         price_levels,
@@ -233,7 +224,6 @@ where
 mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
-    use serde_json::Value;
     use std::io::{Seek, SeekFrom, Write};
     use std::sync::{Arc, Mutex};
 
@@ -305,24 +295,15 @@ mod tests {
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let query = PriceLevelsQuery {
             search: Some("sil".to_string()),
-            page: Some(2),
         };
 
         let expected_hub = user.hub_id;
-        let expected_per_page = DEFAULT_ITEMS_PER_PAGE;
 
         repo.expect_list_price_levels()
             .times(1)
             .withf(move |query| {
                 assert_eq!(query.hub_id, expected_hub);
                 assert_eq!(query.search.as_deref(), Some("sil"));
-                match &query.pagination {
-                    Some(pagination) => {
-                        assert_eq!(pagination.page, 2);
-                        assert_eq!(pagination.per_page, expected_per_page);
-                    }
-                    None => panic!("expected pagination to be set"),
-                }
                 true
             })
             .returning(move |_| {
@@ -343,33 +324,7 @@ mod tests {
         };
 
         assert_eq!(data.search.as_deref(), Some("sil"));
-
-        let serialized = match serde_json::to_value(&data.price_levels) {
-            Ok(value) => value,
-            Err(err) => panic!("serialization failed: {err}"),
-        };
-
-        let page_value = match serialized.get("page") {
-            Some(value) => value,
-            None => panic!("missing page field"),
-        };
-        assert_eq!(page_value.as_u64(), Some(2));
-
-        let items = match serialized.get("items") {
-            Some(value) => match value.as_array() {
-                Some(items) => items,
-                None => panic!("items field is not an array"),
-            },
-            None => panic!("missing items field"),
-        };
-        assert_eq!(items.len(), 2);
-
-        let first_name = items
-            .first()
-            .and_then(Value::as_object)
-            .and_then(|map| map.get("name"))
-            .and_then(Value::as_str);
-        assert_eq!(first_name, Some("Silver"));
+        assert_eq!(data.price_levels.len(), 2);
     }
 
     #[test]

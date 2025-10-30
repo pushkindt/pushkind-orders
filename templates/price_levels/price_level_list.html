@@ -5,7 +5,7 @@
     <div class="col-sm-2 overflow-hidden text-sm-end">Действия</div>
 </div>
 <div id="priceList">
-    {% for price in price_levels.items %}
+    {% for price in price_levels %}
     <div class="row my-1 py-1 border-top{% if price.is_default %} price-level-default{% endif %}" data-id="{{ price.id }}">
         <div class="col-sm">
             <span class="d-sm-none fw-bold">Название:</span>
@@ -52,9 +52,3 @@
         </div>
     {% endfor %}
 </div>
-
-{{ macros::pagination(
-    pages=price_levels.pages,
-    current_page=price_levels.page,
-    search=search | default(value=""),
-) }}

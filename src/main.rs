@@ -98,6 +98,13 @@ async fn main() -> std::io::Result<()> {
             .service(Files::new("/assets", "./assets"))
             .service(not_assigned)
             .service(
+                web::scope("/api")
+                    .wrap(RedirectUnauthorized)
+                    .service(api_v1_orders)
+                    .service(api_v1_client_price_levels)
+                    .service(api_v1_update_client_price_level),
+            )
+            .service(
                 web::scope("")
                     .wrap(RedirectUnauthorized)
                     .service(show_index)
@@ -118,13 +125,6 @@ async fn main() -> std::io::Result<()> {
                     .service(add_product)
                     .service(upload_products)
                     .service(logout),
-            )
-            .service(
-                web::scope("/api")
-                    .wrap(RedirectUnauthorized)
-                    .service(api_v1_orders)
-                    .service(api_v1_client_price_levels)
-                    .service(api_v1_update_client_price_level),
             )
             .app_data(web::Data::new(tera.clone()))
             .app_data(web::Data::new(repo.clone()))
