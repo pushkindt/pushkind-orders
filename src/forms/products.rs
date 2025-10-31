@@ -386,16 +386,39 @@ pub struct EditProductForm {
     /// Optional category update (negative or zero clears the category).
     #[serde(default)]
     pub category_id: Option<i32>,
+    /// Optional set of tags to associate with the product.
+    #[serde(default)]
+    pub tag_ids: Vec<String>,
+}
+
+/// Sanitized update payload returned when editing a product.
+#[derive(Debug)]
+pub struct EditProductUpdate {
+    /// Core product update fields.
+    pub product: UpdateProduct,
+    /// Sanitized list of tag identifiers to assign.
+    pub tag_ids: Vec<i32>,
 }
 
 impl EditProductForm {
-    /// Validates and sanitizes the payload into a domain `UpdateProduct`.
-    pub fn into_update_product(self) -> ProductFormResult<UpdateProduct> {
+    /// Validates and sanitizes the payload into a domain `UpdateProduct` alongside tag updates.
+    pub fn into_update_product(self) -> ProductFormResult<EditProductUpdate> {
         self.validate()?;
+
+        let EditProductForm {
+            name,
+            sku,
+            description,
+            units,
+            currency,
+            is_archived,
+            category_id,
+            tag_ids,
+        } = self;
 
         let mut updates = UpdateProduct::default();
 
-        if let Some(name) = self.name {
+        if let Some(name) = name {
             let sanitized = sanitize_inline_text(&name);
             if sanitized.is_empty() {
                 return Err(ProductFormError::EmptyName);
@@ -403,28 +426,28 @@ impl EditProductForm {
             updates.name = sanitized;
         }
 
-        if let Some(sku) = self.sku {
+        if let Some(sku) = sku {
             let sanitized = sanitize_sku(&sku);
             if !sanitized.is_empty() {
                 updates.sku = Some(sanitized);
             }
         }
 
-        if let Some(description) = self.description {
+        if let Some(description) = description {
             let sanitized = sanitize_multiline_text(&description);
             if !sanitized.is_empty() {
                 updates.description = Some(sanitized);
             }
         }
 
-        if let Some(units) = self.units {
+        if let Some(units) = units {
             let sanitized = sanitize_inline_text(&units);
             if !sanitized.is_empty() {
                 updates.units = Some(sanitized);
             }
         }
 
-        if let Some(currency) = self.currency {
+        if let Some(currency) = currency {
             let trimmed = currency.trim();
             if trimmed.is_empty() {
                 return Err(ProductFormError::InvalidCurrency {
@@ -443,15 +466,26 @@ impl EditProductForm {
             }
         }
 
-        if let Some(is_archived) = self.is_archived {
+        if let Some(is_archived) = is_archived {
             updates.is_archived = is_archived;
         }
 
-        if let Some(category_id) = self.category_id {
+        if let Some(category_id) = category_id {
             updates.category_id = normalize_category_id(category_id);
         }
 
-        Ok(updates)
+        let mut sanitized_tags: Vec<i32> = tag_ids
+            .into_iter()
+            .filter_map(|raw| raw.trim().parse::<i32>().ok())
+            .filter(|id| *id > 0)
+            .collect();
+        sanitized_tags.sort_unstable();
+        sanitized_tags.dedup();
+
+        Ok(EditProductUpdate {
+            product: updates,
+            tag_ids: sanitized_tags,
+        })
     }
 }
 
@@ -896,9 +930,11 @@ Banana,usd,,Ripe banana,,8.50,
             currency: Some("eur".to_string()),
             is_archived: Some(true),
             category_id: Some(12),
+            tag_ids: vec!["5".to_string(), "7".to_string(), "5".to_string()],
         };
 
-        let updates = form.into_update_product().expect("expected success");
+        let payload = form.into_update_product().expect("expected success");
+        let updates = payload.product;
 
         assert_eq!(updates.name.as_str(), "Premium Widget");
         assert!(updates.sku.is_none());
@@ -907,6 +943,7 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(updates.currency.as_str(), "EUR");
         assert!(updates.is_archived);
         assert_eq!(updates.category_id, Some(12));
+        assert_eq!(payload.tag_ids, vec![5, 7]);
     }
 
     #[test]
@@ -919,6 +956,7 @@ Banana,usd,,Ripe banana,,8.50,
             currency: Some("1".to_string()),
             is_archived: None,
             category_id: None,
+            tag_ids: Vec::new(),
         };
 
         let result = form.into_update_product();

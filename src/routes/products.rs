@@ -4,9 +4,10 @@ use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
+use serde::Deserialize;
 use tera::Tera;
 
-use crate::forms::products::{AddProductForm, UploadProductsForm};
+use crate::forms::products::{AddProductForm, EditProductForm, UploadProductsForm};
 use crate::repository::DieselRepository;
 use crate::services::{ServiceError, products};
 
@@ -38,6 +39,7 @@ pub async fn show_products(
             context.insert("search_action", "/products");
             context.insert("price_levels", &data.price_levels);
             context.insert("categories", &data.categories);
+            context.insert("tags", &data.tags);
             context.insert("show_archived", &data.show_archived);
             context.insert("has_active_filters", &has_active_filters);
             render_template(&tera, "products/index.html", &context)
@@ -115,6 +117,47 @@ pub async fn upload_products(
         Err(err) => {
             log::error!("Failed to import products: {err}");
             FlashMessage::error("Не удалось загрузить товары.").send();
+            redirect("/products")
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct EditProductPayload {
+    product_id: i32,
+    #[serde(flatten)]
+    form: EditProductForm,
+}
+
+#[post("/products/edit")]
+pub async fn edit_product(
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+    payload: web::Form<EditProductPayload>,
+) -> impl Responder {
+    let payload = payload.into_inner();
+    let product_id = payload.product_id;
+
+    match products::update_product(repo.get_ref(), &user, product_id, payload.form) {
+        Ok(product) => {
+            FlashMessage::success(format!("Товар «{}» обновлён.", product.name)).send();
+            redirect("/products")
+        }
+        Err(ServiceError::Unauthorized) => {
+            FlashMessage::error("Недостаточно прав.").send();
+            redirect("/na")
+        }
+        Err(ServiceError::Form(message)) => {
+            FlashMessage::error(message).send();
+            redirect("/products")
+        }
+        Err(ServiceError::NotFound) => {
+            FlashMessage::error("Товар не найден или уже удалён.").send();
+            redirect("/products")
+        }
+        Err(err) => {
+            log::error!("Failed to update product {product_id}: {err}");
+            FlashMessage::error("Не удалось обновить товар.").send();
             redirect("/products")
         }
     }

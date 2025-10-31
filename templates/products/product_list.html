@@ -10,14 +10,35 @@
     <div class="row my-1 py-2 border-top selectable
         {% if product.is_archived %} product-archived{% endif %}
     " data-id="{{ product.id }}">
-        <div class="col-lg-4 col-12">
-            <span class="d-lg-none fw-bold">Название:</span>
-            {{ product.name }}
-            <div class="text-muted small mt-1">
-                Обновлён {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
-                {% if product.is_archived %}
-                    · Архивирован
-                {% endif %}
+        <div class="col-lg-4 col-12 d-flex justify-content-between align-items-start gap-2">
+            <div class="flex-grow-1">
+                <span class="d-lg-none fw-bold">Название:</span>
+                {{ product.name }}
+                <div class="text-muted small mt-1">
+                    Обновлён {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
+                    {% if product.is_archived %}
+                        · Архивирован
+                    {% endif %}
+                </div>
+            </div>
+            <div class="d-flex align-items-start">
+                <button class="btn btn-sm btn-outline-primary border-0 p-1"
+                        type="button"
+                        title="Редактировать товар"
+                        data-bs-toggle="modal"
+                        data-bs-target="#editProductModal"
+                        data-product-id="{{ product.id }}"
+                        data-product-name="{{ product.name }}"
+                        data-product-sku="{{ product.sku | default(value='') }}"
+                        data-product-description="{{ product.description | default(value='') }}"
+                        data-product-units="{{ product.units | default(value='') }}"
+                        data-product-currency="{{ product.currency }}"
+                        data-product-category="{{ product.category_id | default(value='0') }}"
+                        data-product-tags="{{ product.tags | map(attribute='id') | join(sep=',') }}"
+                        data-product-archived="{{ product.is_archived }}">
+                    <i class="bi bi-pencil-square"></i>
+                    <span class="visually-hidden">Редактировать</span>
+                </button>
             </div>
         </div>
         <div class="col-lg-2 col-12">

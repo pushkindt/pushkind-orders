@@ -11,9 +11,14 @@ use crate::domain::{
     price_level::{PriceLevel, PriceLevelListQuery},
     product::{Product, ProductListQuery},
     product_price_level::{NewProductPriceLevelRate, ProductPriceLevelRate},
+    tag::{Tag, TagListQuery},
 };
-use crate::forms::products::{AddProductForm, NewProductUpload, UploadProductsForm};
-use crate::repository::{CategoryReader, PriceLevelReader, ProductReader, ProductWriter};
+use crate::forms::products::{
+    AddProductForm, EditProductForm, NewProductUpload, UploadProductsForm,
+};
+use crate::repository::{
+    CategoryReader, PriceLevelReader, ProductReader, ProductWriter, TagReader,
+};
 use crate::services::{ServiceError, ServiceResult};
 
 /// Query parameters accepted by the products index page.
@@ -38,6 +43,8 @@ pub struct ProductsPageData {
     pub price_levels: Vec<PriceLevel>,
     /// All available categories for the add product form.
     pub categories: Vec<Category>,
+    /// All available tags for the edit product modal.
+    pub tags: Vec<Tag>,
     /// Whether archived items were requested.
     pub show_archived: bool,
 }
@@ -49,7 +56,7 @@ pub fn load_products_page<R>(
     query: ProductsQuery,
 ) -> ServiceResult<ProductsPageData>
 where
-    R: ProductReader + PriceLevelReader + CategoryReader + ?Sized,
+    R: ProductReader + PriceLevelReader + CategoryReader + TagReader + ?Sized,
 {
     if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
         return Err(ServiceError::Unauthorized);
@@ -83,6 +90,11 @@ where
     categories.retain(|category| !category.is_archived);
     categories.sort_by(|a, b| a.name.cmp(&b.name));
 
+    let (_, mut tags) = repo
+        .list_tags(TagListQuery::new(user.hub_id))
+        .map_err(ServiceError::from)?;
+    tags.sort_by(|a, b| a.name.cmp(&b.name));
+
     let level_lookup: HashMap<i32, &PriceLevel> =
         price_levels.iter().map(|level| (level.id, level)).collect();
 
@@ -99,6 +111,7 @@ where
         search,
         price_levels,
         categories,
+        tags,
         show_archived,
     })
 }
@@ -151,6 +164,93 @@ where
     }
 
     Ok(created)
+}
+
+/// Updates an existing product for the authenticated user's hub.
+pub fn update_product<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    product_id: i32,
+    form: EditProductForm,
+) -> ServiceResult<Product>
+where
+    R: ProductReader + ProductWriter + ?Sized,
+{
+    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    if product_id <= 0 {
+        return Err(ServiceError::Form(
+            "Некорректный идентификатор товара.".to_string(),
+        ));
+    }
+
+    let existing = repo
+        .get_product_by_id(product_id, user.hub_id)
+        .map_err(ServiceError::from)?
+        .ok_or(ServiceError::NotFound)?;
+
+    let name_provided = form.name.is_some();
+    let sku_provided = form.sku.is_some();
+    let description_provided = form.description.is_some();
+    let units_provided = form.units.is_some();
+    let currency_provided = form.currency.is_some();
+    let raw_is_archived = form.is_archived;
+    let raw_category = form.category_id;
+
+    let payload = form
+        .into_update_product()
+        .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    let mut updates = payload.product;
+    let tag_ids = payload.tag_ids;
+
+    if !name_provided {
+        updates.name = existing.name.clone();
+    }
+
+    if !currency_provided {
+        updates.currency = existing.currency.clone();
+    }
+
+    updates.sku = if sku_provided {
+        updates.sku
+    } else {
+        existing.sku.clone()
+    };
+
+    updates.description = if description_provided {
+        updates.description
+    } else {
+        existing.description.clone()
+    };
+
+    updates.units = if units_provided {
+        updates.units
+    } else {
+        existing.units.clone()
+    };
+
+    updates.is_archived = raw_is_archived.unwrap_or(existing.is_archived);
+
+    updates.category_id = if raw_category.is_some() {
+        updates.category_id
+    } else {
+        existing.category_id
+    };
+
+    updates.updated_at = chrono::Local::now().naive_utc();
+
+    repo.update_product(product_id, user.hub_id, &updates)
+        .map_err(ServiceError::from)?;
+
+    repo.replace_product_tags(product_id, user.hub_id, &tag_ids)
+        .map_err(ServiceError::from)?;
+
+    repo.get_product_by_id(product_id, user.hub_id)
+        .map_err(ServiceError::from)?
+        .ok_or(ServiceError::NotFound)
 }
 
 fn fetch_all_price_levels<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<PriceLevel>>
@@ -217,6 +317,7 @@ pub struct ProductView {
     pub category_id: Option<i32>,
     pub updated_at: chrono::NaiveDateTime,
     pub price_levels: Vec<ProductPriceLevelView>,
+    pub tags: Vec<ProductTagView>,
 }
 
 impl ProductView {
@@ -235,6 +336,8 @@ impl ProductView {
             is_archived,
             category_id,
             price_levels,
+            tags,
+            created_at: _,
             updated_at,
             ..
         } = product;
@@ -243,6 +346,8 @@ impl ProductView {
             .into_iter()
             .flat_map(|rate| ProductPriceLevelView::from_rate(rate, level_lookup))
             .collect();
+
+        let tags = tags.into_iter().map(ProductTagView::from_tag).collect();
 
         Self {
             id,
@@ -256,6 +361,7 @@ impl ProductView {
             category_id,
             updated_at,
             price_levels,
+            tags,
         }
     }
 }
@@ -267,6 +373,22 @@ pub struct ProductPriceLevelView {
     pub price_level_name: String,
     pub price_cents: i32,
     pub price_formatted: String,
+}
+
+/// View model for a product tag entry.
+#[derive(Debug, Serialize)]
+pub struct ProductTagView {
+    pub id: i32,
+    pub name: String,
+}
+
+impl ProductTagView {
+    fn from_tag(tag: Tag) -> Self {
+        Self {
+            id: tag.id,
+            name: tag.name,
+        }
+    }
 }
 
 impl ProductPriceLevelView {
@@ -291,6 +413,7 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
     use serde_json::Value;
+    use std::collections::VecDeque;
     use std::io::{Seek, SeekFrom, Write};
     use std::sync::{Arc, Mutex};
 
@@ -298,9 +421,12 @@ mod tests {
         category::Category, price_level::PriceLevel, product::Product,
         product_price_level::ProductPriceLevelRate,
     };
-    use crate::forms::products::{AddProductForm, AddProductPriceLevelForm, UploadProductsForm};
+    use crate::forms::products::{
+        AddProductForm, AddProductPriceLevelForm, EditProductForm, UploadProductsForm,
+    };
     use crate::repository::mock::{
         MockCategoryReader, MockPriceLevelReader, MockProductReader, MockProductWriter,
+        MockTagReader,
     };
     use actix_multipart::form::tempfile::TempFile;
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
@@ -329,6 +455,7 @@ mod tests {
             is_archived: false,
             category_id: None,
             price_levels,
+            tags: Vec::new(),
             created_at: datetime(),
             updated_at: datetime(),
         }
@@ -383,6 +510,12 @@ mod tests {
             category(32, expected_hub, "Archived", true),
             category(33, expected_hub, "Beverages", false),
         ];
+        let tag_rows = vec![
+            tag(41, expected_hub, "Seasonal"),
+            tag(42, expected_hub, "Popular"),
+        ];
+
+        let product_tag_rows = tag_rows.clone();
 
         repo.product_reader
             .expect_list_products()
@@ -400,7 +533,7 @@ mod tests {
                 true
             })
             .returning(move |_| {
-                let product_a = sample_product(
+                let mut product_a = sample_product(
                     1,
                     expected_hub,
                     "Coffee A",
@@ -413,7 +546,9 @@ mod tests {
                         updated_at: datetime(),
                     }],
                 );
-                let product_b = sample_product(
+                product_a.tags = vec![product_tag_rows[0].clone()];
+
+                let mut product_b = sample_product(
                     2,
                     expected_hub,
                     "Coffee B",
@@ -426,6 +561,8 @@ mod tests {
                         updated_at: datetime(),
                     }],
                 );
+
+                product_b.tags = vec![product_tag_rows[1].clone()];
 
                 Ok((27, vec![product_a, product_b]))
             });
@@ -447,6 +584,19 @@ mod tests {
             })
             .returning(move |_| Ok((categories_len, categories_response.clone())));
 
+        let tags_response = tag_rows.clone();
+        let tags_len = tags_response.len();
+        repo.tag_reader
+            .expect_list_tags()
+            .times(1)
+            .withf(move |qry| {
+                assert_eq!(qry.hub_id, expected_hub);
+                assert!(qry.search.is_none());
+                assert!(qry.pagination.is_none());
+                true
+            })
+            .returning(move |_| Ok((tags_len, tags_response.clone())));
+
         let result = load_products_page(&repo, &user, query);
 
         let data = result.expect("expected success");
@@ -454,12 +604,16 @@ mod tests {
         assert!(!data.show_archived);
         assert_eq!(data.price_levels.len(), 2);
         assert_eq!(data.categories.len(), 2);
+        assert_eq!(data.tags.len(), 2);
         let category_names: Vec<&str> = data
             .categories
             .iter()
             .map(|category| category.name.as_str())
             .collect();
         assert_eq!(category_names, vec!["Accessories", "Beverages"]);
+
+        let tag_names: Vec<&str> = data.tags.iter().map(|tag| tag.name.as_str()).collect();
+        assert_eq!(tag_names, vec!["Popular", "Seasonal"]);
 
         let serialized = serde_json::to_value(&data.products).expect("serialization");
         assert_eq!(serialized.get("page").and_then(Value::as_u64), Some(3));
@@ -486,6 +640,16 @@ mod tests {
                 .get("price_formatted")
                 .and_then(Value::as_str),
             Some("12.99")
+        );
+
+        let first_tags = items[0]
+            .get("tags")
+            .and_then(Value::as_array)
+            .expect("tags array");
+        assert_eq!(first_tags.len(), 1);
+        assert_eq!(
+            first_tags[0].get("name").and_then(Value::as_str),
+            Some("Seasonal")
         );
     }
 
@@ -515,6 +679,11 @@ mod tests {
             .times(1)
             .returning(move |_| Ok((0, Vec::new())));
 
+        repo.tag_reader
+            .expect_list_tags()
+            .times(1)
+            .returning(move |_| Ok((0, Vec::new())));
+
         let result = load_products_page(
             &repo,
             &user,
@@ -528,6 +697,7 @@ mod tests {
         let data = result.expect("expected success");
         assert!(data.show_archived);
         assert!(data.categories.is_empty());
+        assert!(data.tags.is_empty());
     }
 
     #[test]
@@ -757,11 +927,180 @@ Banana,USD,7.50,
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
 
+    #[test]
+    fn update_product_requires_role() {
+        let repo = FakeRepo::new();
+        let user = AuthenticatedUser {
+            sub: "user".to_string(),
+            email: "user@example.com".to_string(),
+            hub_id: 11,
+            name: "User".to_string(),
+            roles: Vec::new(),
+            exp: 0,
+        };
+
+        let form = EditProductForm {
+            name: None,
+            sku: None,
+            description: None,
+            units: None,
+            currency: None,
+            is_archived: None,
+            category_id: None,
+            tag_ids: Vec::new(),
+        };
+
+        let result = update_product(&repo, &user, 1, form);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn update_product_returns_not_found_for_missing_product() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_role(SERVICE_ACCESS_ROLE);
+        let product_id = 24;
+        let hub_id = user.hub_id;
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .times(1)
+            .withf(move |id, hub| *id == product_id && *hub == hub_id)
+            .returning(|_, _| Ok(None));
+
+        let form = EditProductForm {
+            name: Some("Updated".to_string()),
+            sku: None,
+            description: None,
+            units: None,
+            currency: Some("usd".to_string()),
+            is_archived: Some(false),
+            category_id: None,
+            tag_ids: vec!["3".to_string(), "5".to_string()],
+        };
+
+        let result = update_product(&repo, &user, product_id, form);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
+    }
+
+    #[test]
+    fn update_product_applies_changes() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_role(SERVICE_ACCESS_ROLE);
+        let product_id = 7;
+        let hub_id = user.hub_id;
+
+        let mut base_product = sample_product(product_id, hub_id, "Espresso", Vec::new());
+        base_product.sku = Some("ESP-1".to_string());
+        base_product.description = Some("Strong".to_string());
+        base_product.units = Some("kg".to_string());
+        base_product.is_archived = false;
+        base_product.category_id = Some(5);
+        base_product.tags = vec![tag(40, hub_id, "Legacy")];
+
+        let previous_updated_at = base_product.updated_at;
+        let reader_product = base_product.clone();
+        let writer_product = base_product.clone();
+        let final_product = {
+            let mut product = writer_product.clone();
+            product.name = "Espresso Deluxe".to_string();
+            product.currency = "EUR".to_string();
+            product.sku = None;
+            product.description = None;
+            product.units = Some("pack".to_string());
+            product.is_archived = true;
+            product.category_id = None;
+            product.tags = vec![tag(42, hub_id, "Featured"), tag(99, hub_id, "Top Seller")];
+            product
+        };
+
+        let reader_queue = Arc::new(Mutex::new(VecDeque::from(vec![
+            Some(reader_product.clone()),
+            Some(final_product.clone()),
+        ])));
+        let reader_queue_clone = reader_queue.clone();
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .times(2)
+            .withf(move |id, hub| *id == product_id && *hub == hub_id)
+            .returning(move |_, _| {
+                Ok(reader_queue_clone
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .unwrap_or(None))
+            });
+
+        repo.product_writer
+            .expect_update_product()
+            .times(1)
+            .withf(move |id, hub, updates| {
+                assert_eq!((*id, *hub), (product_id, hub_id));
+                assert_eq!(updates.name.as_str(), "Espresso Deluxe");
+                assert_eq!(updates.currency.as_str(), "EUR");
+                assert!(updates.sku.is_none());
+                assert!(updates.description.is_none());
+                assert_eq!(updates.units.as_deref(), Some("pack"));
+                assert!(updates.is_archived);
+                assert!(updates.category_id.is_none());
+                assert!(updates.updated_at > previous_updated_at);
+                true
+            })
+            .returning(move |_, _, updates| {
+                let mut updated = writer_product.clone();
+                updated.name = updates.name.clone();
+                updated.currency = updates.currency.clone();
+                updated.sku = updates.sku.clone();
+                updated.description = updates.description.clone();
+                updated.units = updates.units.clone();
+                updated.is_archived = updates.is_archived;
+                updated.category_id = updates.category_id;
+                updated.updated_at = updates.updated_at;
+                Ok(updated)
+            });
+
+        repo.product_writer
+            .expect_replace_product_tags()
+            .times(1)
+            .withf(move |id, hub, tags| {
+                assert_eq!((*id, *hub), (product_id, hub_id));
+                assert_eq!(tags, &[42, 99]);
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
+        let form = EditProductForm {
+            name: Some("  Espresso Deluxe  ".to_string()),
+            sku: Some("   ".to_string()),         // clears SKU
+            description: Some("   ".to_string()), // clears description
+            units: Some("  pack ".to_string()),
+            currency: Some(" eur ".to_string()),
+            is_archived: Some(true),
+            category_id: Some(0), // clears category
+            tag_ids: vec!["42".to_string(), "99".to_string()],
+        };
+
+        let result =
+            update_product(&repo, &user, product_id, form).expect("expected update to succeed");
+
+        assert_eq!(result.name, "Espresso Deluxe");
+        assert_eq!(result.currency, "EUR");
+        assert!(result.sku.is_none());
+        assert!(result.description.is_none());
+        assert_eq!(result.units.as_deref(), Some("pack"));
+        assert!(result.is_archived);
+        assert!(result.category_id.is_none());
+        assert_eq!(result.tags, final_product.tags);
+    }
+
     struct FakeRepo {
         product_reader: MockProductReader,
         product_writer: MockProductWriter,
         price_level_reader: MockPriceLevelReader,
         category_reader: MockCategoryReader,
+        tag_reader: MockTagReader,
     }
 
     impl FakeRepo {
@@ -771,6 +1110,7 @@ Banana,USD,7.50,
                 product_writer: MockProductWriter::new(),
                 price_level_reader: MockPriceLevelReader::new(),
                 category_reader: MockCategoryReader::new(),
+                tag_reader: MockTagReader::new(),
             }
         }
     }
@@ -822,6 +1162,12 @@ Banana,USD,7.50,
         }
     }
 
+    impl TagReader for FakeRepo {
+        fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<Tag>)> {
+            self.tag_reader.list_tags(query)
+        }
+    }
+
     impl ProductWriter for FakeRepo {
         fn create_product(
             &self,
@@ -852,6 +1198,16 @@ Banana,USD,7.50,
         ) -> RepositoryResult<()> {
             self.product_writer
                 .replace_product_price_levels(product_id, hub_id, rates)
+        }
+
+        fn replace_product_tags(
+            &self,
+            product_id: i32,
+            hub_id: i32,
+            tag_ids: &[i32],
+        ) -> RepositoryResult<()> {
+            self.product_writer
+                .replace_product_tags(product_id, hub_id, tag_ids)
         }
     }
 
@@ -891,6 +1247,16 @@ Banana,USD,7.50,
             name: name.to_string(),
             description: None,
             is_archived,
+            created_at: datetime(),
+            updated_at: datetime(),
+        }
+    }
+
+    fn tag(id: i32, hub_id: i32, name: &str) -> Tag {
+        Tag {
+            id,
+            hub_id,
+            name: name.to_string(),
             created_at: datetime(),
             updated_at: datetime(),
         }

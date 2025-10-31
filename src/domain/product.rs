@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
-use crate::domain::product_price_level::ProductPriceLevelRate;
+use crate::domain::{product_price_level::ProductPriceLevelRate, tag::Tag};
 
 /// Domain representation of a product that can be managed by a hub.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -27,6 +27,8 @@ pub struct Product {
     pub category_id: Option<i32>,
     /// Price level rates configured for the product.
     pub price_levels: Vec<ProductPriceLevelRate>,
+    /// Tags associated with the product.
+    pub tags: Vec<Tag>,
     /// Timestamp for when the product record was created.
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the product record.
