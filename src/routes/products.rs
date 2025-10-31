@@ -37,6 +37,7 @@ pub async fn show_products(
             context.insert("search", &data.search);
             context.insert("search_action", "/products");
             context.insert("price_levels", &data.price_levels);
+            context.insert("categories", &data.categories);
             context.insert("show_archived", &data.show_archived);
             context.insert("has_active_filters", &has_active_filters);
             render_template(&tera, "products/index.html", &context)

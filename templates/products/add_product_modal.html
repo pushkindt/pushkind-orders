@@ -31,6 +31,18 @@
                         </div>
                     </div>
                     <div class="row mb-3">
+                        <label for="productCategory" class="col-md-3 col-form-label">Категория</label>
+                        <div class="col-md-5 col-lg-4">
+                            <select name="category_id" id="productCategory" class="form-select">
+                                <option value="0">Без категории</option>
+                                {% for category in categories | default(value=[]) %}
+                                <option value="{{ category.id }}">{{ category.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Выберите категорию, чтобы сгруппировать товар.</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
                         <label for="productUnits" class="col-md-3 col-form-label">Единица измерения</label>
                         <div class="col-md-5 col-lg-4">
                             <input name="units" type="text" class="form-control" id="productUnits"

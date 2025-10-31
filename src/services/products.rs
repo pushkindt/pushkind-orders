@@ -7,12 +7,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::{
+    category::{Category, CategoryTreeQuery},
     price_level::{PriceLevel, PriceLevelListQuery},
     product::{Product, ProductListQuery},
     product_price_level::{NewProductPriceLevelRate, ProductPriceLevelRate},
 };
 use crate::forms::products::{AddProductForm, NewProductUpload, UploadProductsForm};
-use crate::repository::{PriceLevelReader, ProductReader, ProductWriter};
+use crate::repository::{CategoryReader, PriceLevelReader, ProductReader, ProductWriter};
 use crate::services::{ServiceError, ServiceResult};
 
 /// Query parameters accepted by the products index page.
@@ -35,6 +36,8 @@ pub struct ProductsPageData {
     pub search: Option<String>,
     /// All price levels used to render the modal form.
     pub price_levels: Vec<PriceLevel>,
+    /// All available categories for the add product form.
+    pub categories: Vec<Category>,
     /// Whether archived items were requested.
     pub show_archived: bool,
 }
@@ -46,7 +49,7 @@ pub fn load_products_page<R>(
     query: ProductsQuery,
 ) -> ServiceResult<ProductsPageData>
 where
-    R: ProductReader + PriceLevelReader + ?Sized,
+    R: ProductReader + PriceLevelReader + CategoryReader + ?Sized,
 {
     if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
         return Err(ServiceError::Unauthorized);
@@ -74,6 +77,12 @@ where
         .list_price_levels(PriceLevelListQuery::new(user.hub_id))
         .map_err(ServiceError::from)?;
 
+    let (_, mut categories) = repo
+        .list_categories(CategoryTreeQuery::new(user.hub_id))
+        .map_err(ServiceError::from)?;
+    categories.retain(|category| !category.is_archived);
+    categories.sort_by(|a, b| a.name.cmp(&b.name));
+
     let level_lookup: HashMap<i32, &PriceLevel> =
         price_levels.iter().map(|level| (level.id, level)).collect();
 
@@ -89,6 +98,7 @@ where
         products,
         search,
         price_levels,
+        categories,
         show_archived,
     })
 }
@@ -285,10 +295,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::domain::{
-        price_level::PriceLevel, product::Product, product_price_level::ProductPriceLevelRate,
+        category::Category, price_level::PriceLevel, product::Product,
+        product_price_level::ProductPriceLevelRate,
     };
     use crate::forms::products::{AddProductForm, AddProductPriceLevelForm, UploadProductsForm};
-    use crate::repository::mock::{MockPriceLevelReader, MockProductReader, MockProductWriter};
+    use crate::repository::mock::{
+        MockCategoryReader, MockPriceLevelReader, MockProductReader, MockProductWriter,
+    };
     use actix_multipart::form::tempfile::TempFile;
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
     use tempfile::NamedTempFile;
@@ -365,6 +378,11 @@ mod tests {
             price_level(10, expected_hub, "Retail"),
             price_level(11, expected_hub, "Wholesale"),
         ];
+        let category_rows = vec![
+            category(31, expected_hub, "Accessories", false),
+            category(32, expected_hub, "Archived", true),
+            category(33, expected_hub, "Beverages", false),
+        ];
 
         repo.product_reader
             .expect_list_products()
@@ -417,12 +435,31 @@ mod tests {
             .times(1)
             .returning(move |_| Ok((price_level_rows.len(), price_level_rows.clone())));
 
+        let categories_response = category_rows.clone();
+        let categories_len = categories_response.len();
+        repo.category_reader
+            .expect_list_categories()
+            .times(1)
+            .withf(move |qry| {
+                assert_eq!(qry.hub_id, expected_hub);
+                assert!(!qry.include_archived);
+                true
+            })
+            .returning(move |_| Ok((categories_len, categories_response.clone())));
+
         let result = load_products_page(&repo, &user, query);
 
         let data = result.expect("expected success");
         assert_eq!(data.search.as_deref(), Some("coffee"));
         assert!(!data.show_archived);
         assert_eq!(data.price_levels.len(), 2);
+        assert_eq!(data.categories.len(), 2);
+        let category_names: Vec<&str> = data
+            .categories
+            .iter()
+            .map(|category| category.name.as_str())
+            .collect();
+        assert_eq!(category_names, vec!["Accessories", "Beverages"]);
 
         let serialized = serde_json::to_value(&data.products).expect("serialization");
         assert_eq!(serialized.get("page").and_then(Value::as_u64), Some(3));
@@ -473,6 +510,11 @@ mod tests {
             .times(1)
             .returning(move |_| Ok((0, Vec::new())));
 
+        repo.category_reader
+            .expect_list_categories()
+            .times(1)
+            .returning(move |_| Ok((0, Vec::new())));
+
         let result = load_products_page(
             &repo,
             &user,
@@ -485,6 +527,7 @@ mod tests {
 
         let data = result.expect("expected success");
         assert!(data.show_archived);
+        assert!(data.categories.is_empty());
     }
 
     #[test]
@@ -718,6 +761,7 @@ Banana,USD,7.50,
         product_reader: MockProductReader,
         product_writer: MockProductWriter,
         price_level_reader: MockPriceLevelReader,
+        category_reader: MockCategoryReader,
     }
 
     impl FakeRepo {
@@ -726,6 +770,7 @@ Banana,USD,7.50,
                 product_reader: MockProductReader::new(),
                 product_writer: MockProductWriter::new(),
                 price_level_reader: MockPriceLevelReader::new(),
+                category_reader: MockCategoryReader::new(),
             }
         }
     }
@@ -757,6 +802,23 @@ Banana,USD,7.50,
             query: PriceLevelListQuery,
         ) -> RepositoryResult<(usize, Vec<PriceLevel>)> {
             self.price_level_reader.list_price_levels(query)
+        }
+    }
+
+    impl CategoryReader for FakeRepo {
+        fn list_categories(
+            &self,
+            query: CategoryTreeQuery,
+        ) -> RepositoryResult<(usize, Vec<Category>)> {
+            self.category_reader.list_categories(query)
+        }
+
+        fn get_category_by_id(
+            &self,
+            category_id: i32,
+            hub_id: i32,
+        ) -> RepositoryResult<Option<Category>> {
+            self.category_reader.get_category_by_id(category_id, hub_id)
         }
     }
 
@@ -818,6 +880,19 @@ Banana,USD,7.50,
             created_at: datetime(),
             updated_at: datetime(),
             is_default: false,
+        }
+    }
+
+    fn category(id: i32, hub_id: i32, name: &str, is_archived: bool) -> Category {
+        Category {
+            id,
+            hub_id,
+            parent_id: None,
+            name: name.to_string(),
+            description: None,
+            is_archived,
+            created_at: datetime(),
+            updated_at: datetime(),
         }
     }
 }
