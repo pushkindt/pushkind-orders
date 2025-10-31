@@ -3,9 +3,10 @@ use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
 /// Possible lifecycle states for an order managed by a hub.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OrderStatus {
     /// Order has been created but not yet submitted for processing.
+    #[default]
     Draft,
     /// Order has been submitted and awaits processing.
     Pending,
@@ -15,12 +16,6 @@ pub enum OrderStatus {
     Completed,
     /// Order has been cancelled and should not be processed further.
     Cancelled,
-}
-
-impl Default for OrderStatus {
-    fn default() -> Self {
-        Self::Draft
-    }
 }
 
 impl From<&str> for OrderStatus {
