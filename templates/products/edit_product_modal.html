@@ -39,6 +39,48 @@
                         </div>
                     </div>
                     <div class="row mb-3">
+                        <label for="editProductCategory" class="col-md-3 col-form-label">Категория</label>
+                        <div class="col-md-5 col-lg-4">
+                            <select name="category_id" id="editProductCategory" class="form-select">
+                                <option value="0">Без категории</option>
+                                {% for category in categories | default(value=[]) %}
+                                <option value="{{ category.id }}">{{ category.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">
+                                Выберите категорию или оставьте значение «Без категории», чтобы сбросить связь.
+                            </div>
+                        </div>
+                    </div>
+                    {% if tags is defined and tags | length > 0 %}
+                    <div class="row mb-3">
+                        <label for="editProductTags" class="col-md-3 col-form-label">Теги</label>
+                        <div class="col-md-9">
+                            <select id="editProductTags"
+                                    name="tag_ids[]"
+                                    class="form-select"
+                                    multiple
+                                    autocomplete="off"
+                                    data-placeholder="Выберите теги">
+                                {% for tag in tags %}
+                                <option value="{{ tag.id }}">{{ tag.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">
+                                Выберите один или несколько тегов. Оставьте поле пустым, чтобы убрать теги у товара.
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="row mb-3">
+                        <div class="col-md-9 offset-md-3">
+                            <div class="alert alert-secondary py-2 mb-0 small" role="status">
+                                Теги ещё не созданы. Добавьте их на вкладке «Теги», чтобы привязать к товарам.
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    <div class="row mb-3">
                         <label for="editProductUnits" class="col-md-3 col-form-label">Единица измерения</label>
                         <div class="col-md-5 col-lg-4">
                             <input name="units" type="text" class="form-control" id="editProductUnits"
@@ -60,6 +102,7 @@
                     </div>
                     <div class="row">
                         <div class="col">
+                            <input type="hidden" name="is_archived" value="false">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" value="true" id="editProductArchived" name="is_archived">
                                 <label class="form-check-label" for="editProductArchived">
@@ -96,6 +139,9 @@
         const unitsInput = modalElement.querySelector("#editProductUnits");
         const currencyInput = modalElement.querySelector("#editProductCurrency");
         const archivedInput = modalElement.querySelector("#editProductArchived");
+        const categoryInput = modalElement.querySelector("#editProductCategory");
+        const tagSelect = modalElement.querySelector("#editProductTags");
+        let tagSelectControl = null;
 
         const toBoolean = (value) => {
             if (typeof value !== "string") {
@@ -103,6 +149,26 @@
             }
             return ["1", "true", "yes"].includes(value.toLowerCase());
         };
+
+        const parseTagIds = (value) => {
+            if (!value) {
+                return [];
+            }
+            return value
+                .split(",")
+                .map((item) => item.trim())
+                .filter((item) => item.length > 0);
+        };
+
+        if (tagSelect && typeof TomSelect !== "undefined") {
+            tagSelectControl = new TomSelect(tagSelect, {
+                plugins: {
+                    remove_button: { title: "Удалить" },
+                },
+                allowEmptyOption: true,
+                placeholder: tagSelect.dataset.placeholder || "Выберите теги",
+            });
+        }
 
         modalElement.addEventListener("show.bs.modal", (event) => {
             const trigger = event.relatedTarget;
@@ -117,10 +183,29 @@
             descriptionInput.value = dataset.productDescription || "";
             unitsInput.value = dataset.productUnits || "";
 
+            if (categoryInput) {
+                categoryInput.value = dataset.productCategory || "0";
+            }
+
             const currency = dataset.productCurrency || "";
             currencyInput.value = currency.toUpperCase();
 
             archivedInput.checked = toBoolean(dataset.productArchived);
+
+            if (tagSelect) {
+                const selectedTags = parseTagIds(dataset.productTags || "");
+                if (tagSelectControl) {
+                    tagSelectControl.clear(true);
+                    if (selectedTags.length > 0) {
+                        tagSelectControl.setValue(selectedTags, true);
+                    }
+                } else {
+                    const selectedSet = new Set(selectedTags);
+                    Array.from(tagSelect.options).forEach((option) => {
+                        option.selected = selectedSet.has(option.value);
+                    });
+                }
+            }
 
             // Focus name for quick editing.
             nameInput.focus();
@@ -142,6 +227,18 @@
             }
             if (unitsInput) {
                 unitsInput.value = "";
+            }
+            if (categoryInput) {
+                categoryInput.selectedIndex = 0;
+            }
+            if (tagSelect) {
+                if (tagSelectControl) {
+                    tagSelectControl.clear(true);
+                } else {
+                    Array.from(tagSelect.options).forEach((option) => {
+                        option.selected = false;
+                    });
+                }
             }
         });
 

@@ -25,7 +25,9 @@ use pushkind_orders::routes::main::show_index;
 use pushkind_orders::routes::price_levels::{
     add_price_level, delete_price_level, edit_price_level, show_price_levels, upload_price_levels,
 };
-use pushkind_orders::routes::products::{add_product, show_products, upload_products};
+use pushkind_orders::routes::products::{
+    add_product, edit_product, show_products, upload_products,
+};
 use pushkind_orders::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
 
 #[actix_web::main]
@@ -123,6 +125,7 @@ async fn main() -> std::io::Result<()> {
                     .service(delete_price_level)
                     .service(show_products)
                     .service(add_product)
+                    .service(edit_product)
                     .service(upload_products)
                     .service(logout),
             )

@@ -1,6 +1,8 @@
 {% extends 'base.html' %}
 
 {% block styles %}
+<link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css">
 <style>
     .product-archived {
         opacity: 0.6;
@@ -32,7 +34,11 @@
 </div>
 
 {% include 'products/add_product_modal.html' %}
+{% include 'products/edit_product_modal.html' %}
 {% include 'products/filter_products_modal.html' %}
 
 {% endblock %}
-{% block scripts %}{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+{% endblock %}
