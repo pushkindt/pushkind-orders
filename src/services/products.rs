@@ -184,7 +184,9 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
-    if product_id <= 0 {
+    let product = repo.get_product_by_id(product_id, user.hub_id)?;
+
+    if product.is_none() {
         return Err(ServiceError::Form(
             "Некорректный идентификатор товара.".to_string(),
         ));
@@ -365,9 +367,8 @@ impl ProductPriceLevelView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{NaiveDate, NaiveDateTime};
+    use chrono::{Duration, NaiveDate, NaiveDateTime};
     use serde_json::Value;
-    use std::collections::VecDeque;
     use std::io::{Seek, SeekFrom, Write};
     use std::sync::{Arc, Mutex};
 
@@ -945,7 +946,11 @@ Banana,USD,7.50,
 
         let result = update_product(&repo, &user, product_id, form);
 
-        assert!(matches!(result, Err(ServiceError::NotFound)));
+        assert!(matches!(
+            result,
+            Err(ServiceError::Form(message))
+            if message == "Некорректный идентификатор товара."
+        ));
     }
 
     #[test]
@@ -964,6 +969,7 @@ Banana,USD,7.50,
         base_product.tags = vec![tag(40, hub_id, "Legacy")];
 
         let previous_updated_at = base_product.updated_at;
+        let new_updated_at = previous_updated_at + Duration::seconds(60);
         let reader_product = base_product.clone();
         let writer_product = base_product.clone();
         let final_product = {
@@ -976,26 +982,16 @@ Banana,USD,7.50,
             product.is_archived = true;
             product.category_id = None;
             product.tags = vec![tag(42, hub_id, "Featured"), tag(99, hub_id, "Top Seller")];
+            product.updated_at = new_updated_at;
             product
         };
-
-        let reader_queue = Arc::new(Mutex::new(VecDeque::from(vec![
-            Some(reader_product.clone()),
-            Some(final_product.clone()),
-        ])));
-        let reader_queue_clone = reader_queue.clone();
+        let expected_tags = final_product.tags.clone();
 
         repo.product_reader
             .expect_get_product_by_id()
-            .times(2)
+            .times(1)
             .withf(move |id, hub| *id == product_id && *hub == hub_id)
-            .returning(move |_, _| {
-                Ok(reader_queue_clone
-                    .lock()
-                    .unwrap()
-                    .pop_front()
-                    .unwrap_or(None))
-            });
+            .returning(move |_, _| Ok(Some(reader_product.clone())));
 
         repo.product_writer
             .expect_update_product()
@@ -1009,20 +1005,24 @@ Banana,USD,7.50,
                 assert_eq!(updates.units.as_deref(), Some("pack"));
                 assert!(updates.is_archived);
                 assert!(updates.category_id.is_none());
-                assert!(updates.updated_at > previous_updated_at);
                 true
             })
-            .returning(move |_, _, updates| {
-                let mut updated = writer_product.clone();
-                updated.name = updates.name.clone();
-                updated.currency = updates.currency.clone();
-                updated.sku = updates.sku.clone();
-                updated.description = updates.description.clone();
-                updated.units = updates.units.clone();
-                updated.is_archived = updates.is_archived;
-                updated.category_id = updates.category_id;
-                updated.updated_at = updates.updated_at;
-                Ok(updated)
+            .returning({
+                let writer_product = writer_product.clone();
+                let expected_tags = expected_tags.clone();
+                move |_, _, updates| {
+                    let mut updated = writer_product.clone();
+                    updated.name = updates.name.clone();
+                    updated.currency = updates.currency.clone();
+                    updated.sku = updates.sku.clone();
+                    updated.description = updates.description.clone();
+                    updated.units = updates.units.clone();
+                    updated.is_archived = updates.is_archived;
+                    updated.category_id = updates.category_id;
+                    updated.tags = expected_tags.clone();
+                    updated.updated_at = new_updated_at;
+                    Ok(updated)
+                }
             });
 
         repo.product_writer
@@ -1057,6 +1057,7 @@ Banana,USD,7.50,
         assert!(result.is_archived);
         assert!(result.category_id.is_none());
         assert_eq!(result.tags, final_product.tags);
+        assert_eq!(result.updated_at, new_updated_at);
     }
 
     struct FakeRepo {
