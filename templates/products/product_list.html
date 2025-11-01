@@ -14,6 +14,11 @@
             <div class="flex-grow-1">
                 <span class="d-lg-none fw-bold">Название:</span>
                 {{ product.name }}
+                {% if product.category_name %}
+                <div class="text-muted small mt-1">
+                    Категория: {{ product.category_name }}
+                </div>
+                {% endif %}
                 <div class="text-muted small mt-1">
                     Обновлён {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
                     {% if product.is_archived %}
@@ -64,6 +69,15 @@
                 <span class="badge bg-secondary-subtle text-body-secondary border">
                     {{ level.price_level_name }} — {{ level.price_formatted }} {{ product.currency }}{% if product.units %} / {{ product.units }}{% endif %}
                 </span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% if product.tags | length > 0 %}
+        <div class="col-12 mt-2">
+            <div class="d-flex flex-wrap gap-2 small">
+                {% for tag in product.tags %}
+                <span class="badge bg-info-subtle text-body-secondary border">{{ tag.name }}</span>
                 {% endfor %}
             </div>
         </div>

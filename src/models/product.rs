@@ -44,6 +44,7 @@ pub struct UpdateProduct<'a> {
     pub currency: &'a str,
     pub is_archived: bool,
     pub updated_at: NaiveDateTime,
+    pub category_id: Option<i32>,
 }
 
 impl From<Product> for DomainProduct {
@@ -90,6 +91,7 @@ impl<'a> From<&'a DomainUpdateProduct> for UpdateProduct<'a> {
             currency: value.currency.as_str(),
             is_archived: value.is_archived,
             updated_at: value.updated_at,
+            category_id: value.category_id,
         }
     }
 }

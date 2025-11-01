@@ -54,19 +54,20 @@
                     </div>
                     {% if tags is defined and tags | length > 0 %}
                     <div class="row mb-3">
-                        <label class="col-md-3 col-form-label">Теги</label>
+                        <label for="editProductTags" class="col-md-3 col-form-label">Теги</label>
                         <div class="col-md-9">
-                            <div class="d-flex flex-wrap gap-2">
+                            <select id="editProductTags"
+                                    name="tag_ids[]"
+                                    class="form-select"
+                                    multiple
+                                    autocomplete="off"
+                                    data-placeholder="Выберите теги">
                                 {% for tag in tags %}
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input edit-product-tag" type="checkbox" value="{{ tag.id }}"
-                                           id="editProductTag{{ tag.id }}" name="tag_ids">
-                                    <label class="form-check-label" for="editProductTag{{ tag.id }}">{{ tag.name }}</label>
-                                </div>
+                                <option value="{{ tag.id }}">{{ tag.name }}</option>
                                 {% endfor %}
-                            </div>
+                            </select>
                             <div class="form-text">
-                                Отметьте теги, которые должны быть привязаны к товару. Снимите все галочки, чтобы оставить товар без тегов.
+                                Выберите один или несколько тегов. Оставьте поле пустым, чтобы убрать теги у товара.
                             </div>
                         </div>
                     </div>
@@ -139,7 +140,8 @@
         const currencyInput = modalElement.querySelector("#editProductCurrency");
         const archivedInput = modalElement.querySelector("#editProductArchived");
         const categoryInput = modalElement.querySelector("#editProductCategory");
-        const tagInputs = modalElement.querySelectorAll(".edit-product-tag");
+        const tagSelect = modalElement.querySelector("#editProductTags");
+        let tagSelectControl = null;
 
         const toBoolean = (value) => {
             if (typeof value !== "string") {
@@ -157,6 +159,16 @@
                 .map((item) => item.trim())
                 .filter((item) => item.length > 0);
         };
+
+        if (tagSelect && typeof TomSelect !== "undefined") {
+            tagSelectControl = new TomSelect(tagSelect, {
+                plugins: {
+                    remove_button: { title: "Удалить" },
+                },
+                allowEmptyOption: true,
+                placeholder: tagSelect.dataset.placeholder || "Выберите теги",
+            });
+        }
 
         modalElement.addEventListener("show.bs.modal", (event) => {
             const trigger = event.relatedTarget;
@@ -180,13 +192,19 @@
 
             archivedInput.checked = toBoolean(dataset.productArchived);
 
-            if (tagInputs && tagInputs.length > 0) {
-                const selectedTags = new Set(parseTagIds(dataset.productTags || ""));
-                tagInputs.forEach((input) => {
-                    const checked = selectedTags.has(input.value);
-                    input.checked = checked;
-                    input.defaultChecked = checked;
-                });
+            if (tagSelect) {
+                const selectedTags = parseTagIds(dataset.productTags || "");
+                if (tagSelectControl) {
+                    tagSelectControl.clear(true);
+                    if (selectedTags.length > 0) {
+                        tagSelectControl.setValue(selectedTags, true);
+                    }
+                } else {
+                    const selectedSet = new Set(selectedTags);
+                    Array.from(tagSelect.options).forEach((option) => {
+                        option.selected = selectedSet.has(option.value);
+                    });
+                }
             }
 
             // Focus name for quick editing.
@@ -213,11 +231,14 @@
             if (categoryInput) {
                 categoryInput.selectedIndex = 0;
             }
-            if (tagInputs && tagInputs.length > 0) {
-                tagInputs.forEach((input) => {
-                    input.checked = false;
-                    input.defaultChecked = false;
-                });
+            if (tagSelect) {
+                if (tagSelectControl) {
+                    tagSelectControl.clear(true);
+                } else {
+                    Array.from(tagSelect.options).forEach((option) => {
+                        option.selected = false;
+                    });
+                }
             }
         });
 

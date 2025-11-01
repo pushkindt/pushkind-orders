@@ -87,6 +87,10 @@ where
     let (_, mut categories) = repo
         .list_categories(CategoryTreeQuery::new(user.hub_id))
         .map_err(ServiceError::from)?;
+    let category_lookup: HashMap<i32, String> = categories
+        .iter()
+        .map(|category| (category.id, category.name.clone()))
+        .collect();
     categories.retain(|category| !category.is_archived);
     categories.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -100,7 +104,7 @@ where
 
     let view_items: Vec<ProductView> = items
         .into_iter()
-        .map(|product| ProductView::from_product(product, &level_lookup))
+        .map(|product| ProductView::from_product(product, &level_lookup, &category_lookup))
         .collect();
 
     let total_pages = total.div_ceil(DEFAULT_ITEMS_PER_PAGE);
@@ -186,71 +190,18 @@ where
         ));
     }
 
-    let existing = repo
-        .get_product_by_id(product_id, user.hub_id)
-        .map_err(ServiceError::from)?
-        .ok_or(ServiceError::NotFound)?;
-
-    let name_provided = form.name.is_some();
-    let sku_provided = form.sku.is_some();
-    let description_provided = form.description.is_some();
-    let units_provided = form.units.is_some();
-    let currency_provided = form.currency.is_some();
-    let raw_is_archived = form.is_archived;
-    let raw_category = form.category_id;
-
     let payload = form
         .into_update_product()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    let mut updates = payload.product;
+    let updates = payload.product;
     let tag_ids = payload.tag_ids;
-
-    if !name_provided {
-        updates.name = existing.name.clone();
-    }
-
-    if !currency_provided {
-        updates.currency = existing.currency.clone();
-    }
-
-    updates.sku = if sku_provided {
-        updates.sku
-    } else {
-        existing.sku.clone()
-    };
-
-    updates.description = if description_provided {
-        updates.description
-    } else {
-        existing.description.clone()
-    };
-
-    updates.units = if units_provided {
-        updates.units
-    } else {
-        existing.units.clone()
-    };
-
-    updates.is_archived = raw_is_archived.unwrap_or(existing.is_archived);
-
-    updates.category_id = if raw_category.is_some() {
-        updates.category_id
-    } else {
-        existing.category_id
-    };
-
-    updates.updated_at = chrono::Local::now().naive_utc();
-
-    repo.update_product(product_id, user.hub_id, &updates)
-        .map_err(ServiceError::from)?;
 
     repo.replace_product_tags(product_id, user.hub_id, &tag_ids)
         .map_err(ServiceError::from)?;
 
-    repo.get_product_by_id(product_id, user.hub_id)
-        .map_err(ServiceError::from)?
-        .ok_or(ServiceError::NotFound)
+    repo.update_product(product_id, user.hub_id, &updates)
+        .map_err(ServiceError::from)
 }
 
 fn fetch_all_price_levels<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<PriceLevel>>
@@ -315,6 +266,7 @@ pub struct ProductView {
     pub currency: String,
     pub is_archived: bool,
     pub category_id: Option<i32>,
+    pub category_name: Option<String>,
     pub updated_at: chrono::NaiveDateTime,
     pub price_levels: Vec<ProductPriceLevelView>,
     pub tags: Vec<ProductTagView>,
@@ -324,6 +276,7 @@ impl ProductView {
     fn from_product(
         product: crate::domain::product::Product,
         level_lookup: &HashMap<i32, &PriceLevel>,
+        category_lookup: &HashMap<i32, String>,
     ) -> Self {
         let crate::domain::product::Product {
             id,
@@ -359,6 +312,7 @@ impl ProductView {
             currency,
             is_archived,
             category_id,
+            category_name: category_id.and_then(|id| category_lookup.get(&id).cloned()),
             updated_at,
             price_levels,
             tags,
@@ -547,6 +501,7 @@ mod tests {
                     }],
                 );
                 product_a.tags = vec![product_tag_rows[0].clone()];
+                product_a.category_id = Some(31);
 
                 let mut product_b = sample_product(
                     2,
@@ -563,6 +518,7 @@ mod tests {
                 );
 
                 product_b.tags = vec![product_tag_rows[1].clone()];
+                product_b.category_id = Some(33);
 
                 Ok((27, vec![product_a, product_b]))
             });
@@ -623,6 +579,14 @@ mod tests {
             .and_then(Value::as_array)
             .expect("items array");
         assert_eq!(items.len(), 2);
+        assert_eq!(
+            items[0].get("category_name").and_then(Value::as_str),
+            Some("Accessories")
+        );
+        assert_eq!(
+            items[1].get("category_name").and_then(Value::as_str),
+            Some("Beverages")
+        );
 
         let first_price_levels = items[0]
             .get("price_levels")
@@ -1078,7 +1042,7 @@ Banana,USD,7.50,
             units: Some("  pack ".to_string()),
             currency: Some(" eur ".to_string()),
             is_archived: Some(true),
-            category_id: Some(0), // clears category
+            category_id: Some("0".to_string()), // clears category
             tag_ids: vec!["42".to_string(), "99".to_string()],
         };
 

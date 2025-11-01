@@ -3,6 +3,8 @@ use std::{collections::HashMap, io::Seek};
 use actix_multipart::form::{MultipartForm, tempfile::TempFile};
 use csv::{StringRecord, Trim};
 use serde::Deserialize;
+use serde::de::{Deserializer, Error as DeError};
+use serde_json::Value;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
@@ -76,6 +78,43 @@ pub enum ProductFormError {
     /// File system failures while reading the uploaded payload.
     #[error("failed to read uploaded file: {0}")]
     FileRead(#[from] std::io::Error),
+    /// The provided category identifier could not be parsed.
+    #[error("invalid category id `{value}`")]
+    InvalidCategoryId { value: String },
+}
+
+fn deserialize_optional_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(Value::Bool(flag)) => Ok(Some(flag)),
+        Some(Value::String(raw)) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            match trimmed.to_ascii_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => Ok(Some(true)),
+                "false" | "0" | "no" | "off" => Ok(Some(false)),
+                other => Err(D::Error::custom(format!("invalid boolean `{other}`"))),
+            }
+        }
+        Some(Value::Number(number)) => {
+            if let Some(int) = number.as_i64() {
+                match int {
+                    0 => Ok(Some(false)),
+                    1 => Ok(Some(true)),
+                    _ => Err(D::Error::custom(format!("invalid boolean `{int}`"))),
+                }
+            } else {
+                Err(D::Error::custom(format!("invalid boolean `{number}`")))
+            }
+        }
+        Some(other) => Err(D::Error::custom(format!("invalid boolean input `{other}`"))),
+    }
 }
 
 /// Form payload emitted when submitting the "Add product" form.
@@ -382,10 +421,11 @@ pub struct EditProductForm {
     /// Optional currency update.
     pub currency: Option<String>,
     /// Optional archive flag toggle.
+    #[serde(default, deserialize_with = "deserialize_optional_bool")]
     pub is_archived: Option<bool>,
     /// Optional category update (negative or zero clears the category).
     #[serde(default)]
-    pub category_id: Option<i32>,
+    pub category_id: Option<String>,
     /// Optional set of tags to associate with the product.
     #[serde(default)]
     pub tag_ids: Vec<String>,
@@ -470,8 +510,19 @@ impl EditProductForm {
             updates.is_archived = is_archived;
         }
 
-        if let Some(category_id) = category_id {
-            updates.category_id = normalize_category_id(category_id);
+        if let Some(category_raw) = category_id {
+            let trimmed = category_raw.trim();
+            if trimmed.is_empty() {
+                updates.category_id = None;
+            } else {
+                let parsed =
+                    trimmed
+                        .parse::<i32>()
+                        .map_err(|_| ProductFormError::InvalidCategoryId {
+                            value: category_raw,
+                        })?;
+                updates.category_id = normalize_category_id(parsed);
+            }
         }
 
         let mut sanitized_tags: Vec<i32> = tag_ids
@@ -929,7 +980,7 @@ Banana,usd,,Ripe banana,,8.50,
             units: Some("  ea ".to_string()),
             currency: Some("eur".to_string()),
             is_archived: Some(true),
-            category_id: Some(12),
+            category_id: Some("12".to_string()),
             tag_ids: vec!["5".to_string(), "7".to_string(), "5".to_string()],
         };
 

@@ -179,6 +179,8 @@ impl ProductWriter for DieselRepository {
         let mut conn = self.conn()?;
 
         if let Some(category_id) = updates.category_id {
+            log::info!("{category_id}");
+
             use crate::schema::categories;
             use diesel::dsl::{exists, select};
 

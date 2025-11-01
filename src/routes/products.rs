@@ -131,15 +131,29 @@ struct EditProductPayload {
 
 #[post("/products/edit")]
 pub async fn edit_product(
+    req: HttpRequest,
+    body: web::Bytes,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
-    payload: web::Form<EditProductPayload>,
 ) -> impl Responder {
-    let payload = payload.into_inner();
+    let qs_config = serde_qs::Config::new(5, false);
+    let payload = match qs_config.deserialize_bytes::<EditProductPayload>(body.as_ref()) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            log::warn!(
+                "Failed to parse edit product form for {}: {err}",
+                req.path()
+            );
+            FlashMessage::error("Некорректные данные формы.").send();
+            return redirect("/products");
+        }
+    };
+
     let product_id = payload.product_id;
 
     match products::update_product(repo.get_ref(), &user, product_id, payload.form) {
         Ok(product) => {
+            log::info!("Updated product {product:?}");
             FlashMessage::success(format!("Товар «{}» обновлён.", product.name)).send();
             redirect("/products")
         }
