@@ -4,7 +4,6 @@ use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
-use serde::Deserialize;
 use tera::Tera;
 
 use crate::forms::products::{AddProductForm, EditProductForm, UploadProductsForm};
@@ -62,18 +61,18 @@ pub async fn add_product(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
 ) -> impl Responder {
-    // Parse the URL-encoded body using serde_qs so nested arrays deserialize correctly.
-    let qs_config = serde_qs::Config::new(5, false);
-    let form = match qs_config.deserialize_bytes::<AddProductForm>(body.as_ref()) {
+    let form: AddProductForm = match serde_html_form::from_bytes(body.as_ref()) {
         Ok(parsed) => parsed,
         Err(err) => {
-            log::warn!("Failed to parse add product form for {}: {err}", req.path());
+            log::warn!(
+                "Failed to parse edit product form for {}: {err}",
+                req.path()
+            );
             FlashMessage::error("Некорректные данные формы.").send();
             return redirect("/products");
         }
     };
 
-    log::debug!("{form:?}");
     match products::create_product(repo.get_ref(), &user, form) {
         Ok(product) => {
             FlashMessage::success(format!("Товар «{}» добавлен.", product.name)).send();
@@ -122,13 +121,6 @@ pub async fn upload_products(
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct EditProductPayload {
-    product_id: i32,
-    #[serde(flatten)]
-    form: EditProductForm,
-}
-
 #[post("/products/edit")]
 pub async fn edit_product(
     req: HttpRequest,
@@ -136,8 +128,7 @@ pub async fn edit_product(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
 ) -> impl Responder {
-    let qs_config = serde_qs::Config::new(5, false);
-    let payload = match qs_config.deserialize_bytes::<EditProductPayload>(body.as_ref()) {
+    let form: EditProductForm = match serde_html_form::from_bytes(body.as_ref()) {
         Ok(parsed) => parsed,
         Err(err) => {
             log::warn!(
@@ -149,11 +140,10 @@ pub async fn edit_product(
         }
     };
 
-    let product_id = payload.product_id;
+    let product_id = form.product_id;
 
-    match products::update_product(repo.get_ref(), &user, product_id, payload.form) {
+    match products::update_product(repo.get_ref(), &user, product_id, form) {
         Ok(product) => {
-            log::info!("Updated product {product:?}");
             FlashMessage::success(format!("Товар «{}» обновлён.", product.name)).send();
             redirect("/products")
         }

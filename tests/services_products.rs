@@ -33,7 +33,7 @@ fn create_product_stores_price_levels() {
         category_id: None,
         price_levels: vec![AddProductPriceLevelForm {
             price_level_id: 1,
-            price: Some("12.50".to_string()),
+            price: "12.50".to_string(),
         }],
     };
 

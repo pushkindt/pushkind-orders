@@ -1,4 +1,3 @@
-use actix_multipart::form::MultipartForm;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
@@ -6,13 +5,12 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
-use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm, UploadPriceLevelsForm};
+use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm};
 use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::price_levels::{
-    PriceLevelsQuery, create_price_level, import_price_levels, load_price_levels,
-    remove_price_level, update_price_level,
+    PriceLevelsQuery, create_price_level, load_price_levels, remove_price_level, update_price_level,
 };
 
 #[get("/price-levels")]
@@ -114,37 +112,6 @@ pub async fn edit_price_level(
         Err(err) => {
             log::error!("Failed to update price level {price_level_id}: {err}");
             FlashMessage::error("Не удалось обновить уровень цен.").send();
-            redirect("/price-levels")
-        }
-    }
-}
-
-#[post("/price-levels/upload")]
-pub async fn upload_price_levels(
-    user: AuthenticatedUser,
-    repo: web::Data<DieselRepository>,
-    MultipartForm(form): MultipartForm<UploadPriceLevelsForm>,
-) -> impl Responder {
-    match import_price_levels(repo.get_ref(), &user, form) {
-        Ok(created) => {
-            FlashMessage::success(format!("Загружено уровней цен: {created}.")).send();
-            redirect("/price-levels")
-        }
-        Err(ServiceError::Unauthorized) => {
-            FlashMessage::error("Недостаточно прав.").send();
-            redirect("/na")
-        }
-        Err(ServiceError::Form(message)) => {
-            FlashMessage::error(message).send();
-            redirect("/price-levels")
-        }
-        Err(ServiceError::Conflict) => {
-            FlashMessage::error("Некоторые уровни уже существуют.").send();
-            redirect("/price-levels")
-        }
-        Err(err) => {
-            log::error!("Failed to import price levels: {err}");
-            FlashMessage::error("Не удалось загрузить уровни цен.").send();
             redirect("/price-levels")
         }
     }

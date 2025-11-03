@@ -14,8 +14,7 @@ pub struct Customer {
     pub email: String,
     /// Optional contact phone number associated with the customer.
     pub phone: Option<String>,
-    /// Optional price level assigned to the customer.
-    /// If None, than a default price level is used
+    /// Optional price level assigned to the customer; falls back to the hub default when absent.
     pub price_level_id: Option<i32>,
 }
 

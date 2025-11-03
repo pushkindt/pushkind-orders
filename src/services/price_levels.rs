@@ -6,7 +6,7 @@ use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::customer::{CustomerListQuery, NewCustomer};
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
 use crate::forms::price_levels::{
-    AddPriceLevelForm, AssignClientPriceLevelPayload, EditPriceLevelForm, UploadPriceLevelsForm,
+    AddPriceLevelForm, AssignClientPriceLevelPayload, EditPriceLevelForm,
 };
 use crate::repository::{CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter};
 use crate::services::{ServiceError, ServiceResult};
@@ -161,32 +161,6 @@ where
         .map_err(ServiceError::from)
 }
 
-/// Imports price levels from an uploaded CSV file.
-pub fn import_price_levels<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
-    mut form: UploadPriceLevelsForm,
-) -> ServiceResult<usize>
-where
-    R: PriceLevelWriter + ?Sized,
-{
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
-
-    let price_levels = form
-        .into_new_price_levels(user.hub_id)
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
-
-    let count = price_levels.len();
-
-    for level in &price_levels {
-        repo.create_price_level(level).map_err(ServiceError::from)?;
-    }
-
-    Ok(count)
-}
-
 /// Deletes a price level for the authenticated user's hub.
 pub fn remove_price_level<R>(
     repo: &R,
@@ -221,10 +195,6 @@ where
         .into_assignment_request()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    if assignment.hub_id != user.hub_id {
-        return Err(ServiceError::Unauthorized);
-    }
-
     let customer = match repo
         .get_customer_by_email_and_phone(
             &assignment.email,
@@ -235,11 +205,8 @@ where
     {
         Some(existing) => existing,
         None => {
-            let mut new_customer = NewCustomer::new(
-                assignment.hub_id,
-                assignment.name.clone(),
-                &assignment.email,
-            );
+            let mut new_customer =
+                NewCustomer::new(user.hub_id, assignment.name.clone(), &assignment.email);
 
             if let Some(phone) = assignment.phone.as_ref() {
                 new_customer = new_customer.with_phone(phone.clone());
@@ -262,17 +229,10 @@ where
 mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
-    use std::io::{Seek, SeekFrom, Write};
-    use std::sync::{Arc, Mutex};
-
-    use actix_multipart::form::tempfile::TempFile;
-    use tempfile::NamedTempFile;
 
     use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer};
     use crate::domain::price_level::PriceLevel;
-    use crate::forms::price_levels::{
-        AddPriceLevelForm, AssignClientPriceLevelPayload, UploadPriceLevelsForm,
-    };
+    use crate::forms::price_levels::{AddPriceLevelForm, AssignClientPriceLevelPayload};
     use crate::repository::mock::{
         MockCustomerReader, MockCustomerWriter, MockPriceLevelReader, MockPriceLevelWriter,
     };
@@ -699,7 +659,6 @@ mod tests {
         let repo = CombinedCustomerRepo::new(MockCustomerReader::new(), MockCustomerWriter::new());
         let user = user_with_roles(&[]);
         let payload = AssignClientPriceLevelPayload {
-            hub_id: user.hub_id,
             name: "Client Example".to_string(),
             email: "example@client.com".to_string(),
             phone: Some("+1234567890".to_string()),
@@ -744,9 +703,8 @@ mod tests {
 
         let repo = CombinedCustomerRepo::new(reader, writer);
         let payload = AssignClientPriceLevelPayload {
-            hub_id,
             name: "Customer Seven".to_string(),
-            email: "Customer7@Example.com ".to_string(),
+            email: "Customer7@Example.com".to_string(),
             phone: Some("  +15550007 ".to_string()),
             price_level_id: Some(8),
         };
@@ -788,7 +746,6 @@ mod tests {
 
         let repo = CombinedCustomerRepo::new(reader, writer);
         let payload = AssignClientPriceLevelPayload {
-            hub_id,
             name: "Client 55".to_string(),
             email: "client55@example.com".to_string(),
             phone: None,
@@ -846,9 +803,8 @@ mod tests {
 
         let repo = CombinedCustomerRepo::new(reader, writer);
         let payload = AssignClientPriceLevelPayload {
-            hub_id,
             name: "  Missing User  ".to_string(),
-            email: " Missing@Example.com ".to_string(),
+            email: "Missing@Example.com".to_string(),
             phone: Some(" +1999000 ".to_string()),
             price_level_id: Some(1),
         };
@@ -861,7 +817,6 @@ mod tests {
         let repo = CombinedCustomerRepo::new(MockCustomerReader::new(), MockCustomerWriter::new());
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let payload = AssignClientPriceLevelPayload {
-            hub_id: user.hub_id,
             name: "".to_string(),
             email: "".to_string(),
             phone: None,
@@ -872,65 +827,13 @@ mod tests {
 
         match result {
             Err(ServiceError::Form(message)) => {
-                assert!(message.contains("invalid_price_level_id"));
-                assert!(message.contains("empty_email"));
-                assert!(message.contains("empty_name"));
+                assert!(message.contains("validation failed:"));
+                assert!(message.contains("price_level_id: Validation error: range"));
+                assert!(message.contains("email: Validation error: email"));
+                assert!(message.contains("name: Validation error: length"));
             }
             other => panic!("expected form error, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn import_price_levels_requires_role() {
-        let repo = MockPriceLevelWriter::new();
-        let user = user_with_roles(&[]);
-        let form = build_upload_form("name\nRetail\n");
-
-        let result = import_price_levels(&repo, &user, form);
-
-        assert!(matches!(result, Err(ServiceError::Unauthorized)));
-    }
-
-    #[test]
-    fn import_price_levels_creates_all_levels() {
-        let mut repo = MockPriceLevelWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-        let form = build_upload_form("name\nRetail\nWholesale\n");
-
-        let captured_names: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let names_clone = Arc::clone(&captured_names);
-
-        repo.expect_create_price_level()
-            .times(2)
-            .returning(move |payload| {
-                let mut guard = names_clone.lock().expect("mutex poisoned");
-                guard.push(payload.name.clone());
-                Ok(sample_level(
-                    guard.len() as i32,
-                    payload.hub_id,
-                    &payload.name,
-                ))
-            });
-
-        let result = import_price_levels(&repo, &user, form).expect("expected success");
-
-        assert_eq!(result, 2);
-
-        let stored = captured_names.lock().expect("mutex poisoned");
-        assert_eq!(stored.len(), 2);
-        assert!(stored.contains(&"Retail".to_string()));
-        assert!(stored.contains(&"Wholesale".to_string()));
-    }
-
-    #[test]
-    fn import_price_levels_handles_empty_upload() {
-        let repo = MockPriceLevelWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-        let form = build_upload_form("name\n");
-
-        let result = import_price_levels(&repo, &user, form).expect("expected success");
-
-        assert_eq!(result, 0);
     }
 
     #[test]
@@ -969,22 +872,5 @@ mod tests {
             .return_once(|_, _| Ok(()));
 
         remove_price_level(&repo, &user, 7).expect("expected success");
-    }
-
-    fn build_upload_form(csv: &str) -> UploadPriceLevelsForm {
-        let mut file = NamedTempFile::new().expect("create temp file");
-        file.write_all(csv.as_bytes()).expect("write csv file");
-        file.as_file_mut()
-            .seek(SeekFrom::Start(0))
-            .expect("seek to start");
-
-        UploadPriceLevelsForm {
-            csv: TempFile {
-                file,
-                content_type: None,
-                file_name: Some("levels.csv".to_string()),
-                size: csv.len(),
-            },
-        }
     }
 }

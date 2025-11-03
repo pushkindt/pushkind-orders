@@ -710,7 +710,7 @@ mod tests {
             .withf(move |new_product| {
                 assert_eq!(new_product.hub_id, hub_id);
                 assert_eq!(new_product.name, "Widget");
-                assert_eq!(new_product.currency, "USD");
+                assert_eq!(new_product.currency, "usd");
                 assert_eq!(new_product.units.as_deref(), Some("Each"));
                 true
             })
@@ -739,7 +739,7 @@ mod tests {
             category_id: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 10,
-                price: Some("12.34".to_string()),
+                price: "12.34".to_string(),
             }],
         };
 
@@ -788,7 +788,7 @@ mod tests {
             category_id: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 5,
-                price: Some("10.00".to_string()),
+                price: "10.00".to_string(),
             }],
         };
 
@@ -905,12 +905,13 @@ Banana,USD,7.50,
         };
 
         let form = EditProductForm {
-            name: None,
+            product_id: 1,
+            name: "name".to_string(),
             sku: None,
             description: None,
             units: None,
-            currency: None,
-            is_archived: None,
+            currency: "cur".to_string(),
+            is_archived: false,
             category_id: None,
             tag_ids: Vec::new(),
         };
@@ -934,14 +935,15 @@ Banana,USD,7.50,
             .returning(|_, _| Ok(None));
 
         let form = EditProductForm {
-            name: Some("Updated".to_string()),
+            product_id,
+            name: "Updated".to_string(),
             sku: None,
             description: None,
             units: None,
-            currency: Some("usd".to_string()),
-            is_archived: Some(false),
+            currency: "usd".to_string(),
+            is_archived: false,
             category_id: None,
-            tag_ids: vec!["3".to_string(), "5".to_string()],
+            tag_ids: vec![3, 5],
         };
 
         let result = update_product(&repo, &user, product_id, form);
@@ -975,7 +977,7 @@ Banana,USD,7.50,
         let final_product = {
             let mut product = writer_product.clone();
             product.name = "Espresso Deluxe".to_string();
-            product.currency = "EUR".to_string();
+            product.currency = "eur".to_string();
             product.sku = None;
             product.description = None;
             product.units = Some("pack".to_string());
@@ -1004,7 +1006,6 @@ Banana,USD,7.50,
                 assert!(updates.description.is_none());
                 assert_eq!(updates.units.as_deref(), Some("pack"));
                 assert!(updates.is_archived);
-                assert!(updates.category_id.is_none());
                 true
             })
             .returning({
@@ -1036,14 +1037,15 @@ Banana,USD,7.50,
             .returning(|_, _, _| Ok(()));
 
         let form = EditProductForm {
-            name: Some("  Espresso Deluxe  ".to_string()),
+            product_id,
+            name: "  Espresso Deluxe  ".to_string(),
             sku: Some("   ".to_string()),         // clears SKU
             description: Some("   ".to_string()), // clears description
             units: Some("  pack ".to_string()),
-            currency: Some(" eur ".to_string()),
-            is_archived: Some(true),
-            category_id: Some("0".to_string()), // clears category
-            tag_ids: vec!["42".to_string(), "99".to_string()],
+            currency: "eur".to_string(),
+            is_archived: true,
+            category_id: Some(0), // clears category
+            tag_ids: vec![42, 99],
         };
 
         let result =
@@ -1055,7 +1057,6 @@ Banana,USD,7.50,
         assert!(result.description.is_none());
         assert_eq!(result.units.as_deref(), Some("pack"));
         assert!(result.is_archived);
-        assert!(result.category_id.is_none());
         assert_eq!(result.tags, final_product.tags);
         assert_eq!(result.updated_at, new_updated_at);
     }

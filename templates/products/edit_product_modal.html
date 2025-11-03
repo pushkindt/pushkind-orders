@@ -42,7 +42,7 @@
                         <label for="editProductCategory" class="col-md-3 col-form-label">Категория</label>
                         <div class="col-md-5 col-lg-4">
                             <select name="category_id" id="editProductCategory" class="form-select">
-                                <option value="0">Без категории</option>
+                                <option value="">Без категории</option>
                                 {% for category in categories | default(value=[]) %}
                                 <option value="{{ category.id }}">{{ category.name }}</option>
                                 {% endfor %}
@@ -57,7 +57,7 @@
                         <label for="editProductTags" class="col-md-3 col-form-label">Теги</label>
                         <div class="col-md-9">
                             <select id="editProductTags"
-                                    name="tag_ids[]"
+                                    name="tag_ids"
                                     class="form-select"
                                     multiple
                                     autocomplete="off"
@@ -102,9 +102,8 @@
                     </div>
                     <div class="row">
                         <div class="col">
-                            <input type="hidden" name="is_archived" value="false">
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" value="true" id="editProductArchived" name="is_archived">
+                                <input class="form-check-input" type="checkbox" value="" id="editProductArchived" name="is_archived">
                                 <label class="form-check-label" for="editProductArchived">
                                     Архивировать товар
                                 </label>
@@ -190,7 +189,7 @@
             const currency = dataset.productCurrency || "";
             currencyInput.value = currency.toUpperCase();
 
-            archivedInput.checked = toBoolean(dataset.productArchived);
+            archivedInput.checked = toBoolean(dataset.productArchived || "false");
 
             if (tagSelect) {
                 const selectedTags = parseTagIds(dataset.productTags || "");

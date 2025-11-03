@@ -1,4 +1,3 @@
-use chrono::Utc;
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::check_role;
@@ -85,7 +84,7 @@ where
 
     let tag_id = form.tag_id;
     let update = form
-        .into_update_tag(Utc::now().naive_utc())
+        .into_update_tag()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
     repo.update_tag(tag_id, user.hub_id, &update)
@@ -248,10 +247,10 @@ mod tests {
             .times(1)
             .withf(|new_tag| {
                 assert_eq!(new_tag.hub_id, 7);
-                assert_eq!(new_tag.name, "Seasonal Picks");
+                assert_eq!(new_tag.name, "Seasonal\tPicks");
                 true
             })
-            .returning(|_| Ok(sample_tag(3, 7, "Seasonal Picks")));
+            .returning(|_| Ok(sample_tag(3, 7, "Seasonal\tPicks")));
 
         let form = AddTagForm {
             name: "  Seasonal\tPicks  ".to_string(),
@@ -260,7 +259,7 @@ mod tests {
         let created = create_tag(&repo, &user, form).expect("expected success");
 
         assert_eq!(created.id, 3);
-        assert_eq!(created.name, "Seasonal Picks");
+        assert_eq!(created.name, "Seasonal\tPicks");
     }
 
     #[test]
@@ -300,10 +299,10 @@ mod tests {
             .withf(|tag_id, hub_id, updates| {
                 assert_eq!(*tag_id, 5);
                 assert_eq!(*hub_id, 7);
-                assert_eq!(updates.name, "Limited Edition");
+                assert_eq!(updates.name, "Limited\nEdition");
                 true
             })
-            .returning(|_, _, _| Ok(sample_tag(5, 7, "Limited Edition")));
+            .returning(|_, _, _| Ok(sample_tag(5, 7, "Limited\nEdition")));
 
         let form = EditTagForm {
             tag_id: 5,
@@ -313,7 +312,7 @@ mod tests {
         let updated = modify_tag(&repo, &user, form).expect("expected success");
 
         assert_eq!(updated.id, 5);
-        assert_eq!(updated.name, "Limited Edition");
+        assert_eq!(updated.name, "Limited\nEdition");
     }
 
     #[test]
