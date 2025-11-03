@@ -399,19 +399,22 @@ impl EditProductForm {
         let mut updates = UpdateProduct::new(sanitized_name, currency, is_archived);
 
         if let Some(sku) = sku
-            && let Some(sanitized) = sanitize_text(&sku) {
-                updates = updates.with_sku(sanitized);
-            }
+            && let Some(sanitized) = sanitize_text(&sku)
+        {
+            updates = updates.with_sku(sanitized);
+        }
 
         if let Some(description) = description
-            && let Some(sanitized) = sanitize_text(&description) {
-                updates = updates.with_description(sanitized);
-            }
+            && let Some(sanitized) = sanitize_text(&description)
+        {
+            updates = updates.with_description(sanitized);
+        }
 
         if let Some(units) = units
-            && let Some(sanitized) = sanitize_text(&units) {
-                updates = updates.with_units(sanitized);
-            }
+            && let Some(sanitized) = sanitize_text(&units)
+        {
+            updates = updates.with_units(sanitized);
+        }
 
         if let Some(category_raw) = category_id {
             updates = updates.with_category_id(category_raw);
