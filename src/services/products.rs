@@ -905,6 +905,7 @@ Banana,USD,7.50,
         };
 
         let form = EditProductForm {
+            product_id: 1,
             name: "name".to_string(),
             sku: None,
             description: None,
@@ -934,6 +935,7 @@ Banana,USD,7.50,
             .returning(|_, _| Ok(None));
 
         let form = EditProductForm {
+            product_id,
             name: "Updated".to_string(),
             sku: None,
             description: None,
@@ -1035,11 +1037,12 @@ Banana,USD,7.50,
             .returning(|_, _, _| Ok(()));
 
         let form = EditProductForm {
+            product_id,
             name: "  Espresso Deluxe  ".to_string(),
             sku: Some("   ".to_string()),         // clears SKU
             description: Some("   ".to_string()), // clears description
             units: Some("  pack ".to_string()),
-            currency: " eur ".to_string(),
+            currency: "eur".to_string(),
             is_archived: true,
             category_id: Some(0), // clears category
             tag_ids: vec![42, 99],

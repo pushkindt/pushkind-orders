@@ -344,6 +344,8 @@ impl UploadProductsForm {
 /// Form payload emitted when editing an existing product.
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditProductForm {
+    #[validate(range(min = 1))]
+    pub product_id: i32,
     /// Optional new name.
     #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
     pub name: String,
@@ -356,12 +358,14 @@ pub struct EditProductForm {
     #[validate(length(max = UNITS_MAX_LEN_VALIDATOR))]
     pub units: Option<String>,
     /// Optional currency update.
+    #[validate(length(max = CURRENCY_CODE_LEN_VALIDATOR))]
     pub currency: String,
     /// Optional archive flag toggle.
     #[serde(default)]
     pub is_archived: bool,
     /// Optional category update (negative or zero clears the category).
     #[serde(default)]
+    #[serde(deserialize_with = "empty_id_as_none")]
     pub category_id: Option<i32>,
     /// Optional set of tags to associate with the product.
     #[serde(default)]
@@ -383,6 +387,7 @@ impl EditProductForm {
         self.validate()?;
 
         let EditProductForm {
+            product_id: _,
             name,
             sku,
             description,
@@ -779,6 +784,7 @@ Banana,usd,,Ripe banana,,8.50,
     #[test]
     fn edit_product_form_converts_updates() {
         let form = EditProductForm {
+            product_id: 1,
             name: "  Premium  Widget ".to_string(),
             sku: Some("  ".to_string()),
             description: Some(" Updated description. \n\n ".to_string()),
@@ -805,6 +811,7 @@ Banana,usd,,Ripe banana,,8.50,
     #[test]
     fn edit_product_form_rejects_invalid_currency() {
         let form = EditProductForm {
+            product_id: 1,
             name: "  Premium  Widget ".to_string(),
             sku: Some("  ".to_string()),
             description: Some(" Updated description. \n\n ".to_string()),
