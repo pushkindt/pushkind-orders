@@ -11,7 +11,7 @@ use crate::{
         price_level::PriceLevel,
         product::{NewProduct, UpdateProduct},
     },
-    forms::sanitize_text,
+    forms::{empty_id_as_none, sanitize_text},
 };
 
 /// Maximum allowed length for a product name.
@@ -102,8 +102,9 @@ pub struct AddProductForm {
     #[validate(length(equal = CURRENCY_CODE_LEN_VALIDATOR))]
     pub currency: String,
     /// Optional category identifier selected by the user.
-    #[serde(default)]
     #[validate(range(min = 1))]
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_id_as_none")]
     pub category_id: Option<i32>,
     /// Optional price level amounts submitted with the product.
     #[serde(default)]
@@ -157,7 +158,7 @@ impl AddProductForm {
             new_product = new_product.with_units(units);
         }
 
-        if let Some(category_id) = self.category_id.and_then(normalize_category_id) {
+        if let Some(category_id) = self.category_id {
             new_product = new_product.with_category_id(category_id);
         }
 
@@ -447,10 +448,6 @@ fn locate_product_headers(headers: &StringRecord) -> ProductHeaderIndexes {
         units_index: locate_header(headers, "units"),
         currency_index: locate_header(headers, "currency"),
     }
-}
-
-fn normalize_category_id(input: i32) -> Option<i32> {
-    if input > 0 { Some(input) } else { None }
 }
 
 fn locate_header(headers: &StringRecord, expected: &str) -> Option<usize> {

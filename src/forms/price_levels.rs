@@ -4,7 +4,7 @@ use validator::{Validate, ValidationErrors};
 
 use crate::{
     domain::price_level::{NewPriceLevel, UpdatePriceLevel},
-    forms::sanitize_text,
+    forms::{empty_id_as_none, sanitize_text},
 };
 
 /// Maximum length allowed for a price level name.
@@ -53,6 +53,8 @@ pub struct AssignClientPriceLevelPayload {
     pub phone: Option<String>,
     /// Selected price level identifier. `None` restores the default hub level.
     #[validate(range(min = 1))]
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_id_as_none")]
     pub price_level_id: Option<i32>,
 }
 

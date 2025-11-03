@@ -84,6 +84,7 @@ pub async fn add_product(
             redirect("/na")
         }
         Err(ServiceError::Form(message)) => {
+            log::info!("{message}");
             FlashMessage::error(message).send();
             redirect("/products")
         }

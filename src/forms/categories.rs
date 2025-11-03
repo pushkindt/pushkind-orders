@@ -4,7 +4,7 @@ use validator::{Validate, ValidationErrors};
 
 use crate::{
     domain::category::{NewCategory, UpdateCategory},
-    forms::sanitize_text,
+    forms::{empty_id_as_none, sanitize_text},
 };
 
 /// Maximum length allowed for a category name.
@@ -43,8 +43,9 @@ pub struct AddCategoryForm {
     #[serde(default)]
     pub description: Option<String>,
     /// Optional parent category identifier in string form.
-    #[serde(default)]
     #[validate(range(min = 1))]
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_id_as_none")]
     pub parent_id: Option<i32>,
 }
 
