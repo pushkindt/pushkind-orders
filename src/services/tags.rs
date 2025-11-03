@@ -1,4 +1,3 @@
-use chrono::Utc;
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::check_role;
@@ -85,7 +84,7 @@ where
 
     let tag_id = form.tag_id;
     let update = form
-        .into_update_tag(Utc::now().naive_utc())
+        .into_update_tag()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
     repo.update_tag(tag_id, user.hub_id, &update)

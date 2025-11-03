@@ -327,7 +327,7 @@ mod tests {
         let form = AddCategoryForm {
             name: "  Fresh   Produce ".to_string(),
             description: Some(" seasonal goods ".to_string()),
-            parent_id: Some("4".to_string()),
+            parent_id: Some(4),
         };
 
         let created = create_category(&repo, &user, form).expect("expected success");

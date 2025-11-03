@@ -1,9 +1,11 @@
-use chrono::NaiveDateTime;
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
-use crate::domain::tag::{NewTag, UpdateTag};
+use crate::{
+    domain::tag::{NewTag, UpdateTag},
+    forms::sanitize_text,
+};
 
 /// Maximum allowed length for a tag name.
 const NAME_MAX_LEN: usize = 128;
@@ -36,12 +38,10 @@ impl AddTagForm {
     pub fn into_new_tag(self, hub_id: i32) -> TagFormResult<NewTag> {
         self.validate()?;
 
-        let sanitized_name = sanitize_inline_text(&self.name);
-        if sanitized_name.is_empty() {
-            return Err(TagFormError::EmptyName);
+        match sanitize_text(&self.name) {
+            Some(sanitized_name) => Ok(NewTag::new(hub_id, sanitized_name)),
+            None => Err(TagFormError::EmptyName),
         }
-
-        Ok(NewTag::new(hub_id, sanitized_name))
     }
 }
 
@@ -58,46 +58,19 @@ pub struct EditTagForm {
 
 impl EditTagForm {
     /// Validates and sanitizes the payload into a domain `UpdateTag`.
-    pub fn into_update_tag(self, updated_at: NaiveDateTime) -> TagFormResult<UpdateTag> {
+    pub fn into_update_tag(self) -> TagFormResult<UpdateTag> {
         self.validate()?;
 
-        let sanitized_name = sanitize_inline_text(&self.name);
-        if sanitized_name.is_empty() {
-            return Err(TagFormError::EmptyName);
-        }
-
-        Ok(UpdateTag {
-            name: sanitized_name,
-            updated_at,
-        })
-    }
-}
-
-fn sanitize_inline_text(input: &str) -> String {
-    let mut sanitized = String::with_capacity(input.len());
-    let mut previous_whitespace = false;
-
-    for ch in input.trim().chars() {
-        if ch.is_whitespace() {
-            if !previous_whitespace {
-                sanitized.push(' ');
-                previous_whitespace = true;
-            }
-        } else if ch.is_control() {
-            continue;
-        } else {
-            sanitized.push(ch);
-            previous_whitespace = false;
+        match sanitize_text(&self.name) {
+            Some(sanitized_name) => Ok(UpdateTag::new(sanitized_name)),
+            None => Err(TagFormError::EmptyName),
         }
     }
-
-    sanitized
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
 
     #[test]
     fn add_tag_form_sanitizes_and_converts() {
@@ -126,9 +99,6 @@ mod tests {
 
     #[test]
     fn edit_tag_form_builds_update() {
-        let updated_at = NaiveDate::from_ymd_opt(2023, 11, 14)
-            .and_then(|date| date.and_hms_opt(12, 0, 0))
-            .expect("valid timestamp");
         let form = EditTagForm {
             tag_id: 9,
             name: "  Limited\nEdition  ".to_string(),
@@ -136,12 +106,11 @@ mod tests {
 
         let tag_id = form.tag_id;
         let update = form
-            .into_update_tag(updated_at)
+            .into_update_tag()
             .expect("expected payload conversion to succeed");
 
         assert_eq!(tag_id, 9);
         assert_eq!(update.name, "Limited Edition");
-        assert_eq!(update.updated_at, updated_at);
     }
 
     #[test]
@@ -151,11 +120,7 @@ mod tests {
             name: "  ".to_string(),
         };
 
-        let updated_at = NaiveDate::from_ymd_opt(2023, 1, 1)
-            .and_then(|date| date.and_hms_opt(0, 0, 0))
-            .expect("valid timestamp");
-
-        let result = form.into_update_tag(updated_at);
+        let result = form.into_update_tag();
 
         assert!(matches!(result, Err(TagFormError::EmptyName)));
     }

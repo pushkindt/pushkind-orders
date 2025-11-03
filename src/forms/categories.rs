@@ -2,7 +2,10 @@ use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
-use crate::domain::category::{NewCategory, UpdateCategory};
+use crate::{
+    domain::category::{NewCategory, UpdateCategory},
+    forms::sanitize_text,
+};
 
 /// Maximum length allowed for a category name.
 const NAME_MAX_LEN: usize = 128;
@@ -41,7 +44,8 @@ pub struct AddCategoryForm {
     pub description: Option<String>,
     /// Optional parent category identifier in string form.
     #[serde(default)]
-    pub parent_id: Option<String>,
+    #[validate(range(min = 1))]
+    pub parent_id: Option<i32>,
 }
 
 impl AddCategoryForm {
@@ -49,7 +53,7 @@ impl AddCategoryForm {
     pub fn into_new_category(self, hub_id: i32) -> CategoryFormResult<NewCategory> {
         self.validate()?;
 
-        let sanitized_name = sanitize_inline_text(&self.name);
+        let sanitized_name = self.name.trim();
         if sanitized_name.is_empty() {
             return Err(CategoryFormError::EmptyName);
         }
@@ -57,16 +61,14 @@ impl AddCategoryForm {
         let sanitized_description = self
             .description
             .as_deref()
-            .map(sanitize_multiline_text)
+            .map(str::trim)
             .filter(|value| !value.is_empty());
-
-        let parent_id = parse_optional_i32(self.parent_id, "parent category")?;
 
         let mut new_category = NewCategory::new(hub_id, sanitized_name);
         if let Some(description) = sanitized_description {
             new_category = new_category.with_description(description);
         }
-        if let Some(parent_id) = parent_id {
+        if let Some(parent_id) = self.parent_id.filter(|&x| x > 0) {
             new_category = new_category.with_parent_id(parent_id);
         }
 
@@ -103,117 +105,14 @@ impl EditCategoryForm {
             is_archived,
         } = self;
 
-        let name = {
-            let sanitized = sanitize_inline_text(&name);
-            if sanitized.is_empty() {
-                return Err(CategoryFormError::EmptyName);
-            }
-            sanitized
-        };
+        let name = sanitize_text(&name).ok_or(CategoryFormError::EmptyName)?;
 
-        let description = match description {
-            Some(text) => {
-                let sanitized = sanitize_multiline_text(&text);
-                if sanitized.is_empty() {
-                    None
-                } else {
-                    Some(sanitized)
-                }
-            }
-            None => None,
-        };
+        let description = description.and_then(|x| sanitize_text(&x));
 
         let update = UpdateCategory::new(name, description, is_archived);
 
         Ok(update)
     }
-}
-
-/// Normalized payload produced by the "Assign child categories" form.
-#[derive(Debug)]
-pub struct AssignChildCategoriesPayload {
-    /// Identifier of the parent category.
-    pub parent_id: i32,
-    /// Unique list of child category identifiers to associate with the parent.
-    pub child_ids: Vec<i32>,
-}
-
-fn parse_optional_i32(
-    value: Option<String>,
-    field: &'static str,
-) -> CategoryFormResult<Option<i32>> {
-    match value {
-        None => Ok(None),
-        Some(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                Ok(None)
-            } else {
-                match trimmed.parse::<i32>() {
-                    Ok(parsed) if parsed > 0 => Ok(Some(parsed)),
-                    Ok(_) => Ok(None),
-                    Err(_) => Err(CategoryFormError::InvalidIdentifier {
-                        field,
-                        value: trimmed.to_string(),
-                    }),
-                }
-            }
-        }
-    }
-}
-fn sanitize_inline_text(input: &str) -> String {
-    let mut sanitized = String::with_capacity(input.len());
-    let mut previous_whitespace = false;
-
-    for ch in input.trim().chars() {
-        if ch.is_whitespace() {
-            if !previous_whitespace {
-                sanitized.push(' ');
-                previous_whitespace = true;
-            }
-        } else if ch.is_control() {
-            continue;
-        } else {
-            sanitized.push(ch);
-            previous_whitespace = false;
-        }
-    }
-
-    sanitized
-}
-
-fn sanitize_multiline_text(input: &str) -> String {
-    let mut lines: Vec<String> = input.lines().map(sanitize_inline_text).collect();
-
-    while matches!(lines.first(), Some(line) if line.is_empty()) {
-        lines.remove(0);
-    }
-
-    while matches!(lines.last(), Some(line) if line.is_empty()) {
-        lines.pop();
-    }
-
-    if lines.is_empty() {
-        return String::new();
-    }
-
-    let mut result = Vec::with_capacity(lines.len());
-    let mut previous_empty = false;
-    for line in lines {
-        let is_empty = line.is_empty();
-        if is_empty {
-            if previous_empty {
-                continue;
-            }
-            previous_empty = true;
-            result.push(String::new());
-        } else {
-            previous_empty = false;
-            result.push(line);
-        }
-    }
-
-    result.join("\n")
 }
 
 #[cfg(test)]
@@ -225,7 +124,7 @@ mod tests {
         let form = AddCategoryForm {
             name: "  Fresh Produce  ".to_string(),
             description: Some("  Fruits\n\n Vegetables  ".to_string()),
-            parent_id: Some(" 12 ".to_string()),
+            parent_id: Some(12),
         };
 
         let new_category = form
@@ -259,7 +158,7 @@ mod tests {
         let form = AddCategoryForm {
             name: "Pantry".to_string(),
             description: None,
-            parent_id: Some("abc".to_string()),
+            parent_id: Some(-1),
         };
 
         let result = form.into_new_category(1);

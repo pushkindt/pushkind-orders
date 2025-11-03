@@ -37,7 +37,7 @@ pub struct NewCategory {
 }
 
 impl NewCategory {
-    /// Build a new category payload with the supplied details and current timestamp.
+    /// Build a new category payload with the supplied details and a trimmed name.
     pub fn new(hub_id: i32, name: impl Into<String>) -> Self {
         let name = name.into().trim().into();
         Self {
@@ -68,14 +68,14 @@ pub struct UpdateCategory {
     pub name: String,
     /// New description value; `None` clears the description.
     pub description: Option<String>,
-    /// Optional archive flag toggle.
+    /// Archive flag state applied by this update.
     pub is_archived: bool,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }
 
 impl UpdateCategory {
-    /// Build a category update payload with the supplied values.
+    /// Build a category update payload with trimmed name and a fresh timestamp.
     pub fn new(name: String, description: Option<String>, is_archived: bool) -> Self {
         let name = name.trim().into();
         let updated_at = chrono::Local::now().naive_utc();

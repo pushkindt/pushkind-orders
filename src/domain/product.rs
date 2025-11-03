@@ -55,7 +55,7 @@ pub struct NewProduct {
 }
 
 impl NewProduct {
-    /// Build a new product payload with the supplied details and current timestamp.
+    /// Build a new product payload with trimmed strings and no optional fields set.
     pub fn new(hub_id: i32, name: impl Into<String>, currency: impl Into<String>) -> Self {
         let name = name.into().trim().to_string();
         let currency = currency.into().trim().to_string();
@@ -118,7 +118,7 @@ pub struct UpdateProduct {
 
 impl UpdateProduct {
     /// Build a patch payload with the supplied details and current timestamp.
-    pub fn new(name: impl Into<String>, currency: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<String>, currency: impl Into<String>, is_archived: bool) -> Self {
         let now = chrono::Local::now().naive_utc();
         let name = name.into().trim().to_string();
         let currency = currency.into().trim().to_string();
@@ -128,7 +128,7 @@ impl UpdateProduct {
             description: None,
             units: None,
             currency,
-            is_archived: false,
+            is_archived,
             category_id: None,
             updated_at: now,
         }
@@ -155,12 +155,6 @@ impl UpdateProduct {
     /// Assign the product to a category.
     pub fn with_category_id(mut self, category_id: i32) -> Self {
         self.category_id = Some(category_id);
-        self
-    }
-
-    /// Mark the product as archived.
-    pub fn archive(mut self) -> Self {
-        self.is_archived = true;
         self
     }
 }

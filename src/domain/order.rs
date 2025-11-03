@@ -155,7 +155,7 @@ impl OrderProduct {
 }
 
 impl NewOrder {
-    /// Build a new order payload with the supplied details and current timestamp.
+    /// Build a new order payload with the supplied details and no initial products.
     pub fn new(hub_id: i32, total_cents: i32, currency: impl Into<String>) -> Self {
         Self {
             hub_id,

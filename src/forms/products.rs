@@ -3,14 +3,15 @@ use std::{collections::HashMap, io::Seek};
 use actix_multipart::form::{MultipartForm, tempfile::TempFile};
 use csv::{StringRecord, Trim};
 use serde::Deserialize;
-use serde::de::{Deserializer, Error as DeError};
-use serde_json::Value;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
-use crate::domain::{
-    price_level::PriceLevel,
-    product::{NewProduct, UpdateProduct},
+use crate::{
+    domain::{
+        price_level::PriceLevel,
+        product::{NewProduct, UpdateProduct},
+    },
+    forms::sanitize_text,
 };
 
 /// Maximum allowed length for a product name.
@@ -42,8 +43,8 @@ pub enum ProductFormError {
     #[error("product name cannot be empty")]
     EmptyName,
     /// The provided currency code is invalid.
-    #[error("invalid currency code `{value}`")]
-    InvalidCurrency { value: String },
+    #[error("invalid currency code")]
+    InvalidCurrency,
     /// The uploaded CSV is missing required columns.
     #[error("upload is missing the required `name` or `currency` headers")]
     MissingRequiredHeaders,
@@ -83,40 +84,6 @@ pub enum ProductFormError {
     InvalidCategoryId { value: String },
 }
 
-fn deserialize_optional_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<Value>::deserialize(deserializer)?;
-    match value {
-        None => Ok(None),
-        Some(Value::Bool(flag)) => Ok(Some(flag)),
-        Some(Value::String(raw)) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                return Ok(None);
-            }
-            match trimmed.to_ascii_lowercase().as_str() {
-                "true" | "1" | "yes" | "on" => Ok(Some(true)),
-                "false" | "0" | "no" | "off" => Ok(Some(false)),
-                other => Err(D::Error::custom(format!("invalid boolean `{other}`"))),
-            }
-        }
-        Some(Value::Number(number)) => {
-            if let Some(int) = number.as_i64() {
-                match int {
-                    0 => Ok(Some(false)),
-                    1 => Ok(Some(true)),
-                    _ => Err(D::Error::custom(format!("invalid boolean `{int}`"))),
-                }
-            } else {
-                Err(D::Error::custom(format!("invalid boolean `{number}`")))
-            }
-        }
-        Some(other) => Err(D::Error::custom(format!("invalid boolean input `{other}`"))),
-    }
-}
-
 /// Form payload emitted when submitting the "Add product" form.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddProductForm {
@@ -136,6 +103,7 @@ pub struct AddProductForm {
     pub currency: String,
     /// Optional category identifier selected by the user.
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub category_id: Option<i32>,
     /// Optional price level amounts submitted with the product.
     #[serde(default)]
@@ -143,11 +111,11 @@ pub struct AddProductForm {
 }
 
 /// Price level payload submitted alongside a product form.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct AddProductPriceLevelForm {
+    #[validate(range(min = 1))]
     pub price_level_id: i32,
-    #[serde(default)]
-    pub price: Option<String>,
+    pub price: String,
 }
 
 impl AddProductForm {
@@ -165,36 +133,15 @@ impl AddProductForm {
     ) -> ProductFormResult<NewProductUpload> {
         self.validate()?;
 
-        let sanitized_name = sanitize_inline_text(&self.name);
-        if sanitized_name.is_empty() {
-            return Err(ProductFormError::EmptyName);
-        }
+        let sanitized_name = sanitize_text(&self.name).ok_or(ProductFormError::EmptyName)?;
 
-        let sanitized_sku = self
-            .sku
-            .as_deref()
-            .map(sanitize_sku)
-            .filter(|value| !value.is_empty());
+        let sanitized_sku = self.sku.as_deref().and_then(sanitize_text);
 
-        let sanitized_description = self
-            .description
-            .as_deref()
-            .map(sanitize_multiline_text)
-            .filter(|value| !value.is_empty());
+        let sanitized_description = self.description.as_deref().and_then(sanitize_text);
 
-        let sanitized_units = self
-            .units
-            .as_deref()
-            .map(sanitize_inline_text)
-            .filter(|value| !value.is_empty());
+        let sanitized_units = self.units.as_deref().and_then(sanitize_text);
 
-        let currency = match sanitize_currency(&self.currency) {
-            Ok(value) => value,
-            Err(ProductFormError::InvalidCurrency { value }) => {
-                return Err(ProductFormError::InvalidCurrency { value });
-            }
-            Err(other) => return Err(other),
-        };
+        let currency = sanitize_text(&self.currency).ok_or(ProductFormError::InvalidCurrency)?;
 
         let mut new_product = NewProduct::new(hub_id, sanitized_name, currency);
 
@@ -219,10 +166,9 @@ impl AddProductForm {
 
         let mut parsed_price_levels = Vec::new();
         for entry in self.price_levels {
-            log::debug!("{entry:?}");
-            let Some(raw_price) = entry.price.as_deref() else {
-                continue;
-            };
+            entry.validate()?;
+
+            let raw_price = entry.price;
             let trimmed = raw_price.trim();
             if trimmed.is_empty() {
                 continue;
@@ -316,44 +262,34 @@ impl UploadProductsForm {
             let record = row?;
 
             let raw_name = record.get(name_index).unwrap_or("");
-            let sanitized_name = sanitize_inline_text(raw_name);
-            if sanitized_name.is_empty() {
-                return Err(ProductFormError::UploadMissingName { row: row_number });
-            }
+            let sanitized_name = sanitize_text(raw_name)
+                .ok_or(ProductFormError::UploadMissingName { row: row_number })?;
 
             let currency_raw = record.get(currency_index).unwrap_or("").trim();
             if currency_raw.is_empty() {
                 return Err(ProductFormError::UploadMissingCurrency { row: row_number });
             }
 
-            let currency = match sanitize_currency(currency_raw) {
-                Ok(value) => value,
-                Err(ProductFormError::InvalidCurrency { value }) => {
-                    return Err(ProductFormError::UploadInvalidCurrency {
-                        row: row_number,
-                        value,
-                    });
-                }
-                Err(other) => return Err(other),
-            };
+            let currency =
+                sanitize_text(currency_raw).ok_or(ProductFormError::UploadInvalidCurrency {
+                    row: row_number,
+                    value: currency_raw.to_string(),
+                })?;
 
             let sku = header_indexes
                 .sku_index
                 .and_then(|idx| record.get(idx))
-                .map(sanitize_sku)
-                .filter(|value| !value.is_empty());
+                .and_then(sanitize_text);
 
             let description = header_indexes
                 .description_index
                 .and_then(|idx| record.get(idx))
-                .map(sanitize_multiline_text)
-                .filter(|value| !value.is_empty());
+                .and_then(sanitize_text);
 
             let units = header_indexes
                 .units_index
                 .and_then(|idx| record.get(idx))
-                .map(sanitize_inline_text)
-                .filter(|value| !value.is_empty());
+                .and_then(sanitize_text);
 
             let mut product = NewProduct::new(hub_id, sanitized_name, currency);
 
@@ -409,7 +345,7 @@ impl UploadProductsForm {
 pub struct EditProductForm {
     /// Optional new name.
     #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
-    pub name: Option<String>,
+    pub name: String,
     /// Optional SKU update (empty string clears the existing SKU).
     #[validate(length(max = SKU_MAX_LEN_VALIDATOR))]
     pub sku: Option<String>,
@@ -419,16 +355,16 @@ pub struct EditProductForm {
     #[validate(length(max = UNITS_MAX_LEN_VALIDATOR))]
     pub units: Option<String>,
     /// Optional currency update.
-    pub currency: Option<String>,
+    pub currency: String,
     /// Optional archive flag toggle.
-    #[serde(default, deserialize_with = "deserialize_optional_bool")]
-    pub is_archived: Option<bool>,
+    #[serde(default)]
+    pub is_archived: bool,
     /// Optional category update (negative or zero clears the category).
     #[serde(default)]
-    pub category_id: Option<String>,
+    pub category_id: Option<i32>,
     /// Optional set of tags to associate with the product.
     #[serde(default)]
-    pub tag_ids: Vec<String>,
+    pub tag_ids: Vec<i32>,
 }
 
 /// Sanitized update payload returned when editing a product.
@@ -456,80 +392,32 @@ impl EditProductForm {
             tag_ids,
         } = self;
 
-        let mut updates = UpdateProduct::default();
+        let sanitized_name = sanitize_text(&name).ok_or(ProductFormError::EmptyName)?;
 
-        if let Some(name) = name {
-            let sanitized = sanitize_inline_text(&name);
-            if sanitized.is_empty() {
-                return Err(ProductFormError::EmptyName);
-            }
-            updates.name = sanitized;
-        }
+        let currency = sanitize_text(&currency).ok_or(ProductFormError::InvalidCurrency)?;
 
-        if let Some(sku) = sku {
-            let sanitized = sanitize_sku(&sku);
-            if !sanitized.is_empty() {
-                updates.sku = Some(sanitized);
-            }
-        }
+        let mut updates = UpdateProduct::new(sanitized_name, currency, is_archived);
 
-        if let Some(description) = description {
-            let sanitized = sanitize_multiline_text(&description);
-            if !sanitized.is_empty() {
-                updates.description = Some(sanitized);
-            }
-        }
-
-        if let Some(units) = units {
-            let sanitized = sanitize_inline_text(&units);
-            if !sanitized.is_empty() {
-                updates.units = Some(sanitized);
-            }
-        }
-
-        if let Some(currency) = currency {
-            let trimmed = currency.trim();
-            if trimmed.is_empty() {
-                return Err(ProductFormError::InvalidCurrency {
-                    value: currency.to_string(),
-                });
+        if let Some(sku) = sku
+            && let Some(sanitized) = sanitize_text(&sku) {
+                updates = updates.with_sku(sanitized);
             }
 
-            match sanitize_currency(trimmed) {
-                Ok(value) => {
-                    updates.currency = value;
-                }
-                Err(ProductFormError::InvalidCurrency { value }) => {
-                    return Err(ProductFormError::InvalidCurrency { value });
-                }
-                Err(other) => return Err(other),
+        if let Some(description) = description
+            && let Some(sanitized) = sanitize_text(&description) {
+                updates = updates.with_description(sanitized);
             }
-        }
 
-        if let Some(is_archived) = is_archived {
-            updates.is_archived = is_archived;
-        }
+        if let Some(units) = units
+            && let Some(sanitized) = sanitize_text(&units) {
+                updates = updates.with_units(sanitized);
+            }
 
         if let Some(category_raw) = category_id {
-            let trimmed = category_raw.trim();
-            if trimmed.is_empty() {
-                updates.category_id = None;
-            } else {
-                let parsed =
-                    trimmed
-                        .parse::<i32>()
-                        .map_err(|_| ProductFormError::InvalidCategoryId {
-                            value: category_raw,
-                        })?;
-                updates.category_id = normalize_category_id(parsed);
-            }
+            updates = updates.with_category_id(category_raw);
         }
 
-        let mut sanitized_tags: Vec<i32> = tag_ids
-            .into_iter()
-            .filter_map(|raw| raw.trim().parse::<i32>().ok())
-            .filter(|id| *id > 0)
-            .collect();
+        let mut sanitized_tags: Vec<i32> = tag_ids;
         sanitized_tags.sort_unstable();
         sanitized_tags.dedup();
 
@@ -635,86 +523,6 @@ fn parse_price_to_cents(input: &str) -> Option<i32> {
     i32::try_from(cents).ok()
 }
 
-fn sanitize_inline_text(input: &str) -> String {
-    let mut sanitized = String::with_capacity(input.len());
-    let mut previous_whitespace = false;
-
-    for ch in input.trim().chars() {
-        if ch.is_whitespace() {
-            if !previous_whitespace {
-                sanitized.push(' ');
-                previous_whitespace = true;
-            }
-        } else if ch.is_control() {
-            continue;
-        } else {
-            sanitized.push(ch);
-            previous_whitespace = false;
-        }
-    }
-
-    sanitized
-}
-
-fn sanitize_sku(input: &str) -> String {
-    input
-        .trim()
-        .chars()
-        .filter(|ch| !ch.is_control())
-        .collect::<String>()
-}
-
-fn sanitize_multiline_text(input: &str) -> String {
-    let mut lines: Vec<String> = input.lines().map(sanitize_inline_text).collect();
-
-    while matches!(lines.first(), Some(line) if line.is_empty()) {
-        lines.remove(0);
-    }
-
-    while matches!(lines.last(), Some(line) if line.is_empty()) {
-        lines.pop();
-    }
-
-    if lines.is_empty() {
-        return String::new();
-    }
-
-    let mut result = Vec::with_capacity(lines.len());
-    let mut previous_empty = false;
-    for line in lines {
-        let is_empty = line.is_empty();
-        if is_empty {
-            if previous_empty {
-                continue;
-            }
-            previous_empty = true;
-            result.push(String::new());
-        } else {
-            previous_empty = false;
-            result.push(line);
-        }
-    }
-
-    result.join("\n")
-}
-
-fn sanitize_currency(input: &str) -> ProductFormResult<String> {
-    let trimmed = input.trim();
-    if trimmed.len() != CURRENCY_CODE_LEN {
-        return Err(ProductFormError::InvalidCurrency {
-            value: trimmed.to_string(),
-        });
-    }
-
-    if !trimmed.chars().all(|ch| ch.is_ascii_alphabetic()) {
-        return Err(ProductFormError::InvalidCurrency {
-            value: trimmed.to_string(),
-        });
-    }
-
-    Ok(trimmed.to_ascii_uppercase())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -737,11 +545,11 @@ mod tests {
             price_levels: vec![
                 AddProductPriceLevelForm {
                     price_level_id: 1,
-                    price: Some("12.34".to_string()),
+                    price: "12.34".to_string(),
                 },
                 AddProductPriceLevelForm {
                     price_level_id: 2,
-                    price: Some("  ".to_string()),
+                    price: "  ".to_string(),
                 },
             ],
         };
@@ -800,10 +608,7 @@ mod tests {
 
         let result = form.into_new_product(1);
 
-        assert!(matches!(
-            result,
-            Err(ProductFormError::InvalidCurrency { value }) if value == "US!"
-        ));
+        assert!(matches!(result, Err(ProductFormError::InvalidCurrency)));
     }
 
     #[test]
@@ -817,7 +622,7 @@ mod tests {
             category_id: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 1,
-                price: Some("oops".to_string()),
+                price: "oops".to_string(),
             }],
         };
         let levels = vec![build_price_level(1, "Retail")];
@@ -842,7 +647,7 @@ mod tests {
             category_id: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 999,
-                price: Some("10".to_string()),
+                price: "10".to_string(),
             }],
         };
         let levels = vec![build_price_level(1, "Retail")];
@@ -974,14 +779,14 @@ Banana,usd,,Ripe banana,,8.50,
     #[test]
     fn edit_product_form_converts_updates() {
         let form = EditProductForm {
-            name: Some("  Premium  Widget ".to_string()),
+            name: "  Premium  Widget ".to_string(),
             sku: Some("  ".to_string()),
             description: Some(" Updated description. \n\n ".to_string()),
             units: Some("  ea ".to_string()),
-            currency: Some("eur".to_string()),
-            is_archived: Some(true),
-            category_id: Some("12".to_string()),
-            tag_ids: vec!["5".to_string(), "7".to_string(), "5".to_string()],
+            currency: "eur".to_string(),
+            is_archived: true,
+            category_id: Some(12),
+            tag_ids: vec![5, 7, 5],
         };
 
         let payload = form.into_update_product().expect("expected success");
@@ -1000,21 +805,18 @@ Banana,usd,,Ripe banana,,8.50,
     #[test]
     fn edit_product_form_rejects_invalid_currency() {
         let form = EditProductForm {
-            name: None,
-            sku: None,
-            description: None,
-            units: None,
-            currency: Some("1".to_string()),
-            is_archived: None,
-            category_id: None,
-            tag_ids: Vec::new(),
+            name: "  Premium  Widget ".to_string(),
+            sku: Some("  ".to_string()),
+            description: Some(" Updated description. \n\n ".to_string()),
+            units: Some("  ea ".to_string()),
+            currency: "1".to_string(),
+            is_archived: true,
+            category_id: Some(12),
+            tag_ids: vec![5, 7, 5],
         };
 
         let result = form.into_update_product();
 
-        assert!(matches!(
-            result,
-            Err(ProductFormError::InvalidCurrency { value }) if value == "1"
-        ));
+        assert!(matches!(result, Err(ProductFormError::InvalidCurrency)));
     }
 }
