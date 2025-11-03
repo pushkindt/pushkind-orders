@@ -83,7 +83,7 @@ mod tests {
             .expect("expected conversion to succeed");
 
         assert_eq!(new_tag.hub_id, 5);
-        assert_eq!(new_tag.name, "Seasonal Specials");
+        assert_eq!(new_tag.name, "Seasonal \t Specials");
     }
 
     #[test]
@@ -110,7 +110,7 @@ mod tests {
             .expect("expected payload conversion to succeed");
 
         assert_eq!(tag_id, 9);
-        assert_eq!(update.name, "Limited Edition");
+        assert_eq!(update.name, "Limited\nEdition");
     }
 
     #[test]

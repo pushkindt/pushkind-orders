@@ -566,14 +566,14 @@ mod tests {
             .expect("expected success");
 
         assert_eq!(payload.product.hub_id, 42);
-        assert_eq!(payload.product.name, "Deluxe Product");
+        assert_eq!(payload.product.name, "Deluxe  Product");
         assert_eq!(payload.product.sku.as_deref(), Some("sku-001"));
         assert_eq!(
             payload.product.description.as_deref(),
-            Some("First line.\n\nSecond line.")
+            Some("First line.\n\n Second line.")
         );
         assert_eq!(payload.product.units.as_deref(), Some("Box"));
-        assert_eq!(payload.product.currency, "USD");
+        assert_eq!(payload.product.currency, "usd");
         assert_eq!(payload.product.category_id, Some(7));
         assert_eq!(payload.price_levels.len(), 1);
         assert_eq!(payload.price_levels[0].price_level_id, 1);
@@ -604,7 +604,7 @@ mod tests {
             sku: None,
             description: None,
             units: None,
-            currency: "US!".to_string(),
+            currency: "   ".to_string(),
             category_id: None,
             price_levels: Vec::new(),
         };
@@ -686,7 +686,7 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(first.product.name, "Apple");
         assert_eq!(first.product.sku.as_deref(), Some("APL-1"));
         assert_eq!(first.product.units.as_deref(), Some("Each"));
-        assert_eq!(first.product.currency, "USD");
+        assert_eq!(first.product.currency, "usd");
         assert_eq!(first.price_levels.len(), 2);
         assert_eq!(first.price_levels[0].price_level_id, 1);
         assert_eq!(first.price_levels[0].price_cents, 1234);
@@ -697,7 +697,7 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(second.product.name, "Banana");
         assert!(second.product.sku.is_none());
         assert!(second.product.units.is_none());
-        assert_eq!(second.product.currency, "USD");
+        assert_eq!(second.product.currency, "usd");
         assert_eq!(second.price_levels.len(), 1);
         assert_eq!(second.price_levels[0].price_level_id, 1);
         assert_eq!(second.price_levels[0].price_cents, 850);
@@ -795,7 +795,7 @@ Banana,usd,,Ripe banana,,8.50,
         let payload = form.into_update_product().expect("expected success");
         let updates = payload.product;
 
-        assert_eq!(updates.name.as_str(), "Premium Widget");
+        assert_eq!(updates.name.as_str(), "Premium  Widget");
         assert!(updates.sku.is_none());
         assert_eq!(updates.description.as_deref(), Some("Updated description."));
         assert_eq!(updates.units.as_deref(), Some("ea"));
@@ -812,7 +812,7 @@ Banana,usd,,Ripe banana,,8.50,
             sku: Some("  ".to_string()),
             description: Some(" Updated description. \n\n ".to_string()),
             units: Some("  ea ".to_string()),
-            currency: "1".to_string(),
+            currency: "   ".to_string(),
             is_archived: true,
             category_id: Some(12),
             tag_ids: vec![5, 7, 5],

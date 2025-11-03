@@ -121,7 +121,7 @@ impl UpdateProduct {
     pub fn new(name: impl Into<String>, currency: impl Into<String>, is_archived: bool) -> Self {
         let now = chrono::Local::now().naive_utc();
         let name = name.into().trim().to_string();
-        let currency = currency.into().trim().to_string();
+        let currency = currency.into().trim().to_uppercase();
         Self {
             name,
             sku: None,

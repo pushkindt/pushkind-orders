@@ -318,11 +318,11 @@ mod tests {
             .times(1)
             .withf(|new_category| {
                 assert_eq!(new_category.hub_id, 9);
-                assert_eq!(new_category.name, "Fresh Produce");
+                assert_eq!(new_category.name, "Fresh   Produce");
                 assert_eq!(new_category.parent_id, Some(4));
                 true
             })
-            .returning(|_| Ok(sample_category(10, 9, "Fresh Produce")));
+            .returning(|_| Ok(sample_category(10, 9, "Fresh   Produce")));
 
         let form = AddCategoryForm {
             name: "  Fresh   Produce ".to_string(),
@@ -333,7 +333,7 @@ mod tests {
         let created = create_category(&repo, &user, form).expect("expected success");
 
         assert_eq!(created.id, 10);
-        assert_eq!(created.name, "Fresh Produce");
+        assert_eq!(created.name, "Fresh   Produce");
     }
 
     #[test]

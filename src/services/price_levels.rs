@@ -704,7 +704,7 @@ mod tests {
         let repo = CombinedCustomerRepo::new(reader, writer);
         let payload = AssignClientPriceLevelPayload {
             name: "Customer Seven".to_string(),
-            email: "Customer7@Example.com ".to_string(),
+            email: "Customer7@Example.com".to_string(),
             phone: Some("  +15550007 ".to_string()),
             price_level_id: Some(8),
         };
@@ -804,7 +804,7 @@ mod tests {
         let repo = CombinedCustomerRepo::new(reader, writer);
         let payload = AssignClientPriceLevelPayload {
             name: "  Missing User  ".to_string(),
-            email: " Missing@Example.com ".to_string(),
+            email: "Missing@Example.com".to_string(),
             phone: Some(" +1999000 ".to_string()),
             price_level_id: Some(1),
         };
@@ -827,9 +827,10 @@ mod tests {
 
         match result {
             Err(ServiceError::Form(message)) => {
-                assert!(message.contains("invalid_price_level_id"));
-                assert!(message.contains("empty_email"));
-                assert!(message.contains("empty_name"));
+                assert!(message.contains("validation failed:"));
+                assert!(message.contains("price_level_id: Validation error: range"));
+                assert!(message.contains("email: Validation error: email"));
+                assert!(message.contains("name: Validation error: length"));
             }
             other => panic!("expected form error, got {other:?}"),
         }

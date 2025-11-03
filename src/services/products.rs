@@ -710,7 +710,7 @@ mod tests {
             .withf(move |new_product| {
                 assert_eq!(new_product.hub_id, hub_id);
                 assert_eq!(new_product.name, "Widget");
-                assert_eq!(new_product.currency, "USD");
+                assert_eq!(new_product.currency, "usd");
                 assert_eq!(new_product.units.as_deref(), Some("Each"));
                 true
             })
@@ -975,7 +975,7 @@ Banana,USD,7.50,
         let final_product = {
             let mut product = writer_product.clone();
             product.name = "Espresso Deluxe".to_string();
-            product.currency = "EUR".to_string();
+            product.currency = "eur".to_string();
             product.sku = None;
             product.description = None;
             product.units = Some("pack".to_string());

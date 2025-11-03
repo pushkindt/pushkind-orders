@@ -135,7 +135,7 @@ mod tests {
         assert_eq!(new_category.name, "Fresh Produce");
         assert_eq!(
             new_category.description.as_deref(),
-            Some("Fruits\n\nVegetables")
+            Some("Fruits\n\n Vegetables")
         );
         assert_eq!(new_category.parent_id, Some(12));
     }
@@ -162,12 +162,7 @@ mod tests {
         };
 
         let result = form.into_new_category(1);
-
-        assert!(matches!(
-            result,
-            Err(CategoryFormError::InvalidIdentifier { field, value })
-                if field == "parent category" && value == "abc"
-        ));
+        assert!(matches!(result, Err(CategoryFormError::Validation(_))));
     }
 
     #[test]

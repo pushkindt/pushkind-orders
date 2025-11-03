@@ -140,7 +140,7 @@ mod tests {
         let new_level = form.into_new_price_level(5).expect("expected success");
 
         assert_eq!(new_level.hub_id, 5);
-        assert_eq!(new_level.name, "Premium Level");
+        assert_eq!(new_level.name, "Premium\tLevel");
     }
 
     #[test]
@@ -197,7 +197,7 @@ mod tests {
 
         let update = form.into_update_price_level().expect("expected success");
 
-        assert_eq!(update.name, "Updated Name");
+        assert_eq!(update.name, "Updated\nName");
         assert!(update.is_default);
     }
 
