@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
+use pushkind_common::pagination::DEFAULT_ITEMS_PER_PAGE;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{
     category::{Category, CategoryTreeQuery},
-    product::Product,
+    product::{Product, ProductListQuery},
     tag::{Tag, TagListQuery},
 };
 use crate::repository::{CategoryReader, ProductReader, TagReader};
@@ -93,6 +94,13 @@ impl From<Tag> for StoreTag {
     }
 }
 
+/// Optional filters that can be applied when listing store categories.
+#[derive(Debug, Clone, Default)]
+pub struct StoreCategoryFilters {
+    /// Only include categories belonging to this parent identifier.
+    pub parent_id: Option<i32>,
+}
+
 /// Product payload formatted for storefront consumers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StoreProduct {
@@ -132,10 +140,47 @@ impl From<Product> for StoreProduct {
     }
 }
 
+/// Optional filters that can be applied when listing store products.
+#[derive(Debug, Clone, Default)]
+pub struct StoreProductFilters {
+    /// Only include products belonging to this category.
+    pub category_id: Option<i32>,
+    /// Filter products by a search term applied to the name and description.
+    pub search: Option<String>,
+    /// Fetch a specific page of products.
+    pub page: Option<usize>,
+}
+
+impl StoreProductFilters {
+    fn into_query(self, hub_id: i32) -> ProductListQuery {
+        let mut query = ProductListQuery::new(hub_id);
+
+        query = match self.category_id {
+            Some(category_id) => query.with_category_id(category_id),
+            None => query.only_without_category(),
+        };
+
+        if let Some(search) = self
+            .search
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        {
+            query = query.search(search);
+        }
+
+        if let Some(page) = self.page.filter(|page| *page > 0) {
+            query = query.paginate(page, DEFAULT_ITEMS_PER_PAGE);
+        }
+
+        query
+    }
+}
+
 /// Load categories available to a storefront for the provided hub.
 pub fn load_store_categories<R>(
     repo: &R,
     hub_id: i32,
+    filters: StoreCategoryFilters,
     store_client: Option<&StoreClientHandle>,
 ) -> ServiceResult<Vec<StoreCategory>>
 where
@@ -153,9 +198,14 @@ where
         None => repo.list_categories(query).map_err(ServiceError::from)?.1,
     };
 
+    let parent_id = filters.parent_id;
     let filtered = categories
         .into_iter()
         .filter(|category| !category.is_archived)
+        .filter(|category| match parent_id {
+            Some(parent_id) => category.parent_id == Some(parent_id),
+            None => category.parent_id.is_none(),
+        })
         .map(StoreCategory::from)
         .collect();
 
@@ -166,6 +216,7 @@ where
 pub fn load_store_products<R>(
     repo: &R,
     hub_id: i32,
+    filters: StoreProductFilters,
     store_client: Option<&StoreClientHandle>,
 ) -> ServiceResult<Vec<StoreProduct>>
 where
@@ -175,12 +226,12 @@ where
         Some(client) => {
             client
                 .repository()
-                .list_products(crate::domain::product::ProductListQuery::new(hub_id))
+                .list_products(filters.clone().into_query(hub_id))
                 .map_err(ServiceError::from)?
                 .1
         }
         None => {
-            repo.list_products(crate::domain::product::ProductListQuery::new(hub_id))
+            repo.list_products(filters.into_query(hub_id))
                 .map_err(ServiceError::from)?
                 .1
         }
@@ -269,10 +320,55 @@ mod tests {
             .withf(|query| query.hub_id == 1 && !query.include_archived)
             .return_once(move |_| Ok((2, categories.clone())));
 
-        let result = load_store_categories(&repo, 1, None).expect("load categories");
+        let result = load_store_categories(&repo, 1, StoreCategoryFilters::default(), None)
+            .expect("load categories");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1);
         assert_eq!(result[0].name, "Coffee");
+    }
+
+    #[test]
+    fn load_categories_filters_by_parent_id() {
+        let mut repo = MockCategoryReader::new();
+        let categories = vec![
+            Category {
+                id: 1,
+                hub_id: 1,
+                parent_id: None,
+                name: "Root".to_string(),
+                description: None,
+                is_archived: false,
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            },
+            Category {
+                id: 2,
+                hub_id: 1,
+                parent_id: Some(1),
+                name: "Child".to_string(),
+                description: None,
+                is_archived: false,
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            },
+        ];
+
+        let categories_clone = categories.clone();
+        repo.expect_list_categories()
+            .withf(|query| query.hub_id == 1 && !query.include_archived)
+            .times(2)
+            .returning(move |_| Ok((2, categories_clone.clone())));
+
+        let roots = load_store_categories(&repo, 1, StoreCategoryFilters::default(), None)
+            .expect("load root categories");
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].id, 1);
+
+        let children =
+            load_store_categories(&repo, 1, StoreCategoryFilters { parent_id: Some(1) }, None)
+                .expect("load child categories");
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].id, 2);
     }
 
     #[test]
@@ -318,15 +414,84 @@ mod tests {
         ];
 
         repo.expect_list_products()
-            .withf(|query| query.hub_id == 1 && !query.include_archived)
+            .withf(|query| {
+                query.hub_id == 1
+                    && !query.include_archived
+                    && query.only_without_category
+                    && query.category_id.is_none()
+            })
             .return_once(move |_| Ok((2, products.clone())));
 
-        let result = load_store_products(&repo, 1, None).expect("load products");
+        let result = load_store_products(&repo, 1, StoreProductFilters::default(), None)
+            .expect("load products");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1);
         assert_eq!(result[0].name, "Coffee");
         assert_eq!(result[0].tags.len(), 1);
         assert_eq!(result[0].tags[0].name, "Organic");
+    }
+
+    #[test]
+    fn load_store_products_defaults_to_uncategorized() {
+        let mut repo = MockProductReader::new();
+        let uncategorized = Product {
+            id: 1,
+            hub_id: 1,
+            name: "Andromeda".to_string(),
+            sku: None,
+            description: None,
+            units: None,
+            currency: "USD".to_string(),
+            is_archived: false,
+            category_id: None,
+            price_levels: Vec::new(),
+            tags: Vec::new(),
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+        };
+
+        repo.expect_list_products()
+            .withf(|query| {
+                query.hub_id == 1
+                    && query.category_id.is_none()
+                    && query.only_without_category
+                    && !query.include_archived
+            })
+            .return_once(move |_| Ok((1, vec![uncategorized.clone()])));
+
+        let result = load_store_products(&repo, 1, StoreProductFilters::default(), None)
+            .expect("load products");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].category_id, None);
+    }
+
+    #[test]
+    fn load_store_products_applies_filters() {
+        let mut repo = MockProductReader::new();
+
+        repo.expect_list_products()
+            .withf(|query| {
+                query.hub_id == 1
+                    && query.category_id == Some(3)
+                    && !query.only_without_category
+                    && query.search.as_deref() == Some("coffee")
+                    && matches!(
+                        query.pagination.as_ref(),
+                        Some(pagination)
+                            if pagination.page == 2
+                                && pagination.per_page == DEFAULT_ITEMS_PER_PAGE
+                    )
+            })
+            .return_once(|_| Ok((0, Vec::new())));
+
+        let filters = StoreProductFilters {
+            category_id: Some(3),
+            search: Some(" coffee ".to_string()),
+            page: Some(2),
+        };
+
+        let result = load_store_products(&repo, 1, filters, None).expect("load products");
+        assert!(result.is_empty());
     }
 
     #[test]
@@ -461,12 +626,22 @@ mod tests {
         let context: StoreClientHandle =
             StoreClientContext::new(Arc::new(static_repo) as Arc<dyn StoreClientRepository>);
 
-        let categories = load_store_categories(&PanicRepo, 1, Some(&context))
-            .expect("load categories from context");
+        let categories = load_store_categories(
+            &PanicRepo,
+            1,
+            StoreCategoryFilters::default(),
+            Some(&context),
+        )
+        .expect("load categories from context");
         assert_eq!(categories.len(), 1);
 
-        let products =
-            load_store_products(&PanicRepo, 1, Some(&context)).expect("load products from context");
+        let products = load_store_products(
+            &PanicRepo,
+            1,
+            StoreProductFilters::default(),
+            Some(&context),
+        )
+        .expect("load products from context");
         assert_eq!(products.len(), 1);
 
         let tags = load_store_tags(&PanicRepo, 1, Some(&context)).expect("load tags from context");

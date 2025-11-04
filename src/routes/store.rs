@@ -4,7 +4,8 @@ use serde::Deserialize;
 
 use crate::repository::DieselRepository;
 use crate::services::store::{
-    StoreClientHandle, load_store_categories, load_store_products, load_store_tags,
+    StoreCategoryFilters, StoreClientHandle, StoreProductFilters, load_store_categories,
+    load_store_products, load_store_tags,
 };
 
 #[derive(Debug, Deserialize)]
@@ -12,9 +13,32 @@ struct HubPath {
     hub_id: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct StoreProductsQuery {
+    category_id: Option<i32>,
+    search: Option<String>,
+    page: Option<usize>,
+}
+
+impl From<StoreProductsQuery> for StoreProductFilters {
+    fn from(value: StoreProductsQuery) -> Self {
+        Self {
+            category_id: value.category_id,
+            search: value.search,
+            page: value.page,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct StoreCategoriesQuery {
+    parent_id: Option<i32>,
+}
+
 #[get("/{hub_id}/products")]
 pub async fn list_store_products(
     path: web::Path<HubPath>,
+    params: Option<web::Query<StoreProductsQuery>>,
     repo: web::Data<DieselRepository>,
     store_client: Option<web::ReqData<StoreClientHandle>>,
 ) -> impl Responder {
@@ -22,7 +46,10 @@ pub async fn list_store_products(
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
-    match load_store_products(repo.get_ref(), hub_id, store_client.as_deref()) {
+    let filters = params
+        .map(|query| StoreProductFilters::from(query.into_inner()))
+        .unwrap_or_default();
+    match load_store_products(repo.get_ref(), hub_id, filters, store_client.as_deref()) {
         Ok(products) => HttpResponse::Ok().json(products),
         Err(err) => {
             error!("Failed to load storefront products for hub {hub_id}: {err}");
@@ -34,6 +61,7 @@ pub async fn list_store_products(
 #[get("/{hub_id}/categories")]
 pub async fn list_store_categories(
     path: web::Path<HubPath>,
+    params: Option<web::Query<StoreCategoriesQuery>>,
     repo: web::Data<DieselRepository>,
     store_client: Option<web::ReqData<StoreClientHandle>>,
 ) -> impl Responder {
@@ -41,7 +69,12 @@ pub async fn list_store_categories(
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
-    match load_store_categories(repo.get_ref(), hub_id, store_client.as_deref()) {
+    let filters = params
+        .map(|query| StoreCategoryFilters {
+            parent_id: query.parent_id,
+        })
+        .unwrap_or_default();
+    match load_store_categories(repo.get_ref(), hub_id, filters, store_client.as_deref()) {
         Ok(categories) => HttpResponse::Ok().json(categories),
         Err(err) => {
             error!("Failed to load storefront categories for hub {hub_id}: {err}");
