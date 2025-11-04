@@ -164,6 +164,10 @@ impl UpdateProduct {
 pub struct ProductListQuery {
     /// Owning hub identifier.
     pub hub_id: i32,
+    /// Optional identifier of the category the products belong to.
+    pub category_id: Option<i32>,
+    /// Whether only products without an assigned category should be included.
+    pub only_without_category: bool,
     /// Optional name or description search term.
     pub search: Option<String>,
     /// Optional exact SKU filter.
@@ -179,6 +183,8 @@ impl ProductListQuery {
     pub fn new(hub_id: i32) -> Self {
         Self {
             hub_id,
+            category_id: None,
+            only_without_category: false,
             search: None,
             sku: None,
             include_archived: false,
@@ -189,6 +195,20 @@ impl ProductListQuery {
     /// Filter the results by a search term applied to the name or description.
     pub fn search(mut self, term: impl Into<String>) -> Self {
         self.search = Some(term.into());
+        self
+    }
+
+    /// Filter the results by category.
+    pub fn with_category_id(mut self, category_id: i32) -> Self {
+        self.category_id = Some(category_id);
+        self.only_without_category = false;
+        self
+    }
+
+    /// Restrict the results to products that do not have a category.
+    pub fn only_without_category(mut self) -> Self {
+        self.category_id = None;
+        self.only_without_category = true;
         self
     }
 

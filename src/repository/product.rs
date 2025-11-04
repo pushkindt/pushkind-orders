@@ -65,6 +65,14 @@ impl ProductReader for DieselRepository {
             count_query = count_query.filter(products::is_archived.eq(false));
         }
 
+        if query.only_without_category {
+            count_query = count_query.filter(products::category_id.is_null());
+        }
+
+        if let Some(category_id) = query.category_id {
+            count_query = count_query.filter(products::category_id.eq(Some(category_id)));
+        }
+
         if let Some(term) = query.search.as_ref() {
             let pattern = format!("%{}%", term);
             count_query = count_query.filter(
@@ -86,6 +94,14 @@ impl ProductReader for DieselRepository {
 
         if !query.include_archived {
             items = items.filter(products::is_archived.eq(false));
+        }
+
+        if query.only_without_category {
+            items = items.filter(products::category_id.is_null());
+        }
+
+        if let Some(category_id) = query.category_id {
+            items = items.filter(products::category_id.eq(Some(category_id)));
         }
 
         if let Some(term) = query.search.as_ref() {
