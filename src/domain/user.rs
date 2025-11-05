@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use pushkind_common::domain::auth::AuthenticatedUser;
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +45,8 @@ impl NewUser {
 pub struct UpdateUser {
     /// Updated human-readable display name.
     pub name: String,
+    /// Timestamp captured when the patch was created.
+    pub updated_at: NaiveDateTime,
 }
 
 impl UpdateUser {
@@ -51,7 +54,8 @@ impl UpdateUser {
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
         let name = name.into().trim().to_string();
-        Self { name }
+        let updated_at = chrono::Local::now().naive_utc();
+        Self { name, updated_at }
     }
 }
 

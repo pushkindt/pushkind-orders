@@ -1,4 +1,4 @@
-use chrono::{Local, NaiveDateTime};
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
 use crate::domain::user::{
@@ -56,7 +56,7 @@ impl<'a> From<&'a DomainUpdateUser> for UpdateUser<'a> {
     fn from(value: &'a DomainUpdateUser) -> Self {
         Self {
             name: value.name.as_str(),
-            updated_at: Local::now().naive_utc(),
+            updated_at: value.updated_at,
         }
     }
 }
