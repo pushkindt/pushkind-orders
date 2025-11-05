@@ -32,12 +32,12 @@ pub struct NewCategory<'a> {
 
 #[derive(Default, AsChangeset)]
 #[diesel(table_name = crate::schema::categories, treat_none_as_null = true)]
-pub struct UpdateCategory {
-    pub name: String,
+pub struct UpdateCategory<'a> {
+    pub name: &'a str,
     pub is_archived: bool,
     pub updated_at: NaiveDateTime,
-    pub description: Option<String>,
-    pub image_url: Option<String>,
+    pub description: Option<&'a str>,
+    pub image_url: Option<&'a str>,
 }
 
 impl From<Category> for DomainCategory {
@@ -68,14 +68,14 @@ impl<'a> From<&'a DomainNewCategory> for NewCategory<'a> {
     }
 }
 
-impl From<&DomainUpdateCategory> for UpdateCategory {
-    fn from(value: &DomainUpdateCategory) -> Self {
+impl<'a> From<&'a DomainUpdateCategory> for UpdateCategory<'a> {
+    fn from(value: &'a DomainUpdateCategory) -> Self {
         Self {
-            name: value.name.clone(),
             is_archived: value.is_archived,
             updated_at: value.updated_at,
-            description: value.description.clone(),
-            image_url: value.image_url.clone(),
+            name: value.name.as_str(),
+            description: value.description.as_deref(),
+            image_url: value.image_url.as_deref(),
         }
     }
 }
