@@ -31,6 +31,7 @@ impl From<StoreProductsQuery> for StoreProductFilters {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct StoreCategoriesQuery {
     parent_id: Option<i32>,
 }

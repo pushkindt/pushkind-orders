@@ -54,6 +54,7 @@ impl<R: ?Sized> Clone for StoreClientContext<R> {
 
 /// Minimal representation of a category exposed to the storefront.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct StoreCategory {
     /// Identifier of the category.
     pub id: i32,
@@ -63,6 +64,8 @@ pub struct StoreCategory {
     pub name: String,
     /// Optional descriptive text.
     pub description: Option<String>,
+    // Optional image_url serialized as imageUrl
+    pub image_url: Option<String>,
 }
 
 impl From<Category> for StoreCategory {
@@ -72,6 +75,7 @@ impl From<Category> for StoreCategory {
             parent_id: value.parent_id,
             name: value.name,
             description: value.description,
+            image_url: value.image_url,
         }
     }
 }
