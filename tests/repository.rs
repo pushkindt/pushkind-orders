@@ -75,6 +75,7 @@ fn test_user_repository_crud() {
 
     let updates = UpdateUser {
         name: "Alicia".to_string(),
+        updated_at: chrono::Utc::now().naive_utc(),
     };
 
     let updated = repo
