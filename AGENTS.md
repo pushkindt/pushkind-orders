@@ -49,6 +49,9 @@ cargo fmt --all -- --check
   so the `DieselRepository` and `mockall`-powered fakes remain interchangeable.
 - Sanitize and validate user input early using `validator` and `ammonia` helpers
   from the form layer.
+- Perform trimming, case normalisation, and other input clean-up before
+  constructing domain types; domain builders assume callers supply sanitised
+  values.
 - Prefer dependency injection through function parameters over global state.
 - For Diesel update models, avoid nested optionals; prefer single-layer `Option<T>`
   fields and rely on `#[diesel(treat_none_as_null = true)]` when nullable columns

@@ -27,9 +27,9 @@ pub struct NewTag {
 }
 
 impl NewTag {
-    /// Construct a new tag payload with a trimmed name.
+    /// Construct a new tag payload; callers must supply pre-normalised fields.
     pub fn new(hub_id: i32, name: impl Into<String>) -> Self {
-        let name = name.into().trim().to_string();
+        let name = name.into();
         Self { hub_id, name }
     }
 }
@@ -44,9 +44,9 @@ pub struct UpdateTag {
 }
 
 impl UpdateTag {
-    /// Construct a new patch payload with a trimmed name.
+    /// Construct a new patch payload; callers must supply pre-normalised fields.
     pub fn new(name: impl Into<String>) -> Self {
-        let name = name.into().trim().to_string();
+        let name = name.into();
         let updated_at = chrono::Utc::now().naive_utc();
         Self { name, updated_at }
     }

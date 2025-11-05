@@ -32,9 +32,9 @@ pub struct NewPriceLevel {
 }
 
 impl NewPriceLevel {
-    /// Construct a new price level payload with a trimmed name.
+    /// Construct a new price level payload with a name and is_default.
     pub fn new(hub_id: i32, name: impl Into<String>, is_default: bool) -> Self {
-        let name = name.into().trim().to_string();
+        let name = name.into();
         Self {
             hub_id,
             name,
@@ -55,9 +55,9 @@ pub struct UpdatePriceLevel {
 }
 
 impl UpdatePriceLevel {
-    /// Construct a patch payload with a trimmed name.
+    /// Construct a patch payload with a name and is_default.
     pub fn new(name: impl Into<String>, is_default: bool) -> Self {
-        let name = name.into().trim().to_string();
+        let name = name.into();
         let updated_at = chrono::Utc::now().naive_utc();
         Self {
             name,

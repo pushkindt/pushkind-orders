@@ -41,9 +41,9 @@ pub struct NewCategory {
 }
 
 impl NewCategory {
-    /// Build a new category payload with the supplied details and a trimmed name.
+    /// Build a new category payload with the supplied details.
     pub fn new(hub_id: i32, name: impl Into<String>) -> Self {
-        let name = name.into().trim().into();
+        let name = name.into();
         Self {
             hub_id,
             parent_id: None,
@@ -88,14 +88,13 @@ pub struct UpdateCategory {
 }
 
 impl UpdateCategory {
-    /// Build a category update payload with trimmed name and a fresh timestamp.
+    /// Build a category update payload with name and a fresh timestamp.
     pub fn new(
         name: String,
         description: Option<String>,
         is_archived: bool,
         image_url: Option<String>,
     ) -> Self {
-        let name = name.trim().into();
         let updated_at = chrono::Local::now().naive_utc();
         Self {
             name,

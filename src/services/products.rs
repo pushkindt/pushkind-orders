@@ -711,7 +711,7 @@ mod tests {
             .withf(move |new_product| {
                 assert_eq!(new_product.hub_id, hub_id);
                 assert_eq!(new_product.name, "Widget");
-                assert_eq!(new_product.currency, "usd");
+                assert_eq!(new_product.currency, "USD");
                 assert_eq!(new_product.units.as_deref(), Some("Each"));
                 true
             })

@@ -57,10 +57,10 @@ pub struct NewProduct {
 }
 
 impl NewProduct {
-    /// Build a new product payload with trimmed strings and no optional fields set.
+    /// Build a new product payload; callers must supply pre-sanitised strings and optional fields default to `None`.
     pub fn new(hub_id: i32, name: impl Into<String>, currency: impl Into<String>) -> Self {
-        let name = name.into().trim().to_string();
-        let currency = currency.into().trim().to_string();
+        let name = name.into();
+        let currency = currency.into();
         Self {
             hub_id,
             name,
@@ -122,8 +122,8 @@ impl UpdateProduct {
     /// Build a patch payload with the supplied details and current timestamp.
     pub fn new(name: impl Into<String>, currency: impl Into<String>, is_archived: bool) -> Self {
         let now = chrono::Local::now().naive_utc();
-        let name = name.into().trim().to_string();
-        let currency = currency.into().trim().to_uppercase();
+        let name = name.into();
+        let currency = currency.into();
         Self {
             name,
             sku: None,

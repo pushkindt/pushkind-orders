@@ -1,3 +1,4 @@
+use pushkind_common::routes::empty_string_as_none;
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
@@ -27,9 +28,6 @@ pub enum CategoryFormError {
     /// The provided name is empty after sanitization.
     #[error("category name cannot be empty")]
     EmptyName,
-    /// Supplied identifier field could not be parsed.
-    #[error("invalid {field} `{value}`")]
-    InvalidIdentifier { field: &'static str, value: String },
 }
 
 /// Form payload emitted when submitting the "Add category" form.
@@ -41,6 +39,7 @@ pub struct AddCategoryForm {
     /// Optional description for the category.
     #[validate(length(max = DESCRIPTION_MAX_LEN_VALIDATOR))]
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none")]
     pub description: Option<String>,
     /// Optional parent category identifier in string form.
     #[validate(range(min = 1))]
@@ -50,6 +49,7 @@ pub struct AddCategoryForm {
     /// Optional image URL for the category
     #[serde(default)]
     #[validate(url)]
+    #[serde(deserialize_with = "empty_string_as_none")]
     pub image_url: Option<String>,
 }
 
@@ -69,14 +69,22 @@ impl AddCategoryForm {
             .map(str::trim)
             .filter(|value| !value.is_empty());
 
+        let sanitized_image_url = self
+            .image_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
         let mut new_category = NewCategory::new(hub_id, sanitized_name);
         if let Some(description) = sanitized_description {
             new_category = new_category.with_description(description);
         }
-        if let Some(parent_id) = self.parent_id.filter(|&x| x > 0) {
+        if let Some(parent_id) = self.parent_id {
             new_category = new_category.with_parent_id(parent_id);
         }
-
+        if let Some(image_url) = sanitized_image_url {
+            new_category = new_category.with_image_url(image_url);
+        }
         Ok(new_category)
     }
 }

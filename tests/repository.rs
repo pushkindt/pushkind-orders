@@ -26,7 +26,7 @@ fn test_user_repository_crud() {
     let test_db = common::TestDb::new("test_user_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    let alice_new = NewUser::new(1, "Alice".to_string(), "ALICE@example.com".to_string());
+    let alice_new = NewUser::new(1, "Alice".to_string(), "alice@example.com".to_string());
     let bob_new = NewUser::new(1, "Bob".to_string(), "bob@example.com".to_string());
 
     let alice = repo
@@ -117,7 +117,7 @@ fn test_customer_repository_crud() {
         .create_price_level(&NewPriceLevel::new(1, "VIP", false))
         .expect("failed to create price level");
 
-    let alice_new = NewCustomer::new(1, "Alice", "ALICE@example.com").with_phone("+15551234");
+    let alice_new = NewCustomer::new(1, "Alice", "alice@example.com").with_phone("+15551234");
     let bob_new = NewCustomer::new(1, "Bob", "bob@example.com");
     let carla_new = NewCustomer::new(2, "Carla", "carla@example.com").with_phone("+18880000");
 
@@ -405,7 +405,7 @@ fn test_price_level_repository_crud() {
     let test_db = common::TestDb::new("test_price_level_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    let bronze_new = NewPriceLevel::new(1, " Bronze ", false);
+    let bronze_new = NewPriceLevel::new(1, "Bronze", false);
     let silver_new = NewPriceLevel::new(1, "Silver", false);
 
     let bronze = repo

@@ -142,7 +142,9 @@ impl AddProductForm {
 
         let sanitized_units = self.units.as_deref().and_then(sanitize_text);
 
-        let currency = sanitize_text(&self.currency).ok_or(ProductFormError::InvalidCurrency)?;
+        let currency = sanitize_text(&self.currency)
+            .ok_or(ProductFormError::InvalidCurrency)?
+            .to_ascii_uppercase();
 
         let mut new_product = NewProduct::new(hub_id, sanitized_name, currency);
 
@@ -271,11 +273,12 @@ impl UploadProductsForm {
                 return Err(ProductFormError::UploadMissingCurrency { row: row_number });
             }
 
-            let currency =
-                sanitize_text(currency_raw).ok_or(ProductFormError::UploadInvalidCurrency {
+            let currency = sanitize_text(currency_raw)
+                .ok_or(ProductFormError::UploadInvalidCurrency {
                     row: row_number,
                     value: currency_raw.to_string(),
-                })?;
+                })?
+                .to_ascii_uppercase();
 
             let sku = header_indexes
                 .sku_index
@@ -400,7 +403,9 @@ impl EditProductForm {
 
         let sanitized_name = sanitize_text(&name).ok_or(ProductFormError::EmptyName)?;
 
-        let currency = sanitize_text(&currency).ok_or(ProductFormError::InvalidCurrency)?;
+        let currency = sanitize_text(&currency)
+            .ok_or(ProductFormError::InvalidCurrency)?
+            .to_ascii_uppercase();
 
         let mut updates = UpdateProduct::new(sanitized_name, currency, is_archived);
 
@@ -575,7 +580,7 @@ mod tests {
             Some("First line.\n\n Second line.")
         );
         assert_eq!(payload.product.units.as_deref(), Some("Box"));
-        assert_eq!(payload.product.currency, "usd");
+        assert_eq!(payload.product.currency, "USD");
         assert_eq!(payload.product.category_id, Some(7));
         assert_eq!(payload.price_levels.len(), 1);
         assert_eq!(payload.price_levels[0].price_level_id, 1);
@@ -688,7 +693,7 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(first.product.name, "Apple");
         assert_eq!(first.product.sku.as_deref(), Some("APL-1"));
         assert_eq!(first.product.units.as_deref(), Some("Each"));
-        assert_eq!(first.product.currency, "usd");
+        assert_eq!(first.product.currency, "USD");
         assert_eq!(first.price_levels.len(), 2);
         assert_eq!(first.price_levels[0].price_level_id, 1);
         assert_eq!(first.price_levels[0].price_cents, 1234);
@@ -699,7 +704,7 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(second.product.name, "Banana");
         assert!(second.product.sku.is_none());
         assert!(second.product.units.is_none());
-        assert_eq!(second.product.currency, "usd");
+        assert_eq!(second.product.currency, "USD");
         assert_eq!(second.price_levels.len(), 1);
         assert_eq!(second.price_levels[0].price_level_id, 1);
         assert_eq!(second.price_levels[0].price_cents, 850);
