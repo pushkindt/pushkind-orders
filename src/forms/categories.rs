@@ -100,6 +100,7 @@ pub struct EditCategoryForm {
     pub name: String,
     /// Optional description update.
     #[validate(length(max = DESCRIPTION_MAX_LEN_VALIDATOR))]
+    #[serde(deserialize_with = "empty_string_as_none")]
     pub description: Option<String>,
     /// Optional archive toggle for the category.
     #[serde(default)]
@@ -107,6 +108,7 @@ pub struct EditCategoryForm {
     /// Optional image URL for the category
     #[serde(default)]
     #[validate(url)]
+    #[serde(deserialize_with = "empty_string_as_none")]
     pub image_url: Option<String>,
 }
 
