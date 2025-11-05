@@ -228,6 +228,7 @@ mod tests {
             is_archived: false,
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
+            image_url: None,
         }
     }
 
@@ -287,6 +288,7 @@ mod tests {
             name: "Retail".to_string(),
             description: None,
             parent_id: None,
+            image_url: None,
         };
 
         let result = create_category(&repo, &user, form);
@@ -302,6 +304,7 @@ mod tests {
             name: "   ".to_string(),
             description: None,
             parent_id: None,
+            image_url: None,
         };
 
         let result = create_category(&repo, &user, form);
@@ -328,6 +331,7 @@ mod tests {
             name: "  Fresh   Produce ".to_string(),
             description: Some(" seasonal goods ".to_string()),
             parent_id: Some(4),
+            image_url: None,
         };
 
         let created = create_category(&repo, &user, form).expect("expected success");
@@ -345,6 +349,7 @@ mod tests {
             name: "Updated".to_string(),
             description: None,
             is_archived: false,
+            image_url: None,
         };
 
         let result = modify_category(&repo, &user, form);
@@ -374,6 +379,7 @@ mod tests {
             name: " Dry Goods ".to_string(),
             description: Some(" pantry items ".to_string()),
             is_archived: false,
+            image_url: None,
         };
 
         let updated = modify_category(&repo, &user, form).expect("expected success");

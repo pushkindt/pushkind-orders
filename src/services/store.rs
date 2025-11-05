@@ -303,6 +303,7 @@ mod tests {
                 is_archived: false,
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
+                image_url: None,
             },
             Category {
                 id: 2,
@@ -313,6 +314,7 @@ mod tests {
                 is_archived: true,
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
+                image_url: None,
             },
         ];
 
@@ -340,6 +342,7 @@ mod tests {
                 is_archived: false,
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
+                image_url: None,
             },
             Category {
                 id: 2,
@@ -350,6 +353,7 @@ mod tests {
                 is_archived: false,
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
+                image_url: None,
             },
         ];
 
@@ -395,6 +399,7 @@ mod tests {
                 }],
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
+                image_urls: Vec::new(),
             },
             Product {
                 id: 2,
@@ -410,6 +415,7 @@ mod tests {
                 tags: Vec::new(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
+                image_urls: Vec::new(),
             },
         ];
 
@@ -448,6 +454,7 @@ mod tests {
             tags: Vec::new(),
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
+            image_urls: Vec::new(),
         };
 
         repo.expect_list_products()
@@ -598,6 +605,7 @@ mod tests {
                 is_archived: false,
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
+                image_url: None,
             }],
             products: vec![Product {
                 id: 1,
@@ -613,6 +621,7 @@ mod tests {
                 tags: Vec::new(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
+                image_urls: Vec::new(),
             }],
             tags: vec![Tag {
                 id: 1,

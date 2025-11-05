@@ -413,6 +413,7 @@ mod tests {
             tags: Vec::new(),
             created_at: datetime(),
             updated_at: datetime(),
+            image_urls: Vec::new(),
         }
     }
 
@@ -1215,6 +1216,7 @@ Banana,USD,7.50,
             is_archived,
             created_at: datetime(),
             updated_at: datetime(),
+            image_url: None,
         }
     }
 

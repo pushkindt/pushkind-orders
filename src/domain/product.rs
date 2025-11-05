@@ -29,6 +29,8 @@ pub struct Product {
     pub price_levels: Vec<ProductPriceLevelRate>,
     /// Tags associated with the product.
     pub tags: Vec<Tag>,
+    /// Image URLS for the product
+    pub image_urls: Vec<String>,
     /// Timestamp for when the product record was created.
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the product record.

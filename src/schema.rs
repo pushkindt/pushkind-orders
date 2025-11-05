@@ -10,6 +10,7 @@ diesel::table! {
         is_archived -> Bool,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        image_url -> Nullable<Text>,
     }
 }
 
@@ -19,10 +20,10 @@ diesel::table! {
         hub_id -> Integer,
         name -> Text,
         email -> Text,
-        phone -> Nullable<Text>,
         price_level_id -> Nullable<Integer>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        phone -> Nullable<Text>,
     }
 }
 
@@ -65,6 +66,14 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         is_default -> Bool,
+    }
+}
+
+diesel::table! {
+    product_images (id) {
+        id -> Integer,
+        product_id -> Integer,
+        image_url -> Text,
     }
 }
 
@@ -129,6 +138,7 @@ diesel::table! {
 diesel::joinable!(customers -> price_levels (price_level_id));
 diesel::joinable!(order_products -> orders (order_id));
 diesel::joinable!(orders -> customers (customer_id));
+diesel::joinable!(product_images -> products (product_id));
 diesel::joinable!(product_price_levels -> price_levels (price_level_id));
 diesel::joinable!(product_price_levels -> products (product_id));
 diesel::joinable!(product_tags -> products (product_id));
@@ -141,6 +151,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     order_products,
     orders,
     price_levels,
+    product_images,
     product_price_levels,
     product_tags,
     products,

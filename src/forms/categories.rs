@@ -47,6 +47,10 @@ pub struct AddCategoryForm {
     #[serde(default)]
     #[serde(deserialize_with = "empty_id_as_none")]
     pub parent_id: Option<i32>,
+    /// Optional image URL for the category
+    #[serde(default)]
+    #[validate(url)]
+    pub image_url: Option<String>,
 }
 
 impl AddCategoryForm {
@@ -92,6 +96,10 @@ pub struct EditCategoryForm {
     /// Optional archive toggle for the category.
     #[serde(default)]
     pub is_archived: bool,
+    /// Optional image URL for the category
+    #[serde(default)]
+    #[validate(url)]
+    pub image_url: Option<String>,
 }
 
 impl EditCategoryForm {
@@ -104,13 +112,14 @@ impl EditCategoryForm {
             name,
             description,
             is_archived,
+            image_url,
         } = self;
 
         let name = sanitize_text(&name).ok_or(CategoryFormError::EmptyName)?;
 
         let description = description.and_then(|x| sanitize_text(&x));
 
-        let update = UpdateCategory::new(name, description, is_archived);
+        let update = UpdateCategory::new(name, description, is_archived, image_url);
 
         Ok(update)
     }
@@ -126,6 +135,7 @@ mod tests {
             name: "  Fresh Produce  ".to_string(),
             description: Some("  Fruits\n\n Vegetables  ".to_string()),
             parent_id: Some(12),
+            image_url: None,
         };
 
         let new_category = form
@@ -147,6 +157,7 @@ mod tests {
             name: "   ".to_string(),
             description: None,
             parent_id: None,
+            image_url: None,
         };
 
         let result = form.into_new_category(1);
@@ -160,6 +171,7 @@ mod tests {
             name: "Pantry".to_string(),
             description: None,
             parent_id: Some(-1),
+            image_url: None,
         };
 
         let result = form.into_new_category(1);
@@ -173,6 +185,7 @@ mod tests {
             name: "  Pantry  ".to_string(),
             description: Some(" Dry goods ".to_string()),
             is_archived: true,
+            image_url: None,
         };
 
         let update = form
@@ -191,6 +204,7 @@ mod tests {
             name: "   ".to_string(),
             description: None,
             is_archived: false,
+            image_url: None,
         };
 
         let result = form.into_update_category();
@@ -205,6 +219,7 @@ mod tests {
             name: " Pantry ".to_string(),
             description: Some("  ".to_string()),
             is_archived: false,
+            image_url: None,
         };
 
         let update = form

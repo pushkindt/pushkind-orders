@@ -17,6 +17,7 @@ pub struct Category {
     pub is_archived: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub image_url: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -26,6 +27,7 @@ pub struct NewCategory<'a> {
     pub parent_id: Option<i32>,
     pub name: &'a str,
     pub description: Option<&'a str>,
+    pub image_url: Option<&'a str>,
 }
 
 #[derive(Default, AsChangeset)]
@@ -35,6 +37,7 @@ pub struct UpdateCategory {
     pub is_archived: bool,
     pub updated_at: NaiveDateTime,
     pub description: Option<String>,
+    pub image_url: Option<String>,
 }
 
 impl From<Category> for DomainCategory {
@@ -48,6 +51,7 @@ impl From<Category> for DomainCategory {
             is_archived: value.is_archived,
             created_at: value.created_at,
             updated_at: value.updated_at,
+            image_url: value.image_url,
         }
     }
 }
@@ -59,6 +63,7 @@ impl<'a> From<&'a DomainNewCategory> for NewCategory<'a> {
             parent_id: value.parent_id,
             name: value.name.as_str(),
             description: value.description.as_deref(),
+            image_url: value.image_url.as_deref(),
         }
     }
 }
@@ -70,6 +75,7 @@ impl From<&DomainUpdateCategory> for UpdateCategory {
             is_archived: value.is_archived,
             updated_at: value.updated_at,
             description: value.description.clone(),
+            image_url: value.image_url.clone(),
         }
     }
 }

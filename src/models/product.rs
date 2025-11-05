@@ -61,6 +61,7 @@ impl From<Product> for DomainProduct {
             category_id: value.category_id,
             price_levels: Vec::new(),
             tags: Vec::new(),
+            image_urls: Vec::new(),
             created_at: value.created_at,
             updated_at: value.updated_at,
         }
