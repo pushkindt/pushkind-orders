@@ -169,12 +169,6 @@ pub trait CategoryWriter {
         updates: &UpdateCategory,
     ) -> RepositoryResult<Category>;
     fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()>;
-    fn assign_child_categories(
-        &self,
-        hub_id: i32,
-        parent_id: i32,
-        child_ids: &[i32],
-    ) -> RepositoryResult<Category>;
 }
 
 #[derive(Debug, Clone)]

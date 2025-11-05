@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use pushkind_common::domain::auth::AuthenticatedUser;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +11,7 @@ pub struct User {
     pub hub_id: i32,
     /// Human-readable display name.
     pub name: String,
-    /// Primary email address stored in lowercase.
+    /// Primary email address expected to be normalised to lowercase by the caller.
     pub email: String,
 }
 
@@ -21,16 +22,16 @@ pub struct NewUser {
     pub hub_id: i32,
     /// Human-readable display name.
     pub name: String,
-    /// Primary email address stored in lowercase.
+    /// Primary email address expected to be normalised to lowercase by the caller.
     pub email: String,
 }
 
 impl NewUser {
-    /// Build a new user payload with trimmed name and normalised email.
+    /// Build a new user payload from pre-sanitised inputs supplied by the caller.
     #[must_use]
     pub fn new(hub_id: i32, name: impl Into<String>, email: impl Into<String>) -> Self {
-        let name = name.into().trim().to_string();
-        let email = email.into().trim().to_lowercase();
+        let name = name.into();
+        let email = email.into();
         Self {
             hub_id,
             name,
@@ -44,14 +45,17 @@ impl NewUser {
 pub struct UpdateUser {
     /// Updated human-readable display name.
     pub name: String,
+    /// Timestamp captured when the patch was created.
+    pub updated_at: NaiveDateTime,
 }
 
 impl UpdateUser {
-    /// Construct an update payload with a trimmed name.
+    /// Construct an update payload using pre-sanitised inputs from the caller.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
-        let name = name.into().trim().to_string();
-        Self { name }
+        let name = name.into();
+        let updated_at = chrono::Local::now().naive_utc();
+        Self { name, updated_at }
     }
 }
 

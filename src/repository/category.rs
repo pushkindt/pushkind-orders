@@ -1,4 +1,3 @@
-use chrono::Local;
 use diesel::dsl::{exists, select};
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
@@ -154,72 +153,6 @@ impl CategoryWriter for DieselRepository {
         }
 
         Ok(())
-    }
-
-    fn assign_child_categories(
-        &self,
-        hub_id: i32,
-        parent_id: i32,
-        child_ids: &[i32],
-    ) -> RepositoryResult<DomainCategory> {
-        use crate::schema::categories;
-
-        let mut conn = self.conn()?;
-
-        conn.transaction::<DomainCategory, RepositoryError, _>(|conn| {
-            ensure_category_with_hub(conn, hub_id, parent_id)?;
-
-            let now = Local::now().naive_utc();
-
-            diesel::update(
-                categories::table
-                    .filter(categories::hub_id.eq(hub_id))
-                    .filter(categories::parent_id.eq(Some(parent_id))),
-            )
-            .set((
-                categories::parent_id.eq::<Option<i32>>(None),
-                categories::updated_at.eq(now),
-            ))
-            .execute(conn)?;
-
-            if !child_ids.is_empty() {
-                let valid_children = categories::table
-                    .filter(categories::hub_id.eq(hub_id))
-                    .filter(categories::id.eq_any(child_ids))
-                    .select(categories::id)
-                    .load::<i32>(conn)?;
-
-                if valid_children.len() != child_ids.len() {
-                    return Err(RepositoryError::NotFound);
-                }
-
-                diesel::update(
-                    categories::table
-                        .filter(categories::hub_id.eq(hub_id))
-                        .filter(categories::id.eq_any(child_ids)),
-                )
-                .set((
-                    categories::parent_id.eq(Some(parent_id)),
-                    categories::updated_at.eq(now),
-                ))
-                .execute(conn)?;
-            }
-
-            diesel::update(
-                categories::table
-                    .filter(categories::id.eq(parent_id))
-                    .filter(categories::hub_id.eq(hub_id)),
-            )
-            .set(categories::updated_at.eq(now))
-            .execute(conn)?;
-
-            let parent = categories::table
-                .filter(categories::id.eq(parent_id))
-                .filter(categories::hub_id.eq(hub_id))
-                .first::<DbCategory>(conn)?;
-
-            Ok(parent.into())
-        })
     }
 }
 

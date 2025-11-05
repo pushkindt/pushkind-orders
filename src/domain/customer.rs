@@ -10,7 +10,7 @@ pub struct Customer {
     pub hub_id: i32,
     /// Human-friendly display name of the customer.
     pub name: String,
-    /// Primary email address stored in lowercase for comparisons.
+    /// Primary email address expected to be supplied in lowercase for comparisons.
     pub email: String,
     /// Optional contact phone number associated with the customer.
     pub phone: Option<String>,
@@ -25,7 +25,7 @@ pub struct NewCustomer {
     pub hub_id: i32,
     /// Human-friendly display name of the customer.
     pub name: String,
-    /// Primary email address stored in lowercase for comparisons.
+    /// Primary email address expected to be supplied in lowercase for comparisons.
     pub email: String,
     /// Optional contact phone number associated with the customer.
     pub phone: Option<String>,
@@ -34,11 +34,11 @@ pub struct NewCustomer {
 }
 
 impl NewCustomer {
-    /// Build a new customer payload while normalising the email to lowercase.
+    /// Build a new customer payload from pre-sanitised inputs supplied by the caller.
     #[must_use]
     pub fn new(hub_id: i32, name: impl Into<String>, email: impl Into<String>) -> Self {
-        let name = name.into().trim().to_string();
-        let email = email.into().trim().to_lowercase();
+        let name = name.into();
+        let email = email.into();
         Self {
             hub_id,
             name,
@@ -51,8 +51,8 @@ impl NewCustomer {
     /// Attach a phone number to the customer payload.
     #[must_use]
     pub fn with_phone(mut self, phone: impl Into<String>) -> Self {
-        let value = phone.into().trim().to_string();
-        self.phone = if value.is_empty() { None } else { Some(value) };
+        let phone = phone.into();
+        self.phone = Some(phone);
         self
     }
 

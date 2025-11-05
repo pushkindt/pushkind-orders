@@ -42,6 +42,9 @@
                 {% endif %}
                 <div class="ms-2">
                     <p class="fw-semibold mb-0 d-flex align-items-center gap-2">
+                        {% if n.category.image_url %}
+                            <img src="{{n.category.image_url}}" height="16px" width="16px">
+                        {% endif %}
                         {{ n.category.name }}
                         {% if n.category.is_archived %}
                             <span class="badge text-bg-warning-subtle text-warning-emphasis border-0">Архивирована</span>
@@ -70,6 +73,7 @@
                         data-category-name="{{ n.category.name }}"
                         data-category-description="{{ n.category.description | default(value='') }}"
                         data-category-archived="{{ n.category.is_archived }}"
+                        data-category-image-url="{{ n.category.image_url | default(value='') }}"
                 >
                     <i class="bi bi-pencil-square"></i>
                 </button>

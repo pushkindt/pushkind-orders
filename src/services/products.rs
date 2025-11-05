@@ -413,6 +413,7 @@ mod tests {
             tags: Vec::new(),
             created_at: datetime(),
             updated_at: datetime(),
+            image_urls: Vec::new(),
         }
     }
 
@@ -710,7 +711,7 @@ mod tests {
             .withf(move |new_product| {
                 assert_eq!(new_product.hub_id, hub_id);
                 assert_eq!(new_product.name, "Widget");
-                assert_eq!(new_product.currency, "usd");
+                assert_eq!(new_product.currency, "USD");
                 assert_eq!(new_product.units.as_deref(), Some("Each"));
                 true
             })
@@ -1215,6 +1216,7 @@ Banana,USD,7.50,
             is_archived,
             created_at: datetime(),
             updated_at: datetime(),
+            image_url: None,
         }
     }
 

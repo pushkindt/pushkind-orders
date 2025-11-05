@@ -17,6 +17,8 @@ pub struct Category {
     pub description: Option<String>,
     /// Flag indicating whether the category has been archived.
     pub is_archived: bool,
+    /// Optional image URL for the category
+    pub image_url: Option<String>,
     /// Timestamp for when the category record was created.
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the category record.
@@ -34,17 +36,20 @@ pub struct NewCategory {
     pub name: String,
     /// Optional description that expands upon the category name.
     pub description: Option<String>,
+    /// Optional image URL for the category
+    pub image_url: Option<String>,
 }
 
 impl NewCategory {
-    /// Build a new category payload with the supplied details and a trimmed name.
+    /// Build a new category payload with the supplied details.
     pub fn new(hub_id: i32, name: impl Into<String>) -> Self {
-        let name = name.into().trim().into();
+        let name = name.into();
         Self {
             hub_id,
             parent_id: None,
             name,
             description: None,
+            image_url: None,
         }
     }
 
@@ -59,6 +64,12 @@ impl NewCategory {
         self.description = Some(description.into());
         self
     }
+
+    /// Attach an image URL for the category payload.
+    pub fn with_image_url(mut self, image_url: impl Into<String>) -> Self {
+        self.image_url = Some(image_url.into());
+        self
+    }
 }
 
 /// Patch data applied when updating an existing category.
@@ -70,19 +81,26 @@ pub struct UpdateCategory {
     pub description: Option<String>,
     /// Archive flag state applied by this update.
     pub is_archived: bool,
+    /// Optional image URL for the category
+    pub image_url: Option<String>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }
 
 impl UpdateCategory {
-    /// Build a category update payload with trimmed name and a fresh timestamp.
-    pub fn new(name: String, description: Option<String>, is_archived: bool) -> Self {
-        let name = name.trim().into();
+    /// Build a category update payload with name and a fresh timestamp.
+    pub fn new(
+        name: String,
+        description: Option<String>,
+        is_archived: bool,
+        image_url: Option<String>,
+    ) -> Self {
         let updated_at = chrono::Local::now().naive_utc();
         Self {
             name,
             description,
             is_archived,
+            image_url,
             updated_at,
         }
     }
