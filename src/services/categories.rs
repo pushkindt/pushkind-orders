@@ -195,16 +195,6 @@ mod tests {
         fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()> {
             self.writer.delete_category(category_id, hub_id)
         }
-
-        fn assign_child_categories(
-            &self,
-            hub_id: i32,
-            parent_id: i32,
-            child_ids: &[i32],
-        ) -> RepositoryResult<Category> {
-            self.writer
-                .assign_child_categories(hub_id, parent_id, child_ids)
-        }
     }
 
     fn user_with_roles(roles: &[&str]) -> AuthenticatedUser {
