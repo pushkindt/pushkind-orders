@@ -1,4 +1,3 @@
-use chrono::Local;
 use diesel::dsl::{exists, select};
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;

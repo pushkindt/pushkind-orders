@@ -25,7 +25,18 @@
                         </div>
                     </div>
                     <div class="row mb-3">
-                        <div class="col-md-8 offset-md-4">
+                        <label for="addCategoryName" class="col-md-4 col-form-label">Изображение</label>
+                        <div class="col-md-8">
+                            <input name="image_url" type="url" class="form-control" id="editCategoryImageUrl"
+                                placeholder="https://example.com/image.jpg">
+                            <div class="form-text">Необязательно. Укажите ссылку изображение категории.</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <img class="d-none" src="" alt="Изображение" width="128px" id="editCategoryImage">
+                        </div>
+                        <div class="col-md-8">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" value="true" id="editCategoryArchived" name="is_archived">
                                 <label class="form-check-label" for="editCategoryArchived">
@@ -64,6 +75,8 @@
         const idInput = modalElement.querySelector("#editCategoryId");
         const nameInput = modalElement.querySelector("#editCategoryName");
         const descriptionInput = modalElement.querySelector("#editCategoryDescription");
+        const imageUrlInput = modalElement.querySelector("#editCategoryImageUrl");
+        const imageInput = modalElement.querySelector("#editCategoryImage");
         const archivedCheckbox = modalElement.querySelector("#editCategoryArchived");
         const deleteForm = modalElement.querySelector("#deleteCategoryForm");
         const deleteFormIdInput = modalElement.querySelector("#deleteCategoryId");
@@ -94,6 +107,13 @@
             if (descriptionInput) {
                 descriptionInput.value = dataset.categoryDescription || dataset.description || "";
             }
+            if (imageUrlInput) {
+                imageUrlInput.value = dataset.categoryImageUrl || "";
+            }
+            if (imageInput && dataset.categoryImageUrl) {
+                imageInput.src = dataset.categoryImageUrl;
+                imageInput.classList.remove("d-none");
+            }
 
             if (archivedCheckbox) {
                 archivedCheckbox.checked = toBoolean(
@@ -122,20 +142,9 @@
             if (form) {
                 form.reset();
             }
-            if (idInput) {
-                idInput.value = "";
-            }
-            if (descriptionInput) {
-                descriptionInput.value = "";
-            }
-            if (deleteForm) {
-                deleteForm.action = "";
-            }
-            if (deleteFormIdInput) {
-                deleteFormIdInput.value = "";
-            }
-            if (deleteButton) {
-                deleteButton.disabled = false;
+            if (imageInput) {
+                imageInput.src = ""
+                imageInput.classList.add("d-none");
             }
         });
     });
