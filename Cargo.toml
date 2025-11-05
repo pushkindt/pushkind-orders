@@ -32,6 +32,7 @@ pushkind-common = { git = "https://github.com/pushkindt/pushkind-common.git", br
 ] }
 validator = { version = "0.20.0", features = ["derive"] }
 serde_html_form = "0.2.8"
+actix-cors = "0.7.1"
 
 [dev-dependencies]
 diesel_migrations = "2.2.0"

@@ -183,7 +183,7 @@ async fn store_categories_respect_parent_query_parameter() {
 
     let req = test::TestRequest::get()
         .uri(&format!(
-            "/api/v1/store/1/categories?parent_id={}",
+            "/api/v1/store/1/categories?parentId={}",
             beverages.id
         ))
         .to_request();
