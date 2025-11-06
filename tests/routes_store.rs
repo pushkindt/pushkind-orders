@@ -113,7 +113,7 @@ async fn store_products_respect_query_parameters() {
 
     let req = test::TestRequest::get()
         .uri(&format!(
-            "/api/v1/store/1/products?category_id={}",
+            "/api/v1/store/1/products?categoryId={}",
             beverages.id
         ))
         .to_request();

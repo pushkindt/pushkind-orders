@@ -39,6 +39,16 @@
                         </div>
                     </div>
                     <div class="row mb-3">
+                        <label for="editProductImageUrls" class="col-md-3 col-form-label">Ссылки на изображения</label>
+                        <div class="col-md-9">
+                            <textarea name="image_urls" class="form-control" id="editProductImageUrls" rows="4"
+                                      placeholder="Каждая ссылка с новой строки"></textarea>
+                            <div class="form-text">
+                                Укажите один URL на строку. Оставьте поле пустым, чтобы удалить изображения.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
                         <label for="editProductCategory" class="col-md-3 col-form-label">Категория</label>
                         <div class="col-md-5 col-lg-4">
                             <select name="category_id" id="editProductCategory" class="form-select">
@@ -135,6 +145,7 @@
         const nameInput = modalElement.querySelector("#editProductName");
         const skuInput = modalElement.querySelector("#editProductSku");
         const descriptionInput = modalElement.querySelector("#editProductDescription");
+        const imageUrlsInput = modalElement.querySelector("#editProductImageUrls");
         const unitsInput = modalElement.querySelector("#editProductUnits");
         const currencyInput = modalElement.querySelector("#editProductCurrency");
         const archivedInput = modalElement.querySelector("#editProductArchived");
@@ -180,6 +191,9 @@
             nameInput.value = dataset.productName || "";
             skuInput.value = dataset.productSku || "";
             descriptionInput.value = dataset.productDescription || "";
+            if (imageUrlsInput) {
+                imageUrlsInput.value = dataset.productImageUrls || "";
+            }
             unitsInput.value = dataset.productUnits || "";
 
             if (categoryInput) {
@@ -226,6 +240,9 @@
             }
             if (unitsInput) {
                 unitsInput.value = "";
+            }
+            if (imageUrlsInput) {
+                imageUrlsInput.value = "";
             }
             if (categoryInput) {
                 categoryInput.selectedIndex = 0;

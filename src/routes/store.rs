@@ -14,6 +14,7 @@ struct HubPath {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct StoreProductsQuery {
     category_id: Option<i32>,
     search: Option<String>,

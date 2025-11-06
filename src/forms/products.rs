@@ -30,6 +30,18 @@ const UNITS_MAX_LEN_VALIDATOR: u64 = UNITS_MAX_LEN as u64;
 const CURRENCY_CODE_LEN: usize = 3;
 const CURRENCY_CODE_LEN_VALIDATOR: u64 = CURRENCY_CODE_LEN as u64;
 
+fn sanitize_image_urls(input: Option<String>) -> Vec<String> {
+    let mut urls = Vec::new();
+    if let Some(raw) = input {
+        for line in raw.lines() {
+            if let Some(url) = sanitize_text(line) {
+                urls.push(url);
+            }
+        }
+    }
+    urls
+}
+
 /// Result type returned by the product form helpers.
 pub type ProductFormResult<T> = Result<T, ProductFormError>;
 
@@ -106,6 +118,9 @@ pub struct AddProductForm {
     #[serde(default)]
     #[serde(deserialize_with = "empty_id_as_none")]
     pub category_id: Option<i32>,
+    /// Optional newline-separated image URLs.
+    #[serde(default)]
+    pub image_urls: Option<String>,
     /// Optional price level amounts submitted with the product.
     #[serde(default)]
     pub price_levels: Vec<AddProductPriceLevelForm>,
@@ -134,15 +149,26 @@ impl AddProductForm {
     ) -> ProductFormResult<NewProductUpload> {
         self.validate()?;
 
-        let sanitized_name = sanitize_text(&self.name).ok_or(ProductFormError::EmptyName)?;
+        let AddProductForm {
+            name,
+            sku,
+            description,
+            units,
+            currency,
+            category_id,
+            image_urls,
+            price_levels: price_level_entries,
+        } = self;
 
-        let sanitized_sku = self.sku.as_deref().and_then(sanitize_text);
+        let sanitized_name = sanitize_text(&name).ok_or(ProductFormError::EmptyName)?;
 
-        let sanitized_description = self.description.as_deref().and_then(sanitize_text);
+        let sanitized_sku = sku.as_deref().and_then(sanitize_text);
 
-        let sanitized_units = self.units.as_deref().and_then(sanitize_text);
+        let sanitized_description = description.as_deref().and_then(sanitize_text);
 
-        let currency = sanitize_text(&self.currency)
+        let sanitized_units = units.as_deref().and_then(sanitize_text);
+
+        let currency = sanitize_text(&currency)
             .ok_or(ProductFormError::InvalidCurrency)?
             .to_ascii_uppercase();
 
@@ -160,7 +186,7 @@ impl AddProductForm {
             new_product = new_product.with_units(units);
         }
 
-        if let Some(category_id) = self.category_id {
+        if let Some(category_id) = category_id {
             new_product = new_product.with_category_id(category_id);
         }
 
@@ -168,7 +194,7 @@ impl AddProductForm {
             price_levels.iter().map(|level| (level.id, level)).collect();
 
         let mut parsed_price_levels = Vec::new();
-        for entry in self.price_levels {
+        for entry in price_level_entries {
             entry.validate()?;
 
             let raw_price = entry.price;
@@ -199,6 +225,7 @@ impl AddProductForm {
         Ok(NewProductUpload {
             product: new_product,
             price_levels: parsed_price_levels,
+            image_urls: sanitize_image_urls(image_urls),
         })
     }
 }
@@ -218,6 +245,8 @@ pub struct NewProductUpload {
     pub product: NewProduct,
     /// Optional price level amounts supplied for the product.
     pub price_levels: Vec<NewProductUploadPriceLevel>,
+    /// Sanitized image URLs supplied for the product form.
+    pub image_urls: Vec<String>,
 }
 
 /// Price level entry parsed for a newly uploaded product.
@@ -333,6 +362,7 @@ impl UploadProductsForm {
             products.push(NewProductUpload {
                 product,
                 price_levels: parsed_price_levels,
+                image_urls: Vec::new(),
             });
         }
 
@@ -363,6 +393,9 @@ pub struct EditProductForm {
     /// Optional currency update.
     #[validate(length(max = CURRENCY_CODE_LEN_VALIDATOR))]
     pub currency: String,
+    /// Optional newline-separated image URLs.
+    #[serde(default)]
+    pub image_urls: Option<String>,
     /// Optional archive flag toggle.
     #[serde(default)]
     pub is_archived: bool,
@@ -382,6 +415,8 @@ pub struct EditProductUpdate {
     pub product: UpdateProduct,
     /// Sanitized list of tag identifiers to assign.
     pub tag_ids: Vec<i32>,
+    /// Sanitized image URLs submitted with the update.
+    pub image_urls: Vec<String>,
 }
 
 impl EditProductForm {
@@ -396,6 +431,7 @@ impl EditProductForm {
             description,
             units,
             currency,
+            image_urls,
             is_archived,
             category_id,
             tag_ids,
@@ -431,6 +467,8 @@ impl EditProductForm {
             updates = updates.with_category_id(category_raw);
         }
 
+        let image_urls = sanitize_image_urls(image_urls);
+
         let mut sanitized_tags: Vec<i32> = tag_ids;
         sanitized_tags.sort_unstable();
         sanitized_tags.dedup();
@@ -438,6 +476,7 @@ impl EditProductForm {
         Ok(EditProductUpdate {
             product: updates,
             tag_ids: sanitized_tags,
+            image_urls,
         })
     }
 }
@@ -552,6 +591,9 @@ mod tests {
             units: Some("  Box  ".to_string()),
             currency: "usd".to_string(),
             category_id: Some(7),
+            image_urls: Some(
+                " https://example.com/one.png \n\nhttps://example.com/two.png  ".to_string(),
+            ),
             price_levels: vec![
                 AddProductPriceLevelForm {
                     price_level_id: 1,
@@ -585,6 +627,13 @@ mod tests {
         assert_eq!(payload.price_levels.len(), 1);
         assert_eq!(payload.price_levels[0].price_level_id, 1);
         assert_eq!(payload.price_levels[0].price_cents, 1234);
+        assert_eq!(
+            payload.image_urls,
+            vec![
+                "https://example.com/one.png".to_string(),
+                "https://example.com/two.png".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -596,6 +645,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            image_urls: None,
             price_levels: Vec::new(),
         };
 
@@ -613,6 +663,7 @@ mod tests {
             units: None,
             currency: "   ".to_string(),
             category_id: None,
+            image_urls: None,
             price_levels: Vec::new(),
         };
 
@@ -630,6 +681,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            image_urls: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 1,
                 price: "oops".to_string(),
@@ -655,6 +707,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            image_urls: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 999,
                 price: "10".to_string(),
@@ -795,6 +848,9 @@ Banana,usd,,Ripe banana,,8.50,
             description: Some(" Updated description. \n\n ".to_string()),
             units: Some("  ea ".to_string()),
             currency: "eur".to_string(),
+            image_urls: Some(
+                " https://example.com/alpha.jpg\n\nhttps://example.com/beta.jpg ".to_string(),
+            ),
             is_archived: true,
             category_id: Some(12),
             tag_ids: vec![5, 7, 5],
@@ -802,6 +858,8 @@ Banana,usd,,Ripe banana,,8.50,
 
         let payload = form.into_update_product().expect("expected success");
         let updates = payload.product;
+        let tag_ids = payload.tag_ids;
+        let image_urls = payload.image_urls;
 
         assert_eq!(updates.name.as_str(), "Premium  Widget");
         assert!(updates.sku.is_none());
@@ -810,7 +868,14 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(updates.currency.as_str(), "EUR");
         assert!(updates.is_archived);
         assert_eq!(updates.category_id, Some(12));
-        assert_eq!(payload.tag_ids, vec![5, 7]);
+        assert_eq!(tag_ids, vec![5, 7]);
+        assert_eq!(
+            image_urls,
+            vec![
+                "https://example.com/alpha.jpg".to_string(),
+                "https://example.com/beta.jpg".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -822,6 +887,7 @@ Banana,usd,,Ripe banana,,8.50,
             description: Some(" Updated description. \n\n ".to_string()),
             units: Some("  ea ".to_string()),
             currency: "   ".to_string(),
+            image_urls: None,
             is_archived: true,
             category_id: Some(12),
             tag_ids: vec![5, 7, 5],

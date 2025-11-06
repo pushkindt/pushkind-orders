@@ -14,7 +14,7 @@ use crate::domain::{
     tag::{Tag, TagListQuery},
 };
 use crate::forms::products::{
-    AddProductForm, EditProductForm, NewProductUpload, UploadProductsForm,
+    AddProductForm, EditProductForm, EditProductUpdate, NewProductUpload, UploadProductsForm,
 };
 use crate::repository::{
     CategoryReader, PriceLevelReader, ProductReader, ProductWriter, TagReader,
@@ -196,10 +196,16 @@ where
         .into_update_product()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    let updates = payload.product;
-    let tag_ids = payload.tag_ids;
+    let EditProductUpdate {
+        product: updates,
+        tag_ids,
+        image_urls,
+    } = payload;
 
     repo.replace_product_tags(product_id, user.hub_id, &tag_ids)
+        .map_err(ServiceError::from)?;
+
+    repo.replace_product_images(product_id, user.hub_id, &image_urls)
         .map_err(ServiceError::from)?;
 
     repo.update_product(product_id, user.hub_id, &updates)
@@ -223,16 +229,34 @@ fn persist_new_product<R>(
 where
     R: ProductWriter + ?Sized,
 {
-    let created = repo
-        .create_product(&payload.product)
-        .map_err(ServiceError::from)?;
+    let NewProductUpload {
+        product,
+        price_levels,
+        image_urls,
+    } = payload;
 
-    if payload.price_levels.is_empty() {
+    let mut created = repo.create_product(&product).map_err(ServiceError::from)?;
+
+    if let Err(err) = repo.replace_product_images(created.id, hub_id, &image_urls) {
+        log::error!("Failed to attach images to product {}: {err}", created.id);
+        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
+            log::error!(
+                "Failed to roll back product {} after image error: {delete_err}",
+                created.id
+            );
+        }
+        return Err(ServiceError::from(err));
+    }
+
+    if !image_urls.is_empty() {
+        created.image_urls = image_urls.clone();
+    }
+
+    if price_levels.is_empty() {
         return Ok(created);
     }
 
-    let rates: Vec<NewProductPriceLevelRate> = payload
-        .price_levels
+    let rates: Vec<NewProductPriceLevelRate> = price_levels
         .iter()
         .map(|rate| {
             NewProductPriceLevelRate::new(created.id, rate.price_level_id, rate.price_cents)
@@ -272,6 +296,7 @@ pub struct ProductView {
     pub updated_at: chrono::NaiveDateTime,
     pub price_levels: Vec<ProductPriceLevelView>,
     pub tags: Vec<ProductTagView>,
+    pub image_urls: Vec<String>,
 }
 
 impl ProductView {
@@ -292,6 +317,7 @@ impl ProductView {
             category_id,
             price_levels,
             tags,
+            image_urls,
             created_at: _,
             updated_at,
             ..
@@ -318,6 +344,7 @@ impl ProductView {
             updated_at,
             price_levels,
             tags,
+            image_urls,
         }
     }
 }
@@ -685,6 +712,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            image_urls: None,
             price_levels: Vec::new(),
         };
 
@@ -717,6 +745,22 @@ mod tests {
             })
             .returning(move |_| Ok(sample_product(101, hub_id, "Widget", Vec::new())));
 
+        repo.product_writer
+            .expect_replace_product_images()
+            .times(1)
+            .withf(move |product_id, scope_hub, urls| {
+                assert_eq!((*product_id, *scope_hub), (101, hub_id));
+                assert_eq!(
+                    urls,
+                    &[
+                        "https://example.com/a.png".to_string(),
+                        "https://example.com/b.png".to_string()
+                    ]
+                );
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
         let expected_hub = hub_id;
         repo.product_writer
             .expect_replace_product_price_levels()
@@ -738,6 +782,9 @@ mod tests {
             units: Some(" Each ".to_string()),
             currency: "usd".to_string(),
             category_id: None,
+            image_urls: Some(
+                " https://example.com/a.png \n\nhttps://example.com/b.png ".to_string(),
+            ),
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 10,
                 price: "12.34".to_string(),
@@ -748,6 +795,13 @@ mod tests {
         assert_eq!(result.id, 101);
         assert_eq!(result.hub_id, hub_id);
         assert_eq!(result.name, "Widget");
+        assert_eq!(
+            result.image_urls,
+            vec![
+                "https://example.com/a.png".to_string(),
+                "https://example.com/b.png".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -764,6 +818,16 @@ mod tests {
         repo.product_writer
             .expect_create_product()
             .returning(move |_| Ok(sample_product(7, hub_id, "Widget", Vec::new())));
+
+        repo.product_writer
+            .expect_replace_product_images()
+            .times(1)
+            .withf(move |product_id, scope_hub, urls| {
+                assert_eq!((*product_id, *scope_hub), (7, hub_id));
+                assert!(urls.is_empty());
+                true
+            })
+            .returning(|_, _, _| Ok(()));
 
         repo.product_writer
             .expect_replace_product_price_levels()
@@ -787,6 +851,7 @@ mod tests {
             units: Some("Each".to_string()),
             currency: "USD".to_string(),
             category_id: None,
+            image_urls: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 5,
                 price: "10.00".to_string(),
@@ -829,6 +894,30 @@ mod tests {
                     new_product.name.as_str(),
                     Vec::new(),
                 ))
+            });
+
+        let image_counter = Arc::new(Mutex::new(0));
+        let image_counter_clone = image_counter.clone();
+
+        repo.product_writer
+            .expect_replace_product_images()
+            .times(2)
+            .returning(move |product_id, scope_hub, urls| {
+                let mut idx = image_counter_clone.lock().unwrap();
+                match *idx {
+                    0 => {
+                        assert_eq!(product_id, 1);
+                        assert_eq!(scope_hub, hub_id);
+                    }
+                    1 => {
+                        assert_eq!(product_id, 2);
+                        assert_eq!(scope_hub, hub_id);
+                    }
+                    _ => panic!("unexpected additional image call"),
+                }
+                assert!(urls.is_empty());
+                *idx += 1;
+                Ok(())
             });
 
         let rate_counter = Arc::new(Mutex::new(0));
@@ -912,6 +1001,7 @@ Banana,USD,7.50,
             description: None,
             units: None,
             currency: "cur".to_string(),
+            image_urls: None,
             is_archived: false,
             category_id: None,
             tag_ids: Vec::new(),
@@ -942,6 +1032,7 @@ Banana,USD,7.50,
             description: None,
             units: None,
             currency: "usd".to_string(),
+            image_urls: None,
             is_archived: false,
             category_id: None,
             tag_ids: vec![3, 5],
@@ -970,6 +1061,7 @@ Banana,USD,7.50,
         base_product.is_archived = false;
         base_product.category_id = Some(5);
         base_product.tags = vec![tag(40, hub_id, "Legacy")];
+        base_product.image_urls = vec!["https://example.com/legacy.png".to_string()];
 
         let previous_updated_at = base_product.updated_at;
         let new_updated_at = previous_updated_at + Duration::seconds(60);
@@ -985,6 +1077,7 @@ Banana,USD,7.50,
             product.is_archived = true;
             product.category_id = None;
             product.tags = vec![tag(42, hub_id, "Featured"), tag(99, hub_id, "Top Seller")];
+            product.image_urls = vec!["https://cdn.example.com/espresso-deluxe.png".to_string()];
             product.updated_at = new_updated_at;
             product
         };
@@ -1027,6 +1120,18 @@ Banana,USD,7.50,
                 }
             });
 
+        let expected_images = final_product.image_urls.clone();
+
+        repo.product_writer
+            .expect_replace_product_images()
+            .times(1)
+            .withf(move |id, hub, urls| {
+                assert_eq!((*id, *hub), (product_id, hub_id));
+                assert_eq!(urls, &expected_images);
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
         repo.product_writer
             .expect_replace_product_tags()
             .times(1)
@@ -1044,6 +1149,7 @@ Banana,USD,7.50,
             description: Some("   ".to_string()), // clears description
             units: Some("  pack ".to_string()),
             currency: "eur".to_string(),
+            image_urls: Some(" https://cdn.example.com/espresso-deluxe.png ".to_string()),
             is_archived: true,
             category_id: Some(0), // clears category
             tag_ids: vec![42, 99],
@@ -1175,6 +1281,16 @@ Banana,USD,7.50,
         ) -> RepositoryResult<()> {
             self.product_writer
                 .replace_product_tags(product_id, hub_id, tag_ids)
+        }
+
+        fn replace_product_images(
+            &self,
+            product_id: i32,
+            hub_id: i32,
+            image_urls: &[String],
+        ) -> RepositoryResult<()> {
+            self.product_writer
+                .replace_product_images(product_id, hub_id, image_urls)
         }
     }
 

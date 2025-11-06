@@ -95,6 +95,12 @@ pub trait ProductWriter {
         hub_id: i32,
         tag_ids: &[i32],
     ) -> RepositoryResult<()>;
+    fn replace_product_images(
+        &self,
+        product_id: i32,
+        hub_id: i32,
+        image_urls: &[String],
+    ) -> RepositoryResult<()>;
 }
 
 /// Read-only operations over price level records.
