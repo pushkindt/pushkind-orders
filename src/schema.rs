@@ -111,6 +111,7 @@ diesel::table! {
         updated_at -> Timestamp,
         units -> Nullable<Text>,
         category_id -> Nullable<Integer>,
+        amount -> Nullable<Float>,
     }
 }
 

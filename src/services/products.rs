@@ -441,6 +441,7 @@ mod tests {
             created_at: datetime(),
             updated_at: datetime(),
             image_urls: Vec::new(),
+            amount: None,
         }
     }
 
@@ -714,6 +715,7 @@ mod tests {
             category_id: None,
             image_urls: None,
             price_levels: Vec::new(),
+            amount: None,
         };
 
         let result = create_product(&repo, &user, form);
@@ -789,6 +791,7 @@ mod tests {
                 price_level_id: 10,
                 price: "12.34".to_string(),
             }],
+            amount: None,
         };
 
         let result = create_product(&repo, &user, form).expect("expected success");
@@ -856,6 +859,7 @@ mod tests {
                 price_level_id: 5,
                 price: "10.00".to_string(),
             }],
+            amount: None,
         };
 
         let result = create_product(&repo, &user, form);
@@ -1005,6 +1009,7 @@ Banana,USD,7.50,
             is_archived: false,
             category_id: None,
             tag_ids: Vec::new(),
+            amount: None,
         };
 
         let result = update_product(&repo, &user, 1, form);
@@ -1036,6 +1041,7 @@ Banana,USD,7.50,
             is_archived: false,
             category_id: None,
             tag_ids: vec![3, 5],
+            amount: None,
         };
 
         let result = update_product(&repo, &user, product_id, form);
@@ -1153,6 +1159,7 @@ Banana,USD,7.50,
             is_archived: true,
             category_id: Some(0), // clears category
             tag_ids: vec![42, 99],
+            amount: None,
         };
 
         let result =

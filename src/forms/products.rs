@@ -124,6 +124,9 @@ pub struct AddProductForm {
     /// Optional price level amounts submitted with the product.
     #[serde(default)]
     pub price_levels: Vec<AddProductPriceLevelForm>,
+    /// Optional amount per unit
+    #[serde(default)]
+    pub amount: Option<f32>,
 }
 
 /// Price level payload submitted alongside a product form.
@@ -158,6 +161,7 @@ impl AddProductForm {
             category_id,
             image_urls,
             price_levels: price_level_entries,
+            amount,
         } = self;
 
         let sanitized_name = sanitize_text(&name).ok_or(ProductFormError::EmptyName)?;
@@ -188,6 +192,10 @@ impl AddProductForm {
 
         if let Some(category_id) = category_id {
             new_product = new_product.with_category_id(category_id);
+        }
+
+        if let Some(amount) = amount {
+            new_product = new_product.with_amount(amount);
         }
 
         let price_level_map: HashMap<i32, &PriceLevel> =
@@ -309,6 +317,11 @@ impl UploadProductsForm {
                 })?
                 .to_ascii_uppercase();
 
+            let amount = header_indexes
+                .amount_index
+                .and_then(|idx| record.get(idx))
+                .and_then(|val| str::parse::<f32>(val).ok());
+
             let sku = header_indexes
                 .sku_index
                 .and_then(|idx| record.get(idx))
@@ -336,6 +349,10 @@ impl UploadProductsForm {
 
             if let Some(units) = units {
                 product = product.with_units(units);
+            }
+
+            if let Some(amount) = amount {
+                product = product.with_amount(amount);
             }
 
             let mut parsed_price_levels = Vec::new();
@@ -406,6 +423,9 @@ pub struct EditProductForm {
     /// Optional set of tags to associate with the product.
     #[serde(default)]
     pub tag_ids: Vec<i32>,
+    /// Optional amount per unit
+    #[serde(default)]
+    pub amount: Option<f32>,
 }
 
 /// Sanitized update payload returned when editing a product.
@@ -435,6 +455,7 @@ impl EditProductForm {
             is_archived,
             category_id,
             tag_ids,
+            amount,
         } = self;
 
         let sanitized_name = sanitize_text(&name).ok_or(ProductFormError::EmptyName)?;
@@ -467,6 +488,10 @@ impl EditProductForm {
             updates = updates.with_category_id(category_raw);
         }
 
+        if let Some(amount) = amount {
+            updates = updates.with_amount(amount);
+        }
+
         let image_urls = sanitize_image_urls(image_urls);
 
         let mut sanitized_tags: Vec<i32> = tag_ids;
@@ -487,6 +512,7 @@ struct ProductHeaderIndexes {
     description_index: Option<usize>,
     units_index: Option<usize>,
     currency_index: Option<usize>,
+    amount_index: Option<usize>,
 }
 
 fn locate_product_headers(headers: &StringRecord) -> ProductHeaderIndexes {
@@ -496,6 +522,7 @@ fn locate_product_headers(headers: &StringRecord) -> ProductHeaderIndexes {
         description_index: locate_header(headers, "description"),
         units_index: locate_header(headers, "units"),
         currency_index: locate_header(headers, "currency"),
+        amount_index: locate_header(headers, "amount"),
     }
 }
 
@@ -604,6 +631,7 @@ mod tests {
                     price: "  ".to_string(),
                 },
             ],
+            amount: None,
         };
         let price_levels = vec![
             build_price_level(1, "Retail"),
@@ -647,6 +675,7 @@ mod tests {
             category_id: None,
             image_urls: None,
             price_levels: Vec::new(),
+            amount: None,
         };
 
         let result = form.into_new_product(1);
@@ -665,6 +694,7 @@ mod tests {
             category_id: None,
             image_urls: None,
             price_levels: Vec::new(),
+            amount: None,
         };
 
         let result = form.into_new_product(1);
@@ -686,6 +716,7 @@ mod tests {
                 price_level_id: 1,
                 price: "oops".to_string(),
             }],
+            amount: None,
         };
         let levels = vec![build_price_level(1, "Retail")];
 
@@ -712,6 +743,7 @@ mod tests {
                 price_level_id: 999,
                 price: "10".to_string(),
             }],
+            amount: None,
         };
         let levels = vec![build_price_level(1, "Retail")];
 
@@ -854,6 +886,7 @@ Banana,usd,,Ripe banana,,8.50,
             is_archived: true,
             category_id: Some(12),
             tag_ids: vec![5, 7, 5],
+            amount: None,
         };
 
         let payload = form.into_update_product().expect("expected success");
@@ -891,6 +924,7 @@ Banana,usd,,Ripe banana,,8.50,
             is_archived: true,
             category_id: Some(12),
             tag_ids: vec![5, 7, 5],
+            amount: None,
         };
 
         let result = form.into_update_product();

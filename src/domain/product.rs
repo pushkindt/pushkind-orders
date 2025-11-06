@@ -31,6 +31,8 @@ pub struct Product {
     pub tags: Vec<Tag>,
     /// Image URLS for the product
     pub image_urls: Vec<String>,
+    /// Optional amount per unit
+    pub amount: Option<f32>,
     /// Timestamp for when the product record was created.
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the product record.
@@ -50,6 +52,8 @@ pub struct NewProduct {
     pub description: Option<String>,
     /// Optional unit of measure for the product (e.g. `kg`, `pack`).
     pub units: Option<String>,
+    /// Optional amount per unit
+    pub amount: Option<f32>,
     /// ISO 4217 currency code used when assigning prices to this product.
     pub currency: String,
     /// Optional identifier of the category the product belongs to.
@@ -69,6 +73,7 @@ impl NewProduct {
             units: None,
             currency,
             category_id: None,
+            amount: None,
         }
     }
 
@@ -95,6 +100,12 @@ impl NewProduct {
         self.category_id = Some(category_id);
         self
     }
+
+    /// Attach amount to the product payload.
+    pub fn with_amount(mut self, amount: f32) -> Self {
+        self.amount = Some(amount);
+        self
+    }
 }
 
 /// Patch data applied when updating an existing product.
@@ -108,6 +119,8 @@ pub struct UpdateProduct {
     pub description: Option<String>,
     /// Optional unit of measure update.
     pub units: Option<String>,
+    /// Optional amount per unit
+    pub amount: Option<f32>,
     /// Currency update.
     pub currency: String,
     /// Whether the product should be archived or restored.
@@ -133,6 +146,7 @@ impl UpdateProduct {
             is_archived,
             category_id: None,
             updated_at: now,
+            amount: None,
         }
     }
 
@@ -157,6 +171,12 @@ impl UpdateProduct {
     /// Assign the product to a category.
     pub fn with_category_id(mut self, category_id: i32) -> Self {
         self.category_id = Some(category_id);
+        self
+    }
+
+    /// Attach amount to the product payload.
+    pub fn with_amount(mut self, amount: f32) -> Self {
+        self.amount = Some(amount);
         self
     }
 }
