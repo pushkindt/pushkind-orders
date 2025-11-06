@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::repository::DieselRepository;
 use crate::services::store::{
     StoreCategoryFilters, StoreClientHandle, StoreProductFilters, load_store_categories,
-    load_store_products, load_store_tags,
+    load_store_product, load_store_products, load_store_tags,
 };
 
 #[derive(Debug, Deserialize)]
@@ -32,6 +32,12 @@ impl From<StoreProductsQuery> for StoreProductFilters {
 }
 
 #[derive(Debug, Deserialize)]
+struct StoreProductPath {
+    hub_id: String,
+    product_id: String,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoreCategoriesQuery {
     parent_id: Option<i32>,
@@ -55,6 +61,32 @@ pub async fn list_store_products(
         Ok(products) => HttpResponse::Ok().json(products),
         Err(err) => {
             error!("Failed to load storefront products for hub {hub_id}: {err}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[get("/{hub_id}/products/{product_id}")]
+pub async fn get_store_product(
+    path: web::Path<StoreProductPath>,
+    repo: web::Data<DieselRepository>,
+    store_client: Option<web::ReqData<StoreClientHandle>>,
+) -> impl Responder {
+    let path = path.into_inner();
+    let hub_id = match path.hub_id.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+    let product_id = match path.product_id.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+
+    match load_store_product(repo.get_ref(), hub_id, product_id, store_client.as_deref()) {
+        Ok(Some(product)) => HttpResponse::Ok().json(product),
+        Ok(None) => HttpResponse::NotFound().finish(),
+        Err(err) => {
+            error!("Failed to load storefront product {product_id} for hub {hub_id}: {err}");
             HttpResponse::InternalServerError().finish()
         }
     }
