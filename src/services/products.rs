@@ -297,6 +297,7 @@ pub struct ProductView {
     pub price_levels: Vec<ProductPriceLevelView>,
     pub tags: Vec<ProductTagView>,
     pub image_urls: Vec<String>,
+    pub amount: Option<f32>,
 }
 
 impl ProductView {
@@ -320,6 +321,7 @@ impl ProductView {
             image_urls,
             created_at: _,
             updated_at,
+            amount,
             ..
         } = product;
 
@@ -345,6 +347,7 @@ impl ProductView {
             price_levels,
             tags,
             image_urls,
+            amount,
         }
     }
 }

@@ -61,7 +61,8 @@ pub async fn add_product(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
 ) -> impl Responder {
-    let form: AddProductForm = match serde_html_form::from_bytes(body.as_ref()) {
+    let config = serde_qs::Config::new(5, false);
+    let form: AddProductForm = match config.deserialize_bytes(body.as_ref()) {
         Ok(parsed) => parsed,
         Err(err) => {
             log::warn!(
@@ -128,7 +129,8 @@ pub async fn edit_product(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
 ) -> impl Responder {
-    let form: EditProductForm = match serde_html_form::from_bytes(body.as_ref()) {
+    let config = serde_qs::Config::new(5, false);
+    let form: EditProductForm = match config.deserialize_bytes(body.as_ref()) {
         Ok(parsed) => parsed,
         Err(err) => {
             log::warn!(

@@ -3,7 +3,6 @@
     <div class="col-lg-2 overflow-hidden">Артикул</div>
     <div class="col-lg overflow-hidden">Описание</div>
     <div class="col-lg-1 overflow-hidden">Ед. изм.</div>
-    <div class="col-lg-1 overflow-hidden">Валюта</div>
 </div>
 <div id="productList">
     {% for product in products.items %}
@@ -50,6 +49,7 @@
                         data-product-sku="{{ product.sku | default(value='') }}"
                         data-product-description="{{ product.description | default(value='') }}"
                         data-product-units="{{ product.units | default(value='') }}"
+                        data-product-amount="{{ product.amount | default(value='') }}"
                         data-product-currency="{{ product.currency }}"
                         data-product-category="{{ product.category_id | default(value='0') }}"
                         data-product-tags="{{ product.tags | map(attribute='id') | join(sep=',') }}"
@@ -70,37 +70,33 @@
         </div>
         <div class="col-lg-1 col-6">
             <span class="d-lg-none fw-bold">Ед. изм.:</span>
-            {{ product.units | default(value="—") }}
-        </div>
-        <div class="col-lg-1 col-6">
-            <span class="d-lg-none fw-bold">Валюта:</span>
-            {{ product.currency }}
+            {{ product.amount }} {{ product.units }}
         </div>
         {% if product.price_levels | length > 0 %}
-        <div class="col-12 mt-2">
-            <div class="d-flex flex-wrap gap-2 small">
-                {% for level in product.price_levels %}
-                <span class="badge bg-secondary-subtle text-body-secondary border">
-                    {{ level.price_level_name }} — {{ level.price_formatted }} {{ product.currency }}{% if product.units %} / {{ product.units }}{% endif %}
-                </span>
-                {% endfor %}
+            <div class="col-12 mt-2">
+                <div class="d-flex flex-wrap gap-2 small">
+                    {% for level in product.price_levels %}
+                        <span class="badge bg-secondary-subtle text-body-secondary border">
+                            {{ level.price_level_name }} — {{ level.price_formatted }} {{ product.currency }}{% if product.units %} / {{ product.amount }} {{ product.units }}{% endif %}
+                        </span>
+                    {% endfor %}
+                </div>
             </div>
-        </div>
         {% endif %}
         {% if product.tags | length > 0 %}
-        <div class="col-12 mt-2">
-            <div class="d-flex flex-wrap gap-2 small">
-                {% for tag in product.tags %}
-                <span class="badge bg-info-subtle text-body-secondary border">{{ tag.name }}</span>
-                {% endfor %}
+            <div class="col-12 mt-2">
+                <div class="d-flex flex-wrap gap-2 small">
+                    {% for tag in product.tags %}
+                    <span class="badge bg-info-subtle text-body-secondary border">{{ tag.name }}</span>
+                    {% endfor %}
+                </div>
             </div>
-        </div>
         {% endif %}
     </div>
     {% else %}
-    <div class="alert alert-warning my-2" role="alert">
-        Нет товаров для отображения.
-    </div>
+        <div class="alert alert-warning my-2" role="alert">
+            Нет товаров для отображения.
+        </div>
     {% endfor %}
 </div>
 
