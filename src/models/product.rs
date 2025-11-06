@@ -19,6 +19,7 @@ pub struct Product {
     pub updated_at: NaiveDateTime,
     pub units: Option<String>,
     pub category_id: Option<i32>,
+    pub amount: Option<f32>,
 }
 
 #[derive(Insertable)]
@@ -31,6 +32,7 @@ pub struct NewProduct<'a> {
     pub units: Option<&'a str>,
     pub currency: &'a str,
     pub category_id: Option<i32>,
+    pub amount: Option<f32>,
 }
 
 #[derive(AsChangeset)]
@@ -45,6 +47,7 @@ pub struct UpdateProduct<'a> {
     pub is_archived: bool,
     pub updated_at: NaiveDateTime,
     pub category_id: Option<i32>,
+    pub amount: Option<f32>,
 }
 
 impl From<Product> for DomainProduct {
@@ -64,6 +67,7 @@ impl From<Product> for DomainProduct {
             image_urls: Vec::new(),
             created_at: value.created_at,
             updated_at: value.updated_at,
+            amount: value.amount,
         }
     }
 }
@@ -78,6 +82,7 @@ impl<'a> From<&'a DomainNewProduct> for NewProduct<'a> {
             units: value.units.as_deref(),
             currency: value.currency.as_str(),
             category_id: value.category_id,
+            amount: value.amount,
         }
     }
 }
@@ -93,6 +98,7 @@ impl<'a> From<&'a DomainUpdateProduct> for UpdateProduct<'a> {
             is_archived: value.is_archived,
             updated_at: value.updated_at,
             category_id: value.category_id,
+            amount: value.amount,
         }
     }
 }

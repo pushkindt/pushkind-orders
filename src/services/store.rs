@@ -137,6 +137,8 @@ pub struct StoreProduct {
     pub image_urls: Vec<String>,
     /// Timestamp representing when the product was last updated.
     pub updated_at: NaiveDateTime,
+    /// Optional amount per unit
+    pub amount: Option<f32>,
 }
 
 impl StoreProduct {
@@ -156,6 +158,7 @@ impl StoreProduct {
             image_urls,
             created_at: _,
             updated_at,
+            amount,
         } = value;
 
         let price_cents = default_price_level_id.and_then(|default_id| {
@@ -177,6 +180,7 @@ impl StoreProduct {
             tags: tags.into_iter().map(StoreTag::from).collect(),
             image_urls,
             updated_at,
+            amount,
         }
     }
 }
@@ -387,6 +391,7 @@ mod tests {
         product_price_level::ProductPriceLevelRate,
     };
     use crate::repository::mock::{MockCategoryReader, MockPriceLevelReader, MockProductReader};
+
     use pushkind_common::repository::errors::RepositoryResult;
 
     fn sample_timestamp() -> NaiveDateTime {
@@ -560,6 +565,7 @@ mod tests {
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 image_urls: vec!["https://example.com/coffee.png".to_string()],
+                amount: None,
             },
             Product {
                 id: 2,
@@ -576,6 +582,7 @@ mod tests {
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 image_urls: Vec::new(),
+                amount: None,
             },
         ];
 
@@ -662,6 +669,7 @@ mod tests {
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
             image_urls: vec!["https://example.com/latte.png".to_string()],
+            amount: None,
         };
 
         product_reader
@@ -725,6 +733,7 @@ mod tests {
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
             image_urls: Vec::new(),
+            amount: None,
         };
 
         product_reader
@@ -764,6 +773,7 @@ mod tests {
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
             image_urls: Vec::new(),
+            amount: None,
         };
 
         product_reader
@@ -985,6 +995,7 @@ mod tests {
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 image_urls: Vec::new(),
+                amount: None,
             }],
             tags: vec![Tag {
                 id: 1,

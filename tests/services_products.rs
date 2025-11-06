@@ -36,6 +36,7 @@ fn create_product_stores_price_levels() {
             price: "12.50".to_string(),
         }],
         image_urls: None,
+        amount: None,
     };
 
     let result = products::create_product(&repo, &user, form);
@@ -79,6 +80,7 @@ fn create_product_requires_service_role() {
         category_id: None,
         price_levels: Vec::new(),
         image_urls: None,
+        amount: None,
     };
 
     let result = products::create_product(&repo, &user, form);
