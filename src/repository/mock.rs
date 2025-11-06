@@ -35,6 +35,7 @@ mock! {
         fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()>;
         fn replace_product_price_levels(&self, product_id: i32, hub_id: i32, rates: &[NewProductPriceLevelRate]) -> RepositoryResult<()>;
         fn replace_product_tags(&self, product_id: i32, hub_id: i32, tag_ids: &[i32]) -> RepositoryResult<()>;
+        fn replace_product_images(&self, product_id: i32, hub_id: i32, image_urls: &[String]) -> RepositoryResult<()>;
     }
 }
 
