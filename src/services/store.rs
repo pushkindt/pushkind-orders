@@ -312,6 +312,42 @@ where
     Ok(filtered)
 }
 
+/// Load a single product available to a storefront for the provided hub.
+pub fn load_store_product<R>(
+    repo: &R,
+    hub_id: i32,
+    product_id: i32,
+    store_client: Option<&StoreClientHandle>,
+) -> ServiceResult<Option<StoreProduct>>
+where
+    R: ProductReader + PriceLevelReader + ?Sized,
+{
+    let product = match store_client {
+        Some(client) => client
+            .repository()
+            .get_product_by_id(product_id, hub_id)
+            .map_err(ServiceError::from)?,
+        None => repo
+            .get_product_by_id(product_id, hub_id)
+            .map_err(ServiceError::from)?,
+    };
+
+    let product = match product {
+        Some(product) if !product.is_archived => product,
+        _ => return Ok(None),
+    };
+
+    let default_price_level_id = match store_client {
+        Some(client) => resolve_default_price_level_id(client.repository(), hub_id)?,
+        None => resolve_default_price_level_id(repo, hub_id)?,
+    };
+
+    Ok(Some(StoreProduct::from_domain(
+        product,
+        default_price_level_id,
+    )))
+}
+
 /// Load tags available to a storefront for the provided hub.
 pub fn load_store_tags<R>(
     repo: &R,
@@ -583,6 +619,131 @@ mod tests {
             result[0].image_urls,
             vec!["https://example.com/coffee.png".to_string()]
         );
+    }
+
+    #[test]
+    fn load_store_product_fetches_active_product() {
+        let mut product_reader = MockProductReader::new();
+        let product = Product {
+            id: 7,
+            hub_id: 1,
+            name: "Latte".to_string(),
+            sku: Some("SKU-LATTE".to_string()),
+            description: Some("Steamed milk with espresso".to_string()),
+            units: Some("cup".to_string()),
+            currency: "USD".to_string(),
+            is_archived: false,
+            category_id: Some(3),
+            price_levels: vec![
+                ProductPriceLevelRate {
+                    id: 1,
+                    product_id: 7,
+                    price_level_id: 10,
+                    price_cents: 450,
+                    created_at: sample_timestamp(),
+                    updated_at: sample_timestamp(),
+                },
+                ProductPriceLevelRate {
+                    id: 2,
+                    product_id: 7,
+                    price_level_id: 11,
+                    price_cents: 500,
+                    created_at: sample_timestamp(),
+                    updated_at: sample_timestamp(),
+                },
+            ],
+            tags: vec![Tag {
+                id: 2,
+                hub_id: 1,
+                name: "Barista's choice".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            }],
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+            image_urls: vec!["https://example.com/latte.png".to_string()],
+        };
+
+        product_reader
+            .expect_get_product_by_id()
+            .withf(|id, hub_id| *id == 7 && *hub_id == 1)
+            .return_once(move |_, _| Ok(Some(product.clone())));
+
+        let mut price_level_reader = MockPriceLevelReader::new();
+        let price_levels = vec![
+            PriceLevel {
+                id: 10,
+                hub_id: 1,
+                name: "Default".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: true,
+            },
+            PriceLevel {
+                id: 11,
+                hub_id: 1,
+                name: "Premium".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: false,
+            },
+        ];
+        price_level_reader
+            .expect_list_price_levels()
+            .withf(|query| query.hub_id == 1)
+            .return_once(move |_| Ok((2, price_levels.clone())));
+
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+
+        let result = load_store_product(&repo, 1, 7, None).expect("load single product");
+        let product = result.expect("product should be present");
+        assert_eq!(product.id, 7);
+        assert_eq!(product.price_cents, Some(450));
+        assert_eq!(product.tags.len(), 1);
+        assert_eq!(product.tags[0].name, "Barista's choice");
+        assert_eq!(
+            product.image_urls,
+            vec!["https://example.com/latte.png".to_string()]
+        );
+    }
+
+    #[test]
+    fn load_store_product_returns_none_for_missing_or_archived() {
+        let mut product_reader = MockProductReader::new();
+        let archived_product = Product {
+            id: 9,
+            hub_id: 1,
+            name: "Retired".to_string(),
+            sku: None,
+            description: None,
+            units: None,
+            currency: "USD".to_string(),
+            is_archived: true,
+            category_id: None,
+            price_levels: Vec::new(),
+            tags: Vec::new(),
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+            image_urls: Vec::new(),
+        };
+
+        product_reader
+            .expect_get_product_by_id()
+            .withf(|id, hub_id| *id == 8 && *hub_id == 1)
+            .return_once(|_, _| Ok(None));
+        product_reader
+            .expect_get_product_by_id()
+            .withf(|id, hub_id| *id == 9 && *hub_id == 1)
+            .return_once(move |_, _| Ok(Some(archived_product.clone())));
+
+        let price_level_reader = MockPriceLevelReader::new();
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+
+        let missing = load_store_product(&repo, 1, 8, None).expect("load missing product");
+        assert!(missing.is_none());
+
+        let archived = load_store_product(&repo, 1, 9, None).expect("load archived product");
+        assert!(archived.is_none());
     }
 
     #[test]

@@ -1,7 +1,9 @@
 use actix_web::{App, http::StatusCode, test, web};
 use pushkind_orders::domain::{category::NewCategory, product::NewProduct, tag::NewTag};
 use pushkind_orders::repository::{CategoryWriter, DieselRepository, ProductWriter, TagWriter};
-use pushkind_orders::routes::store::{list_store_categories, list_store_products, list_store_tags};
+use pushkind_orders::routes::store::{
+    get_store_product, list_store_categories, list_store_products, list_store_tags,
+};
 use pushkind_orders::services::store::{StoreCategory, StoreProduct, StoreTag};
 
 mod common;
@@ -28,6 +30,7 @@ async fn store_endpoints_return_data() {
     let app = test::init_service(
         App::new().app_data(web::Data::new(app_repo)).service(
             web::scope("/api/v1/store")
+                .service(get_store_product)
                 .service(list_store_products)
                 .service(list_store_categories)
                 .service(list_store_tags),
@@ -45,6 +48,15 @@ async fn store_endpoints_return_data() {
     assert_eq!(products[0].name, "Coffee");
     assert_eq!(products[0].tags.len(), 1);
     assert_eq!(products[0].tags[0].name, "Organic");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/store/1/products/{}", product.id))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let product_response: StoreProduct = test::read_body_json(resp).await;
+    assert_eq!(product_response.id, product.id);
+    assert_eq!(product_response.name, "Coffee");
 
     let req = test::TestRequest::get()
         .uri("/api/v1/store/1/categories")
@@ -91,6 +103,7 @@ async fn store_products_respect_query_parameters() {
     let app = test::init_service(
         App::new().app_data(web::Data::new(app_repo)).service(
             web::scope("/api/v1/store")
+                .service(get_store_product)
                 .service(list_store_products)
                 .service(list_store_categories)
                 .service(list_store_tags),
@@ -165,6 +178,7 @@ async fn store_categories_respect_parent_query_parameter() {
     let app = test::init_service(
         App::new().app_data(web::Data::new(app_repo)).service(
             web::scope("/api/v1/store")
+                .service(get_store_product)
                 .service(list_store_products)
                 .service(list_store_categories)
                 .service(list_store_tags),
@@ -203,6 +217,7 @@ async fn store_routes_reject_invalid_hub_id() {
     let app = test::init_service(
         App::new().app_data(web::Data::new(app_repo)).service(
             web::scope("/api/v1/store")
+                .service(get_store_product)
                 .service(list_store_products)
                 .service(list_store_categories)
                 .service(list_store_tags),
@@ -212,6 +227,12 @@ async fn store_routes_reject_invalid_hub_id() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/store/abc/products")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/store/1/products/xyz")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -227,4 +248,28 @@ async fn store_routes_reject_invalid_hub_id() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[actix_web::test]
+async fn store_product_returns_not_found_for_unknown_id() {
+    let test_db = common::TestDb::new("routes_store_product_not_found.db");
+    let repo = DieselRepository::new(test_db.pool());
+
+    let app_repo = repo.clone();
+    let app = test::init_service(
+        App::new().app_data(web::Data::new(app_repo)).service(
+            web::scope("/api/v1/store")
+                .service(get_store_product)
+                .service(list_store_products)
+                .service(list_store_categories)
+                .service(list_store_tags),
+        ),
+    )
+    .await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/store/1/products/42")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

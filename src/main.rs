@@ -29,7 +29,9 @@ use pushkind_orders::routes::price_levels::{
 use pushkind_orders::routes::products::{
     add_product, edit_product, show_products, upload_products,
 };
-use pushkind_orders::routes::store::{list_store_categories, list_store_products, list_store_tags};
+use pushkind_orders::routes::store::{
+    get_store_product, list_store_categories, list_store_products, list_store_tags,
+};
 use pushkind_orders::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
 
 #[actix_web::main]
@@ -105,6 +107,7 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api/v1/store")
                     .service(list_store_products)
+                    .service(get_store_product)
                     .service(list_store_categories)
                     .service(list_store_tags),
             )
