@@ -233,6 +233,7 @@ where
         product,
         price_levels,
         image_urls,
+        tag_ids,
     } = payload;
 
     let mut created = repo.create_product(&product).map_err(ServiceError::from)?;
@@ -251,6 +252,18 @@ where
     if !image_urls.is_empty() {
         created.image_urls = image_urls.clone();
     }
+
+    if !tag_ids.is_empty()
+        && let Err(err) = repo.replace_product_tags(created.id, hub_id, &tag_ids) {
+            log::error!("Failed to attach tags to product {}: {err}", created.id);
+            if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
+                log::error!(
+                    "Failed to roll back product {} after tag error: {delete_err}",
+                    created.id
+                );
+            }
+            return Err(ServiceError::from(err));
+        }
 
     if price_levels.is_empty() {
         return Ok(created);
@@ -717,6 +730,7 @@ mod tests {
             currency: "USD".to_string(),
             category_id: None,
             image_urls: None,
+            tag_ids: Vec::new(),
             price_levels: Vec::new(),
             amount: None,
         };
@@ -766,6 +780,16 @@ mod tests {
             })
             .returning(|_, _, _| Ok(()));
 
+        repo.product_writer
+            .expect_replace_product_tags()
+            .times(1)
+            .withf(move |product_id, scope_hub, tags| {
+                assert_eq!((*product_id, *scope_hub), (101, hub_id));
+                assert_eq!(tags, &[3, 5]);
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
         let expected_hub = hub_id;
         repo.product_writer
             .expect_replace_product_price_levels()
@@ -790,6 +814,7 @@ mod tests {
             image_urls: Some(
                 " https://example.com/a.png \n\nhttps://example.com/b.png ".to_string(),
             ),
+            tag_ids: vec![3, 5, 3],
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 10,
                 price: "12.34".to_string(),
@@ -858,10 +883,69 @@ mod tests {
             currency: "USD".to_string(),
             category_id: None,
             image_urls: None,
+            tag_ids: Vec::new(),
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 5,
                 price: "10.00".to_string(),
             }],
+            amount: None,
+        };
+
+        let result = create_product(&repo, &user, form);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
+    }
+
+    #[test]
+    fn create_product_rolls_back_when_tags_fail() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_role(SERVICE_ACCESS_ROLE);
+        let hub_id = user.hub_id;
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|_| Ok((0, Vec::new())));
+
+        repo.product_writer
+            .expect_create_product()
+            .returning(move |_| Ok(sample_product(11, hub_id, "Widget", Vec::new())));
+
+        repo.product_writer
+            .expect_replace_product_images()
+            .times(1)
+            .withf(move |product_id, scope_hub, urls| {
+                assert_eq!((*product_id, *scope_hub), (11, hub_id));
+                assert!(urls.is_empty());
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
+        repo.product_writer
+            .expect_replace_product_tags()
+            .times(1)
+            .returning(|_, _, _| Err(RepositoryError::NotFound));
+
+        let expected_hub_id = hub_id;
+        repo.product_writer
+            .expect_delete_product()
+            .times(1)
+            .withf(move |product_id, scope_hub| {
+                assert_eq!(*product_id, 11);
+                assert_eq!(*scope_hub, expected_hub_id);
+                true
+            })
+            .returning(|_, _| Ok(()));
+
+        let form = AddProductForm {
+            name: "Widget".to_string(),
+            sku: None,
+            description: None,
+            units: None,
+            currency: "USD".to_string(),
+            category_id: None,
+            image_urls: None,
+            tag_ids: vec![1, 2],
+            price_levels: Vec::new(),
             amount: None,
         };
 

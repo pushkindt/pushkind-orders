@@ -118,6 +118,9 @@ pub struct AddProductForm {
     #[serde(default)]
     #[serde(deserialize_with = "empty_id_as_none")]
     pub category_id: Option<i32>,
+    /// Optional set of tag identifiers selected by the user.
+    #[serde(default)]
+    pub tag_ids: Vec<i32>,
     /// Optional newline-separated image URLs.
     #[serde(default)]
     pub image_urls: Option<String>,
@@ -159,6 +162,7 @@ impl AddProductForm {
             units,
             currency,
             category_id,
+            tag_ids,
             image_urls,
             price_levels: price_level_entries,
             amount,
@@ -198,6 +202,10 @@ impl AddProductForm {
             new_product = new_product.with_amount(amount);
         }
 
+        let mut sanitized_tags: Vec<i32> = tag_ids;
+        sanitized_tags.sort_unstable();
+        sanitized_tags.dedup();
+
         let price_level_map: HashMap<i32, &PriceLevel> =
             price_levels.iter().map(|level| (level.id, level)).collect();
 
@@ -234,6 +242,7 @@ impl AddProductForm {
             product: new_product,
             price_levels: parsed_price_levels,
             image_urls: sanitize_image_urls(image_urls),
+            tag_ids: sanitized_tags,
         })
     }
 }
@@ -255,6 +264,8 @@ pub struct NewProductUpload {
     pub price_levels: Vec<NewProductUploadPriceLevel>,
     /// Sanitized image URLs supplied for the product form.
     pub image_urls: Vec<String>,
+    /// Sanitized tag identifiers submitted with the product form.
+    pub tag_ids: Vec<i32>,
 }
 
 /// Price level entry parsed for a newly uploaded product.
@@ -380,6 +391,7 @@ impl UploadProductsForm {
                 product,
                 price_levels: parsed_price_levels,
                 image_urls: Vec::new(),
+                tag_ids: Vec::new(),
             });
         }
 
@@ -618,6 +630,7 @@ mod tests {
             units: Some("  Box  ".to_string()),
             currency: "usd".to_string(),
             category_id: Some(7),
+            tag_ids: vec![5, 7, 5],
             image_urls: Some(
                 " https://example.com/one.png \n\nhttps://example.com/two.png  ".to_string(),
             ),
@@ -655,6 +668,7 @@ mod tests {
         assert_eq!(payload.price_levels.len(), 1);
         assert_eq!(payload.price_levels[0].price_level_id, 1);
         assert_eq!(payload.price_levels[0].price_cents, 1234);
+        assert_eq!(payload.tag_ids, vec![5, 7]);
         assert_eq!(
             payload.image_urls,
             vec![
@@ -673,6 +687,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            tag_ids: Vec::new(),
             image_urls: None,
             price_levels: Vec::new(),
             amount: None,
@@ -692,6 +707,7 @@ mod tests {
             units: None,
             currency: "   ".to_string(),
             category_id: None,
+            tag_ids: Vec::new(),
             image_urls: None,
             price_levels: Vec::new(),
             amount: None,
@@ -711,6 +727,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            tag_ids: Vec::new(),
             image_urls: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 1,
@@ -738,6 +755,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            tag_ids: Vec::new(),
             image_urls: None,
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 999,

@@ -31,6 +31,7 @@ fn create_product_stores_price_levels() {
         units: None,
         currency: "USD".to_string(),
         category_id: None,
+        tag_ids: Vec::new(),
         price_levels: vec![AddProductPriceLevelForm {
             price_level_id: 1,
             price: "12.50".to_string(),
@@ -78,6 +79,7 @@ fn create_product_requires_service_role() {
         units: None,
         currency: "USD".to_string(),
         category_id: None,
+        tag_ids: Vec::new(),
         price_levels: Vec::new(),
         image_urls: None,
         amount: None,
