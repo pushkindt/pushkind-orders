@@ -62,10 +62,8 @@ pub async fn api_v1_update_client_price_level(
             HttpResponse::UnprocessableEntity().json(json!({"error": message}))
         }
         Err(err) => {
-            log::error!(
-                "Failed to assign price level to client {log_email} / {:?}: {err}",
-                log_phone
-            );
+            let email_ref = log_email.as_deref().unwrap_or("<none>");
+            log::error!("Failed to assign price level to client {email_ref} / {log_phone}: {err}");
             HttpResponse::InternalServerError().finish()
         }
     }

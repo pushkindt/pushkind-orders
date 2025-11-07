@@ -1,11 +1,14 @@
-use actix_web::{HttpResponse, Responder, get, web};
+use actix_web::{HttpResponse, Responder, get, post, web};
 use log::error;
 use serde::Deserialize;
+use serde_json::json;
 
+use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
 use crate::repository::DieselRepository;
+use crate::services::ServiceError;
 use crate::services::store::{
     StoreCategoryFilters, StoreClientHandle, StoreProductFilters, load_store_categories,
-    load_store_product, load_store_products, load_store_tags,
+    load_store_product, load_store_products, load_store_tags, request_store_otp, verify_store_otp,
 };
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +134,50 @@ pub async fn list_store_tags(
         Ok(tags) => HttpResponse::Ok().json(tags),
         Err(err) => {
             error!("Failed to load storefront tags for hub {hub_id}: {err}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[post("/{hub_id}/auth/otp")]
+pub async fn request_store_auth_otp(
+    path: web::Path<HubPath>,
+    payload: web::Json<StoreOtpRequestPayload>,
+) -> impl Responder {
+    let hub_id = match path.into_inner().hub_id.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+
+    match request_store_otp(hub_id, payload.into_inner()) {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(ServiceError::Form(message)) => {
+            HttpResponse::UnprocessableEntity().json(json!({ "error": message }))
+        }
+        Err(err) => {
+            error!("Failed to process OTP request for hub {hub_id}: {err}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[post("/{hub_id}/auth/otp/verify")]
+pub async fn verify_store_auth_otp(
+    path: web::Path<HubPath>,
+    payload: web::Json<StoreOtpVerifyPayload>,
+) -> impl Responder {
+    let hub_id = match path.into_inner().hub_id.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+
+    match verify_store_otp(hub_id, payload.into_inner()) {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(ServiceError::Form(message)) => {
+            HttpResponse::UnprocessableEntity().json(json!({ "error": message }))
+        }
+        Err(err) => {
+            error!("Failed to verify OTP for hub {hub_id}: {err}");
             HttpResponse::InternalServerError().finish()
         }
     }

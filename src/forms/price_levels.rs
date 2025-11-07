@@ -4,12 +4,14 @@ use validator::{Validate, ValidationErrors};
 
 use crate::{
     domain::price_level::{NewPriceLevel, UpdatePriceLevel},
-    forms::{empty_id_as_none, sanitize_text},
+    forms::{PhoneNormalizationError, empty_id_as_none, normalize_phone_to_e164, sanitize_text},
 };
 
 /// Maximum length allowed for a price level name.
 const NAME_MAX_LEN: usize = 128;
 const NAME_MAX_LEN_VALIDATOR: u64 = NAME_MAX_LEN as u64;
+const PHONE_MAX_LEN: usize = 64;
+const PHONE_MAX_LEN_VALIDATOR: u64 = PHONE_MAX_LEN as u64;
 
 /// Result type returned by the price level form helpers.
 pub type PriceLevelFormResult<T> = Result<T, PriceLevelFormError>;
@@ -26,6 +28,12 @@ pub enum PriceLevelFormError {
     /// The provided email is empty after sanitization.
     #[error("email is incorrect")]
     IncorrectEmail,
+    /// The provided phone is missing.
+    #[error("phone number is required")]
+    MissingPhone,
+    /// The provided phone fails validation.
+    #[error("phone number is incorrect")]
+    IncorrectPhone,
 }
 
 /// Form payload emitted when submitting the "Add price level" form.
@@ -46,11 +54,12 @@ pub struct AssignClientPriceLevelPayload {
     #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
     pub name: String,
     /// Customer email used as part of the composite key.
-    #[validate(email)]
-    pub email: String,
-    /// Customer phone used as part of the composite key.
     #[serde(default)]
-    pub phone: Option<String>,
+    #[validate(email)]
+    pub email: Option<String>,
+    /// Customer phone used as part of the composite key.
+    #[validate(length(min = 1, max = PHONE_MAX_LEN_VALIDATOR))]
+    pub phone: String,
     /// Selected price level identifier. `None` restores the default hub level.
     #[validate(range(min = 1))]
     #[serde(default)]
@@ -68,12 +77,19 @@ impl AssignClientPriceLevelPayload {
             None => return Err(PriceLevelFormError::EmptyName),
         };
 
-        let normalized_email = self.email.trim().to_lowercase();
-        if normalized_email.is_empty() {
-            return Err(PriceLevelFormError::IncorrectEmail);
-        }
+        let normalized_email = self.email.as_ref().and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_lowercase())
+            }
+        });
 
-        let normalized_phone = self.phone.and_then(|value| sanitize_text(&value));
+        let normalized_phone = normalize_phone_to_e164(&self.phone).map_err(|err| match err {
+            PhoneNormalizationError::Empty => PriceLevelFormError::MissingPhone,
+            PhoneNormalizationError::Invalid => PriceLevelFormError::IncorrectPhone,
+        })?;
 
         Ok(AssignClientPriceLevelInput {
             name: sanitized_name,
@@ -88,8 +104,8 @@ impl AssignClientPriceLevelPayload {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssignClientPriceLevelInput {
     pub name: String,
-    pub email: String,
-    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub phone: String,
     pub price_level_id: Option<i32>,
 }
 
@@ -149,8 +165,8 @@ mod tests {
     fn assign_client_price_level_payload_validates_positive_ids() {
         let payload = AssignClientPriceLevelPayload {
             name: "   User Name  ".to_string(),
-            email: "USER@example.com".to_string(),
-            phone: Some("  +1999  ".to_string()),
+            email: Some("USER@example.com".to_string()),
+            phone: "  +1999  ".to_string(),
             price_level_id: Some(3),
         };
 
@@ -159,8 +175,8 @@ mod tests {
             .expect("expected valid payload");
 
         assert_eq!(assignment.name, "User Name");
-        assert_eq!(assignment.email, "user@example.com");
-        assert_eq!(assignment.phone.as_deref(), Some("+1999"));
+        assert_eq!(assignment.email.as_deref(), Some("user@example.com"));
+        assert_eq!(assignment.phone, "+1999");
         assert_eq!(assignment.price_level_id, Some(3));
     }
 
@@ -168,14 +184,28 @@ mod tests {
     fn assign_client_price_level_payload_rejects_invalid_ids() {
         let payload = AssignClientPriceLevelPayload {
             name: "".to_string(),
-            email: "".to_string(),
-            phone: None,
+            email: Some("".to_string()),
+            phone: "+1888".to_string(),
             price_level_id: Some(0),
         };
 
         let result = payload.into_assignment_request();
 
         assert!(result.is_err(), "expected validation error");
+    }
+
+    #[test]
+    fn assign_client_price_level_payload_requires_phone() {
+        let payload = AssignClientPriceLevelPayload {
+            name: "User".to_string(),
+            email: None,
+            phone: "   ".to_string(),
+            price_level_id: None,
+        };
+
+        let result = payload.into_assignment_request();
+
+        assert!(matches!(result, Err(PriceLevelFormError::MissingPhone)));
     }
 
     #[test]
