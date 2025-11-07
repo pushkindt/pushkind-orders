@@ -117,9 +117,9 @@ fn test_customer_repository_crud() {
         .create_price_level(&NewPriceLevel::new(1, "VIP", false))
         .expect("failed to create price level");
 
-    let alice_new = NewCustomer::new(1, "Alice", "alice@example.com").with_phone("+15551234");
-    let bob_new = NewCustomer::new(1, "Bob", "bob@example.com");
-    let carla_new = NewCustomer::new(2, "Carla", "carla@example.com").with_phone("+18880000");
+    let alice_new = NewCustomer::new(1, "Alice", "+15551234").with_email("alice@example.com");
+    let bob_new = NewCustomer::new(1, "Bob", "+15550000").with_email("bob@example.com");
+    let carla_new = NewCustomer::new(2, "Carla", "+18880000").with_email("carla@example.com");
 
     let alice = repo
         .create_customer(&alice_new)
@@ -131,8 +131,8 @@ fn test_customer_repository_crud() {
         .create_customer(&carla_new)
         .expect("failed to create Carla");
 
-    assert_eq!(alice.email, "alice@example.com");
-    assert_eq!(alice.phone.as_deref(), Some("+15551234"));
+    assert_eq!(alice.email.as_deref(), Some("alice@example.com"));
+    assert_eq!(alice.phone, "+15551234");
     assert_eq!(bob.price_level_id, None);
     assert_eq!(carla.hub_id, 2);
 
@@ -141,7 +141,7 @@ fn test_customer_repository_crud() {
         .expect("failed to fetch customer")
         .expect("expected Alice to exist");
     assert_eq!(fetched.id, alice.id);
-    assert_eq!(fetched.phone.as_deref(), Some("+15551234"));
+    assert_eq!(fetched.phone, "+15551234");
 
     assert!(
         repo.get_customer_by_id(alice.id, 2)
@@ -155,29 +155,29 @@ fn test_customer_repository_crud() {
         .expect("expected Alice via email");
     assert_eq!(fetched_by_email.id, alice.id);
 
-    let fetched_by_contact = repo
-        .get_customer_by_email_and_phone("alice@example.com", Some("+15551234"), 1)
-        .expect("failed to fetch by contact")
+    let fetched_by_phone = repo
+        .get_customer_by_phone("+15551234", 1)
+        .expect("failed to fetch by phone")
         .expect("expected Alice via contact");
-    assert_eq!(fetched_by_contact.id, alice.id);
+    assert_eq!(fetched_by_phone.id, alice.id);
 
     assert!(
-        repo.get_customer_by_email_and_phone("alice@example.com", Some("+999"), 1)
-            .expect("failed to fetch missing contact")
+        repo.get_customer_by_phone("+999", 1)
+            .expect("failed to fetch missing phone")
             .is_none()
     );
 
     assert!(
-        repo.get_customer_by_email_and_phone("alice@example.com", Some("+15551234"), 2)
-            .expect("failed to fetch scoped contact")
+        repo.get_customer_by_phone("+15551234", 2)
+            .expect("failed to fetch scoped phone")
             .is_none()
     );
 
-    let fetched_bob_by_contact = repo
-        .get_customer_by_email_and_phone("bob@example.com", None, 1)
-        .expect("failed to fetch bob by contact")
-        .expect("expected Bob via contact");
-    assert_eq!(fetched_bob_by_contact.id, bob.id);
+    let fetched_bob_by_phone = repo
+        .get_customer_by_phone("+15550000", 1)
+        .expect("failed to fetch bob by phone")
+        .expect("expected Bob via phone");
+    assert_eq!(fetched_bob_by_phone.id, bob.id);
 
     let (total_all, customers_all) = repo
         .list_customers(CustomerListQuery::new(1))

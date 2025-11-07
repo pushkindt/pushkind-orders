@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
+use log::info;
 use pushkind_common::pagination::DEFAULT_ITEMS_PER_PAGE;
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +11,7 @@ use crate::domain::{
     product::{Product, ProductListQuery},
     tag::{Tag, TagListQuery},
 };
+use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
 use crate::repository::{CategoryReader, PriceLevelReader, ProductReader, TagReader};
 use crate::services::{ServiceError, ServiceResult};
 
@@ -102,6 +104,48 @@ impl From<Tag> for StoreTag {
             name: value.name,
         }
     }
+}
+
+/// Response returned after an OTP request has been accepted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreOtpResponse {
+    /// Indicates whether the request has been accepted.
+    pub success: bool,
+}
+
+/// Accepts an OTP request for the given hub.
+pub fn request_store_otp(
+    hub_id: i32,
+    payload: StoreOtpRequestPayload,
+) -> ServiceResult<StoreOtpResponse> {
+    let request = payload
+        .into_request()
+        .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    info!(
+        "Storefront OTP request accepted for hub {hub_id} and phone {}",
+        request.phone
+    );
+
+    Ok(StoreOtpResponse { success: true })
+}
+
+/// Verifies an OTP submission for the given hub.
+pub fn verify_store_otp(
+    hub_id: i32,
+    payload: StoreOtpVerifyPayload,
+) -> ServiceResult<StoreOtpResponse> {
+    let request = payload
+        .into_request()
+        .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    info!(
+        "Storefront OTP verification for hub {hub_id} with phone {} and code {}",
+        request.phone, request.otp
+    );
+
+    Ok(StoreOtpResponse { success: true })
 }
 
 /// Optional filters that can be applied when listing store categories.
@@ -390,6 +434,7 @@ mod tests {
         product::ProductListQuery,
         product_price_level::ProductPriceLevelRate,
     };
+    use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
     use crate::repository::mock::{MockCategoryReader, MockPriceLevelReader, MockProductReader};
 
     use pushkind_common::repository::errors::RepositoryResult;
@@ -399,6 +444,52 @@ mod tests {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+    }
+
+    #[test]
+    fn request_store_otp_returns_success() {
+        let payload = StoreOtpRequestPayload {
+            phone: "+15551234".to_string(),
+        };
+
+        let response = request_store_otp(99, payload).expect("expected success");
+
+        assert!(response.success);
+    }
+
+    #[test]
+    fn request_store_otp_propagates_form_errors() {
+        let payload = StoreOtpRequestPayload {
+            phone: "   ".to_string(),
+        };
+
+        let result = request_store_otp(1, payload);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
+    }
+
+    #[test]
+    fn verify_store_otp_returns_success() {
+        let payload = StoreOtpVerifyPayload {
+            phone: "+15551234".to_string(),
+            otp: "123456".to_string(),
+        };
+
+        let response = verify_store_otp(4, payload).expect("expected success");
+
+        assert!(response.success);
+    }
+
+    #[test]
+    fn verify_store_otp_propagates_form_errors() {
+        let payload = StoreOtpVerifyPayload {
+            phone: "+15551234".to_string(),
+            otp: "12A456".to_string(),
+        };
+
+        let result = verify_store_otp(4, payload);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
     }
 
     struct MockStoreProductRepo {

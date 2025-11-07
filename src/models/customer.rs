@@ -12,11 +12,11 @@ pub struct Customer {
     pub id: i32,
     pub hub_id: i32,
     pub name: String,
-    pub email: String,
+    pub email: Option<String>,
     pub price_level_id: Option<i32>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    pub phone: Option<String>,
+    pub phone: String,
 }
 
 #[derive(Insertable)]
@@ -24,8 +24,8 @@ pub struct Customer {
 pub struct NewCustomer<'a> {
     pub hub_id: i32,
     pub name: &'a str,
-    pub email: &'a str,
-    pub phone: Option<&'a str>,
+    pub email: Option<&'a str>,
+    pub phone: &'a str,
     pub price_level_id: Option<i32>,
 }
 
@@ -47,8 +47,8 @@ impl<'a> From<&'a DomainNewCustomer> for NewCustomer<'a> {
         Self {
             hub_id: value.hub_id,
             name: value.name.as_str(),
-            email: value.email.as_str(),
-            phone: value.phone.as_deref(),
+            email: value.email.as_deref(),
+            phone: value.phone.as_str(),
             price_level_id: value.price_level_id,
         }
     }

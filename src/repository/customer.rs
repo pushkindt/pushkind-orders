@@ -41,37 +41,21 @@ impl CustomerReader for DieselRepository {
         Ok(customer.map(Into::into))
     }
 
-    fn get_customer_by_email_and_phone(
+    fn get_customer_by_phone(
         &self,
-        email: &str,
-        phone: Option<&str>,
+        phone: &str,
         hub_id: i32,
     ) -> RepositoryResult<Option<DomainCustomer>> {
         use crate::schema::customers;
 
-        let normalized_email = email.trim().to_lowercase();
-        let normalized_phone = phone.and_then(|value| {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        });
+        let normalized_phone = phone.trim().to_string();
 
         let mut conn = self.conn()?;
-        let mut query = customers::table
+        let customer = customers::table
             .filter(customers::hub_id.eq(hub_id))
-            .filter(customers::email.eq(&normalized_email))
-            .into_boxed::<diesel::sqlite::Sqlite>();
-
-        if let Some(ref value) = normalized_phone {
-            query = query.filter(customers::phone.eq(value));
-        } else {
-            query = query.filter(customers::phone.is_null());
-        }
-
-        let customer = query.first::<DbCustomer>(&mut conn).optional()?;
+            .filter(customers::phone.eq(&normalized_phone))
+            .first::<DbCustomer>(&mut conn)
+            .optional()?;
 
         Ok(customer.map(Into::into))
     }

@@ -132,8 +132,8 @@
 
                 const contactValid = Number.isInteger(contact.hubId)
                     && contact.name.length > 0
-                    && typeof contact.email === 'string'
-                    && contact.email.length > 0;
+                    && typeof contact.phone === 'string'
+                    && contact.phone.length > 0;
 
                 if (!contactValid) {
                     select.disabled = true;
@@ -188,8 +188,8 @@
                         body: JSON.stringify({
                             hub_id: contact.hubId,
                             name: contact.name,
-                            email: contact.email,
-                            phone: contact.phone ?? null,
+                            email: contact.email ?? null,
+                            phone: contact.phone,
                             price_level_id: parsedValue,
                         }),
                     })
@@ -219,8 +219,8 @@
                         .catch(error => {
                             console.error(
                                 'Не удалось сохранить уровень клиента:',
-                                contact.email,
-                                contact.phone ?? null,
+                                contact.email ?? '<нет email>',
+                                contact.phone ?? '<нет телефона>',
                                 error,
                             );
                             select.value = previousValue;
@@ -253,11 +253,20 @@
                         : [];
                     const assignmentLookup = new Map(
                         assignments
-                            .filter(item => item && typeof item.email === 'string')
-                            .map(item => [
-                                buildContactKey(item.email, item.phone ?? ''),
-                                item.price_level_id ?? null,
-                            ]),
+                            .map(item => {
+                                if (!item || typeof item.phone !== 'string') {
+                                    return null;
+                                }
+                                const normalizedPhone = normalizePhone(item.phone);
+                                if (normalizedPhone.length === 0) {
+                                    return null;
+                                }
+                                return [
+                                    buildContactKey(item.email ?? '', normalizedPhone),
+                                    item.price_level_id ?? null,
+                                ];
+                            })
+                            .filter(entry => Array.isArray(entry)),
                     );
 
                     const hubIdFromAssignments = Number.isInteger(assignmentData?.hub_id)
@@ -283,33 +292,37 @@
                     }
 
                     const fragment = document.createDocumentFragment();
+                    const filteredClients = clients.filter(client => {
+                        const normalizedPhone = normalizePhone(client.phone);
+                        return normalizedPhone.length > 0;
+                    });
 
-                    clients.forEach(client => {
+                    filteredClients.forEach(client => {
                         const row = document.createElement('tr');
 
                         const nameCell = document.createElement('td');
                         nameCell.textContent = client.name ?? '';
                         row.appendChild(nameCell);
 
+                        const normalizedEmail = normalizeEmail(client.email);
                         const emailCell = document.createElement('td');
-                        emailCell.textContent = client.email ?? '—';
+                        emailCell.textContent = normalizedEmail === '' ? '—' : normalizedEmail;
                         row.appendChild(emailCell);
 
                         const phoneCell = document.createElement('td');
-                        phoneCell.textContent = client.phone ?? '—';
+                        const normalizedPhone = normalizePhone(client.phone);
+                        phoneCell.textContent = normalizedPhone === '' ? '—' : normalizedPhone;
                         row.appendChild(phoneCell);
 
                         const hubCell = document.createElement('td');
                         const savedId = assignmentLookup.get(
                             buildContactKey(client.email, client.phone ?? ''),
                         ) ?? null;
-                        const normalizedEmail = normalizeEmail(client.email);
-                        const normalizedPhone = normalizePhone(client.phone);
                         const contact = {
                             hubId,
                             name: normalizeName(client.name),
-                            email: normalizedEmail,
-                            phone: normalizedPhone === '' ? null : normalizedPhone,
+                            email: normalizedEmail === '' ? null : normalizedEmail,
+                            phone: normalizedPhone,
                         };
                         const select = createPriceLevelSelect(contact, savedId, defaultAssignmentId);
                         hubCell.appendChild(select);

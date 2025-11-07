@@ -11,9 +11,9 @@ pub struct Customer {
     /// Human-friendly display name of the customer.
     pub name: String,
     /// Primary email address expected to be supplied in lowercase for comparisons.
-    pub email: String,
-    /// Optional contact phone number associated with the customer.
-    pub phone: Option<String>,
+    pub email: Option<String>,
+    /// Contact phone number associated with the customer in E.164 format.
+    pub phone: String,
     /// Optional price level assigned to the customer; falls back to the hub default when absent.
     pub price_level_id: Option<i32>,
 }
@@ -26,9 +26,9 @@ pub struct NewCustomer {
     /// Human-friendly display name of the customer.
     pub name: String,
     /// Primary email address expected to be supplied in lowercase for comparisons.
-    pub email: String,
-    /// Optional contact phone number associated with the customer.
-    pub phone: Option<String>,
+    pub email: Option<String>,
+    /// Contact phone number associated with the customer.
+    pub phone: String,
     /// Optional price level assigned to the customer.
     pub price_level_id: Option<i32>,
 }
@@ -36,23 +36,22 @@ pub struct NewCustomer {
 impl NewCustomer {
     /// Build a new customer payload from pre-sanitised inputs supplied by the caller.
     #[must_use]
-    pub fn new(hub_id: i32, name: impl Into<String>, email: impl Into<String>) -> Self {
+    pub fn new(hub_id: i32, name: impl Into<String>, phone: impl Into<String>) -> Self {
         let name = name.into();
-        let email = email.into();
+        let phone = phone.into();
         Self {
             hub_id,
             name,
-            email,
-            phone: None,
+            email: None,
+            phone,
             price_level_id: None,
         }
     }
 
-    /// Attach a phone number to the customer payload.
+    /// Attach an email address to the customer payload.
     #[must_use]
-    pub fn with_phone(mut self, phone: impl Into<String>) -> Self {
-        let phone = phone.into();
-        self.phone = Some(phone);
+    pub fn with_email(mut self, email: impl Into<String>) -> Self {
+        self.email = Some(email.into());
         self
     }
 
