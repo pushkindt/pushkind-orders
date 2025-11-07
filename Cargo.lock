@@ -2028,8 +2028,8 @@ dependencies = [
  "mockall",
  "pushkind-common",
  "serde",
- "serde_html_form",
  "serde_json",
+ "serde_qs",
  "tempfile",
  "tera",
  "thiserror 2.0.17",
@@ -2274,19 +2274,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_html_form"
-version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2f2d7ff8a2140333718bb329f5c40fc5f0865b84c426183ce14c97d2ab8154f"
-dependencies = [
- "form_urlencoded",
- "indexmap",
- "itoa",
- "ryu",
- "serde_core",
-]
-
-[[package]]
 name = "serde_json"
 version = "1.0.145"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2306,6 +2293,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ce1fc6db65a611022b23a0dec6975d63fb80a302cb3388835ff02c097258d50"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "serde_qs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3faaf9e727533a19351a43cc5a8de957372163c7d35cc48c90b75cdda13c352"
+dependencies = [
+ "percent-encoding",
+ "serde",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

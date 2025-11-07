@@ -67,7 +67,7 @@
                         <label for="editProductTags" class="col-md-3 col-form-label">Теги</label>
                         <div class="col-md-9">
                             <select id="editProductTags"
-                                    name="tag_ids"
+                                    name="tag_ids[]"
                                     class="form-select"
                                     multiple
                                     autocomplete="off"
@@ -98,6 +98,14 @@
                             <div class="form-text">
                                 Оставьте пустым, чтобы скрыть единицу измерения.
                             </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="productUnits" class="col-md-3 col-form-label">Объём</label>
+                        <div class="col-md-5 col-lg-4">
+                            <input name="amount" type="number" step="0.01" class="form-control" id="editProductAmount"
+                                placeholder="Например: 1.0">
+                            <div class="form-text">Отображается рядом с ценой (оставьте пустым, если не требуется).</div>
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -147,6 +155,7 @@
         const descriptionInput = modalElement.querySelector("#editProductDescription");
         const imageUrlsInput = modalElement.querySelector("#editProductImageUrls");
         const unitsInput = modalElement.querySelector("#editProductUnits");
+        const amountInput = modalElement.querySelector("#editProductAmount");
         const currencyInput = modalElement.querySelector("#editProductCurrency");
         const archivedInput = modalElement.querySelector("#editProductArchived");
         const categoryInput = modalElement.querySelector("#editProductCategory");
@@ -195,6 +204,7 @@
                 imageUrlsInput.value = dataset.productImageUrls || "";
             }
             unitsInput.value = dataset.productUnits || "";
+            amountInput.value = dataset.productAmount || "";
 
             if (categoryInput) {
                 categoryInput.value = dataset.productCategory || "0";
