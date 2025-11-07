@@ -54,7 +54,8 @@
                         data-product-category="{{ product.category_id | default(value='0') }}"
                         data-product-tags="{{ product.tags | map(attribute='id') | join(sep=',') }}"
                         data-product-image-urls="{{ product.image_urls | join(sep='\n') }}"
-                        data-product-archived="{{ product.is_archived }}">
+                        data-product-archived="{{ product.is_archived }}"
+                        data-product-price-levels='{{ product.price_levels | json_encode() }}'>
                     <i class="bi bi-pencil-square"></i>
                     <span class="visually-hidden">Редактировать</span>
                 </button>

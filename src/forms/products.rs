@@ -435,9 +435,21 @@ pub struct EditProductForm {
     /// Optional set of tags to associate with the product.
     #[serde(default)]
     pub tag_ids: Vec<i32>,
+    /// Optional price level updates submitted with the form.
+    #[serde(default)]
+    pub price_levels: Vec<EditProductPriceLevelForm>,
     /// Optional amount per unit
     #[serde(default)]
     pub amount: Option<f32>,
+}
+
+/// Price level payload submitted when editing a product.
+#[derive(Debug, Deserialize, Validate)]
+pub struct EditProductPriceLevelForm {
+    #[validate(range(min = 1))]
+    pub price_level_id: i32,
+    #[serde(default)]
+    pub price: Option<String>,
 }
 
 /// Sanitized update payload returned when editing a product.
@@ -449,11 +461,16 @@ pub struct EditProductUpdate {
     pub tag_ids: Vec<i32>,
     /// Sanitized image URLs submitted with the update.
     pub image_urls: Vec<String>,
+    /// Sanitized price level assignments submitted with the update.
+    pub price_levels: Vec<NewProductUploadPriceLevel>,
 }
 
 impl EditProductForm {
-    /// Validates and sanitizes the payload into a domain `UpdateProduct` alongside tag updates.
-    pub fn into_update_product(self) -> ProductFormResult<EditProductUpdate> {
+    /// Validates and sanitizes the payload, including price levels, into a domain `UpdateProduct`.
+    pub fn into_update_product_with_prices(
+        self,
+        price_levels: &[PriceLevel],
+    ) -> ProductFormResult<EditProductUpdate> {
         self.validate()?;
 
         let EditProductForm {
@@ -467,6 +484,7 @@ impl EditProductForm {
             is_archived,
             category_id,
             tag_ids,
+            price_levels: price_level_entries,
             amount,
         } = self;
 
@@ -510,10 +528,45 @@ impl EditProductForm {
         sanitized_tags.sort_unstable();
         sanitized_tags.dedup();
 
+        let price_level_map: HashMap<i32, &PriceLevel> =
+            price_levels.iter().map(|level| (level.id, level)).collect();
+        let mut parsed_price_levels = Vec::new();
+        for entry in price_level_entries {
+            entry.validate()?;
+
+            let EditProductPriceLevelForm {
+                price_level_id,
+                price,
+            } = entry;
+
+            let raw_price = price.unwrap_or_default();
+            let trimmed = raw_price.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let price_level = price_level_map
+                .get(&price_level_id)
+                .ok_or(ProductFormError::UnknownPriceLevel { price_level_id })?;
+
+            let price_cents = parse_price_to_cents(trimmed).ok_or_else(|| {
+                ProductFormError::InvalidPriceLevelAmount {
+                    price_level: price_level.name.clone(),
+                    value: raw_price.to_string(),
+                }
+            })?;
+
+            parsed_price_levels.push(NewProductUploadPriceLevel {
+                price_level_id: price_level.id,
+                price_cents,
+            });
+        }
+
         Ok(EditProductUpdate {
             product: updates,
             tag_ids: sanitized_tags,
             image_urls,
+            price_levels: parsed_price_levels,
         })
     }
 }
@@ -891,6 +944,10 @@ Banana,usd,,Ripe banana,,8.50,
 
     #[test]
     fn edit_product_form_converts_updates() {
+        let price_levels = vec![
+            build_price_level(1, "Retail"),
+            build_price_level(2, "Wholesale"),
+        ];
         let form = EditProductForm {
             product_id: 1,
             name: "  Premium  Widget ".to_string(),
@@ -904,13 +961,26 @@ Banana,usd,,Ripe banana,,8.50,
             is_archived: true,
             category_id: Some(12),
             tag_ids: vec![5, 7, 5],
+            price_levels: vec![
+                EditProductPriceLevelForm {
+                    price_level_id: 1,
+                    price: Some(" 12.50 ".to_string()),
+                },
+                EditProductPriceLevelForm {
+                    price_level_id: 2,
+                    price: Some("".to_string()),
+                },
+            ],
             amount: None,
         };
 
-        let payload = form.into_update_product().expect("expected success");
+        let payload = form
+            .into_update_product_with_prices(&price_levels)
+            .expect("expected success");
         let updates = payload.product;
         let tag_ids = payload.tag_ids;
         let image_urls = payload.image_urls;
+        let price_updates = payload.price_levels;
 
         assert_eq!(updates.name.as_str(), "Premium  Widget");
         assert!(updates.sku.is_none());
@@ -927,6 +997,9 @@ Banana,usd,,Ripe banana,,8.50,
                 "https://example.com/beta.jpg".to_string()
             ]
         );
+        assert_eq!(price_updates.len(), 1);
+        assert_eq!(price_updates[0].price_level_id, 1);
+        assert_eq!(price_updates[0].price_cents, 1250);
     }
 
     #[test]
@@ -942,10 +1015,11 @@ Banana,usd,,Ripe banana,,8.50,
             is_archived: true,
             category_id: Some(12),
             tag_ids: vec![5, 7, 5],
+            price_levels: Vec::new(),
             amount: None,
         };
 
-        let result = form.into_update_product();
+        let result = form.into_update_product_with_prices(&[]);
 
         assert!(matches!(result, Err(ProductFormError::InvalidCurrency)));
     }
