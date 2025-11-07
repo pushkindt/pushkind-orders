@@ -69,7 +69,13 @@
                 <div class="d-flex flex-wrap gap-2 small">
                     {% for level in product.price_levels %}
                         <span class="badge bg-secondary-subtle text-body-secondary border">
-                            {{ level.price_level_name }} — {{ level.price_formatted }} {{ product.currency }}{% if product.units %} / {{ product.amount }} {{ product.units }}{% endif %}
+                            {{ level.price_level_name }} —
+                            <span
+                                class="product-price"
+                                data-price-cents="{{ level.price_cents }}"
+                                data-price-currency="{{ product.currency }}">
+                                {{ level.price_formatted }} {{ product.currency }}
+                            </span>{% if product.units %} / {{ product.amount }} {{ product.units }}{% endif %}
                         </span>
                     {% endfor %}
                 </div>
@@ -97,3 +103,48 @@
     current_page=products.page,
     search=search | default(value=""),
 ) }}
+
+<script>
+(() => {
+    const formatterCache = new Map();
+
+    const getFormatter = (currency) => {
+        if (!currency) {
+            return null;
+        }
+
+        if (!formatterCache.has(currency)) {
+            try {
+                formatterCache.set(
+                    currency,
+                    new Intl.NumberFormat("ru-RU", { style: "currency", currency })
+                );
+            } catch {
+                formatterCache.set(currency, null);
+            }
+        }
+
+        return formatterCache.get(currency);
+    };
+
+    const formatPriceElements = () => {
+        document.querySelectorAll("[data-price-cents][data-price-currency]").forEach((node) => {
+            const cents = Number(node.dataset.priceCents);
+            const currency = node.dataset.priceCurrency;
+            if (!Number.isFinite(cents) || !currency) {
+                return;
+            }
+
+            const formatter = getFormatter(currency);
+            const price = cents / 100;
+            node.textContent = formatter ? formatter.format(price) : `${price.toFixed(2)} ${currency}`;
+        });
+    };
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", formatPriceElements, { once: true });
+    } else {
+        formatPriceElements();
+    }
+})();
+</script>
