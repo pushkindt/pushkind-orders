@@ -50,6 +50,34 @@
                             <div class="form-text">Выберите категорию, чтобы сгруппировать товар.</div>
                         </div>
                     </div>
+                    {% if tags is defined and tags | length > 0 %}
+                    <div class="row mb-3">
+                        <label for="addProductTags" class="col-md-3 col-form-label">Теги</label>
+                        <div class="col-md-9">
+                            <select id="addProductTags"
+                                    name="tag_ids[]"
+                                    class="form-select"
+                                    multiple
+                                    autocomplete="off"
+                                    data-placeholder="Выберите теги">
+                                {% for tag in tags %}
+                                <option value="{{ tag.id }}">{{ tag.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">
+                                Выберите один или несколько тегов. Оставьте поле пустым, чтобы создать товар без тегов.
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="row mb-3">
+                        <div class="col-md-9 offset-md-3">
+                            <div class="alert alert-secondary py-2 mb-0 small" role="status">
+                                Теги ещё не созданы. Добавьте их на вкладке «Теги», чтобы привязать к товарам.
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                     <div class="row mb-3">
                         <label for="productUnits" class="col-md-3 col-form-label">Единица измерения</label>
                         <div class="col-md-5 col-lg-4">
@@ -125,3 +153,34 @@
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const modalElement = document.getElementById("productModal");
+        const tagSelect = document.getElementById("addProductTags");
+        if (!modalElement || !tagSelect) {
+            return;
+        }
+
+        let tagSelectControl = null;
+        if (typeof TomSelect !== "undefined") {
+            tagSelectControl = new TomSelect(tagSelect, {
+                plugins: {
+                    remove_button: { title: "Удалить" },
+                },
+                allowEmptyOption: true,
+                placeholder: tagSelect.dataset.placeholder || "Выберите теги",
+            });
+        }
+
+        modalElement.addEventListener("hidden.bs.modal", () => {
+            if (tagSelectControl) {
+                tagSelectControl.clear(true);
+            } else {
+                Array.from(tagSelect.options).forEach((option) => {
+                    option.selected = false;
+                });
+            }
+        });
+    });
+</script>

@@ -118,6 +118,32 @@
                             </div>
                         </div>
                     </div>
+                    {% if price_levels is defined and price_levels | length > 0 %}
+                    <div class="mb-3">
+                        <label class="form-label">Цены по уровням</label>
+                        <div class="row g-2">
+                            {% for level in price_levels %}
+                            <div class="col-12 col-lg-6">
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">{{ level.name }}</span>
+                                    <input type="hidden"
+                                           name="price_levels[{{ loop.index0 }}][price_level_id]"
+                                           value="{{ level.id }}">
+                                    <input type="number"
+                                           step="0.01"
+                                           class="form-control"
+                                           name="price_levels[{{ loop.index0 }}][price]"
+                                           placeholder="Например: 9.99"
+                                           data-price-level-input="{{ level.id }}">
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <div class="form-text">
+                            Измените цену для каждого уровня или оставьте пустым поле, чтобы удалить цену.
+                        </div>
+                    </div>
+                    {% endif %}
                     <div class="row">
                         <div class="col">
                             <div class="form-check">
@@ -160,6 +186,7 @@
         const archivedInput = modalElement.querySelector("#editProductArchived");
         const categoryInput = modalElement.querySelector("#editProductCategory");
         const tagSelect = modalElement.querySelector("#editProductTags");
+        const priceLevelInputs = modalElement.querySelectorAll("[data-price-level-input]");
         let tagSelectControl = null;
 
         const toBoolean = (value) => {
@@ -230,6 +257,31 @@
                 }
             }
 
+            if (priceLevelInputs.length > 0) {
+                let parsedPriceLevels = [];
+                if (dataset.productPriceLevels) {
+                    try {
+                        parsedPriceLevels = JSON.parse(dataset.productPriceLevels);
+                    } catch (error) {
+                        console.warn("Не удалось разобрать уровни цен товара:", error);
+                    }
+                }
+                const formattedLookup = new Map(
+                    parsedPriceLevels.map((level) => {
+                        const priceLevelId = String(level.price_level_id);
+                        if (typeof level.price_cents === "number") {
+                            return [priceLevelId, (level.price_cents / 100).toFixed(2)];
+                        }
+                        return [priceLevelId, level.price_formatted || ""];
+                    }),
+                );
+
+                priceLevelInputs.forEach((input) => {
+                    const levelId = input.dataset.priceLevelInput;
+                    input.value = formattedLookup.get(levelId) || "";
+                });
+            }
+
             // Focus name for quick editing.
             nameInput.focus();
         });
@@ -256,6 +308,11 @@
             }
             if (categoryInput) {
                 categoryInput.selectedIndex = 0;
+            }
+            if (priceLevelInputs.length > 0) {
+                priceLevelInputs.forEach((input) => {
+                    input.value = "";
+                });
             }
             if (tagSelect) {
                 if (tagSelectControl) {

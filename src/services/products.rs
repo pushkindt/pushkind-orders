@@ -178,7 +178,7 @@ pub fn update_product<R>(
     form: EditProductForm,
 ) -> ServiceResult<Product>
 where
-    R: ProductReader + ProductWriter + ?Sized,
+    R: ProductReader + ProductWriter + PriceLevelReader + ?Sized,
 {
     if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
         return Err(ServiceError::Unauthorized);
@@ -192,15 +192,28 @@ where
         ));
     }
 
+    let available_price_levels = fetch_all_price_levels(repo, user.hub_id)?;
+
     let payload = form
-        .into_update_product()
+        .into_update_product_with_prices(&available_price_levels)
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
     let EditProductUpdate {
         product: updates,
         tag_ids,
         image_urls,
+        price_levels,
     } = payload;
+
+    let price_level_rates: Vec<NewProductPriceLevelRate> = price_levels
+        .into_iter()
+        .map(|rate| {
+            NewProductPriceLevelRate::new(product_id, rate.price_level_id, rate.price_cents)
+        })
+        .collect();
+
+    repo.replace_product_price_levels(product_id, user.hub_id, &price_level_rates)
+        .map_err(ServiceError::from)?;
 
     repo.replace_product_tags(product_id, user.hub_id, &tag_ids)
         .map_err(ServiceError::from)?;
@@ -233,6 +246,7 @@ where
         product,
         price_levels,
         image_urls,
+        tag_ids,
     } = payload;
 
     let mut created = repo.create_product(&product).map_err(ServiceError::from)?;
@@ -250,6 +264,19 @@ where
 
     if !image_urls.is_empty() {
         created.image_urls = image_urls.clone();
+    }
+
+    if !tag_ids.is_empty()
+        && let Err(err) = repo.replace_product_tags(created.id, hub_id, &tag_ids)
+    {
+        log::error!("Failed to attach tags to product {}: {err}", created.id);
+        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
+            log::error!(
+                "Failed to roll back product {} after tag error: {delete_err}",
+                created.id
+            );
+        }
+        return Err(ServiceError::from(err));
     }
 
     if price_levels.is_empty() {
@@ -407,7 +434,8 @@ mod tests {
         product_price_level::ProductPriceLevelRate,
     };
     use crate::forms::products::{
-        AddProductForm, AddProductPriceLevelForm, EditProductForm, UploadProductsForm,
+        AddProductForm, AddProductPriceLevelForm, EditProductForm, EditProductPriceLevelForm,
+        UploadProductsForm,
     };
     use crate::repository::mock::{
         MockCategoryReader, MockPriceLevelReader, MockProductReader, MockProductWriter,
@@ -717,6 +745,7 @@ mod tests {
             currency: "USD".to_string(),
             category_id: None,
             image_urls: None,
+            tag_ids: Vec::new(),
             price_levels: Vec::new(),
             amount: None,
         };
@@ -766,6 +795,16 @@ mod tests {
             })
             .returning(|_, _, _| Ok(()));
 
+        repo.product_writer
+            .expect_replace_product_tags()
+            .times(1)
+            .withf(move |product_id, scope_hub, tags| {
+                assert_eq!((*product_id, *scope_hub), (101, hub_id));
+                assert_eq!(tags, &[3, 5]);
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
         let expected_hub = hub_id;
         repo.product_writer
             .expect_replace_product_price_levels()
@@ -790,6 +829,7 @@ mod tests {
             image_urls: Some(
                 " https://example.com/a.png \n\nhttps://example.com/b.png ".to_string(),
             ),
+            tag_ids: vec![3, 5, 3],
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 10,
                 price: "12.34".to_string(),
@@ -858,10 +898,69 @@ mod tests {
             currency: "USD".to_string(),
             category_id: None,
             image_urls: None,
+            tag_ids: Vec::new(),
             price_levels: vec![AddProductPriceLevelForm {
                 price_level_id: 5,
                 price: "10.00".to_string(),
             }],
+            amount: None,
+        };
+
+        let result = create_product(&repo, &user, form);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
+    }
+
+    #[test]
+    fn create_product_rolls_back_when_tags_fail() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_role(SERVICE_ACCESS_ROLE);
+        let hub_id = user.hub_id;
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|_| Ok((0, Vec::new())));
+
+        repo.product_writer
+            .expect_create_product()
+            .returning(move |_| Ok(sample_product(11, hub_id, "Widget", Vec::new())));
+
+        repo.product_writer
+            .expect_replace_product_images()
+            .times(1)
+            .withf(move |product_id, scope_hub, urls| {
+                assert_eq!((*product_id, *scope_hub), (11, hub_id));
+                assert!(urls.is_empty());
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
+        repo.product_writer
+            .expect_replace_product_tags()
+            .times(1)
+            .returning(|_, _, _| Err(RepositoryError::NotFound));
+
+        let expected_hub_id = hub_id;
+        repo.product_writer
+            .expect_delete_product()
+            .times(1)
+            .withf(move |product_id, scope_hub| {
+                assert_eq!(*product_id, 11);
+                assert_eq!(*scope_hub, expected_hub_id);
+                true
+            })
+            .returning(|_, _| Ok(()));
+
+        let form = AddProductForm {
+            name: "Widget".to_string(),
+            sku: None,
+            description: None,
+            units: None,
+            currency: "USD".to_string(),
+            category_id: None,
+            image_urls: None,
+            tag_ids: vec![1, 2],
+            price_levels: Vec::new(),
             amount: None,
         };
 
@@ -1012,6 +1111,7 @@ Banana,USD,7.50,
             is_archived: false,
             category_id: None,
             tag_ids: Vec::new(),
+            price_levels: Vec::new(),
             amount: None,
         };
 
@@ -1044,6 +1144,7 @@ Banana,USD,7.50,
             is_archived: false,
             category_id: None,
             tag_ids: vec![3, 5],
+            price_levels: Vec::new(),
             amount: None,
         };
 
@@ -1071,6 +1172,10 @@ Banana,USD,7.50,
         base_product.category_id = Some(5);
         base_product.tags = vec![tag(40, hub_id, "Legacy")];
         base_product.image_urls = vec!["https://example.com/legacy.png".to_string()];
+        let price_level_rows = vec![
+            price_level(31, hub_id, "Retail"),
+            price_level(32, hub_id, "Wholesale"),
+        ];
 
         let previous_updated_at = base_product.updated_at;
         let new_updated_at = previous_updated_at + Duration::seconds(60);
@@ -1097,6 +1202,13 @@ Banana,USD,7.50,
             .times(1)
             .withf(move |id, hub| *id == product_id && *hub == hub_id)
             .returning(move |_, _| Ok(Some(reader_product.clone())));
+
+        let price_levels_response = price_level_rows.clone();
+        let price_levels_len = price_levels_response.len();
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .times(1)
+            .returning(move |_| Ok((price_levels_len, price_levels_response.clone())));
 
         repo.product_writer
             .expect_update_product()
@@ -1128,6 +1240,20 @@ Banana,USD,7.50,
                     Ok(updated)
                 }
             });
+
+        repo.product_writer
+            .expect_replace_product_price_levels()
+            .times(1)
+            .withf(move |id, hub, rates| {
+                assert_eq!((*id, *hub), (product_id, hub_id));
+                assert_eq!(rates.len(), 2);
+                assert_eq!(rates[0].price_level_id, 31);
+                assert_eq!(rates[0].price_cents, 4250);
+                assert_eq!(rates[1].price_level_id, 32);
+                assert_eq!(rates[1].price_cents, 3500);
+                true
+            })
+            .returning(|_, _, _| Ok(()));
 
         let expected_images = final_product.image_urls.clone();
 
@@ -1162,6 +1288,16 @@ Banana,USD,7.50,
             is_archived: true,
             category_id: Some(0), // clears category
             tag_ids: vec![42, 99],
+            price_levels: vec![
+                EditProductPriceLevelForm {
+                    price_level_id: 31,
+                    price: Some(" 42.50 ".to_string()),
+                },
+                EditProductPriceLevelForm {
+                    price_level_id: 32,
+                    price: Some("35".to_string()),
+                },
+            ],
             amount: None,
         };
 
