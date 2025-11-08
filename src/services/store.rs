@@ -154,10 +154,9 @@ where
     if let Some(existing) = repo
         .get_store_otp(hub_id, &request.phone)
         .map_err(ServiceError::from)?
+        && existing.last_sent_at + Duration::minutes(OTP_THROTTLE_MINUTES) > now
     {
-        if existing.last_sent_at + Duration::minutes(OTP_THROTTLE_MINUTES) > now {
-            return Err(ServiceError::Form(OTP_THROTTLE_MESSAGE.to_string()));
-        }
+        return Err(ServiceError::Form(OTP_THROTTLE_MESSAGE.to_string()));
     }
 
     let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000));
