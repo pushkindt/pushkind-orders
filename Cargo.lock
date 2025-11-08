@@ -2094,6 +2094,7 @@ dependencies = [
  "mockall",
  "phonenumber",
  "pushkind-common",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "serde_qs",

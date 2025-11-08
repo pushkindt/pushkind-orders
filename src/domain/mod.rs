@@ -5,5 +5,6 @@ pub mod price_level;
 pub mod product;
 pub mod product_price_level;
 pub mod product_tag;
+pub mod store_otp;
 pub mod tag;
 pub mod user;

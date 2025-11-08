@@ -2,8 +2,8 @@ use mockall::mock;
 
 use super::{
     CategoryReader, CategoryWriter, CustomerListQuery, CustomerReader, CustomerWriter, OrderReader,
-    OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter, TagReader,
-    TagWriter, UserListQuery, UserReader, UserWriter,
+    OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter,
+    StoreOtpRepository, TagReader, TagWriter, UserListQuery, UserReader, UserWriter,
 };
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
@@ -12,6 +12,7 @@ use crate::domain::{
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
+    store_otp::{NewStoreOtp, StoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
     user::{NewUser, UpdateUser, User},
 };
@@ -151,5 +152,15 @@ mock! {
         fn create_category(&self, new_category: &NewCategory) -> RepositoryResult<Category>;
         fn update_category(&self, category_id: i32, hub_id: i32, updates: &UpdateCategory) -> RepositoryResult<Category>;
         fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    }
+}
+
+mock! {
+    pub StoreOtpRepository {}
+
+    impl StoreOtpRepository for StoreOtpRepository {
+        fn get_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<Option<StoreOtp>>;
+        fn upsert_store_otp(&self, new_otp: &NewStoreOtp) -> RepositoryResult<StoreOtp>;
+        fn delete_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<()>;
     }
 }
