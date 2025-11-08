@@ -10,6 +10,7 @@ use crate::domain::{
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
+    store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
     user::{NewUser, UpdateUser, User},
 };
@@ -19,6 +20,7 @@ pub mod customer;
 pub mod order;
 pub mod price_level;
 pub mod product;
+pub mod store_otp;
 pub mod tag;
 pub mod user;
 
@@ -44,6 +46,13 @@ pub trait CustomerWriter {
         customer_ids: &[i32],
         price_level_id: Option<i32>,
     ) -> RepositoryResult<()>;
+}
+
+/// Persistence operations for storefront OTP records.
+pub trait StoreOtpRepository {
+    fn get_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<Option<DomainStoreOtp>>;
+    fn upsert_store_otp(&self, new_otp: &DomainNewStoreOtp) -> RepositoryResult<DomainStoreOtp>;
+    fn delete_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<()>;
 }
 
 #[derive(Clone)]

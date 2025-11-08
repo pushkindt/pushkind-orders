@@ -34,6 +34,7 @@ validator = { version = "0.20.0", features = ["derive"] }
 actix-cors = "0.7.1"
 serde_qs = { version = "0.15.0" }
 phonenumber = "0.3"
+rand = "0.8"
 
 [dev-dependencies]
 diesel_migrations = "2.2.0"

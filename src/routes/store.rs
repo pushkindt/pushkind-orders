@@ -143,13 +143,14 @@ pub async fn list_store_tags(
 pub async fn request_store_auth_otp(
     path: web::Path<HubPath>,
     payload: web::Json<StoreOtpRequestPayload>,
+    repo: web::Data<DieselRepository>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    match request_store_otp(hub_id, payload.into_inner()) {
+    match request_store_otp(repo.get_ref(), hub_id, payload.into_inner()) {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(ServiceError::Form(message)) => {
             HttpResponse::UnprocessableEntity().json(json!({ "error": message }))
@@ -165,13 +166,14 @@ pub async fn request_store_auth_otp(
 pub async fn verify_store_auth_otp(
     path: web::Path<HubPath>,
     payload: web::Json<StoreOtpVerifyPayload>,
+    repo: web::Data<DieselRepository>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    match verify_store_otp(hub_id, payload.into_inner()) {
+    match verify_store_otp(repo.get_ref(), hub_id, payload.into_inner()) {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(ServiceError::Form(message)) => {
             HttpResponse::UnprocessableEntity().json(json!({ "error": message }))

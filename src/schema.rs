@@ -116,6 +116,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    store_otps (hub_id, phone) {
+        hub_id -> Integer,
+        phone -> Text,
+        code -> Text,
+        expires_at -> Timestamp,
+        last_sent_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     tags (id) {
         id -> Integer,
         hub_id -> Integer,
@@ -156,6 +166,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     product_price_levels,
     product_tags,
     products,
+    store_otps,
     tags,
     users,
 );

@@ -1,19 +1,30 @@
 use std::sync::Arc;
 
-use chrono::NaiveDateTime;
+use chrono::{Duration, NaiveDateTime, Utc};
 use log::info;
 use pushkind_common::pagination::DEFAULT_ITEMS_PER_PAGE;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{
     category::{Category, CategoryTreeQuery},
+    customer::NewCustomer,
     price_level::PriceLevelListQuery,
     product::{Product, ProductListQuery},
+    store_otp::NewStoreOtp,
     tag::{Tag, TagListQuery},
 };
 use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
-use crate::repository::{CategoryReader, PriceLevelReader, ProductReader, TagReader};
+use crate::repository::{
+    CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader, ProductReader,
+    StoreOtpRepository, TagReader,
+};
 use crate::services::{ServiceError, ServiceResult};
+
+const OTP_EXPIRY_MINUTES: i64 = 10;
+const OTP_THROTTLE_MINUTES: i64 = 2;
+const OTP_THROTTLE_MESSAGE: &str = "Please wait before requesting another OTP";
+const OTP_INVALID_MESSAGE: &str = "Invalid or expired OTP";
 
 /// Trait implemented by repositories that expose read access required by the
 /// storefront service layer.
@@ -115,13 +126,46 @@ pub struct StoreOtpResponse {
 }
 
 /// Accepts an OTP request for the given hub.
-pub fn request_store_otp(
+pub fn request_store_otp<R>(
+    repo: &R,
     hub_id: i32,
     payload: StoreOtpRequestPayload,
-) -> ServiceResult<StoreOtpResponse> {
+) -> ServiceResult<StoreOtpResponse>
+where
+    R: CustomerReader + CustomerWriter + StoreOtpRepository,
+{
     let request = payload
         .into_request()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    let customer = repo
+        .get_customer_by_phone(&request.phone, hub_id)
+        .map_err(ServiceError::from)?;
+
+    if customer.is_none() {
+        let new_customer = NewCustomer::new(hub_id, request.phone.clone(), request.phone.clone());
+
+        repo.create_customer(&new_customer)
+            .map_err(ServiceError::from)?;
+    }
+
+    let now = Utc::now().naive_utc();
+
+    if let Some(existing) = repo
+        .get_store_otp(hub_id, &request.phone)
+        .map_err(ServiceError::from)?
+    {
+        if existing.last_sent_at + Duration::minutes(OTP_THROTTLE_MINUTES) > now {
+            return Err(ServiceError::Form(OTP_THROTTLE_MESSAGE.to_string()));
+        }
+    }
+
+    let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000));
+    let expires_at = now + Duration::minutes(OTP_EXPIRY_MINUTES);
+    let otp_payload = NewStoreOtp::new(hub_id, request.phone.clone(), code, expires_at, now);
+
+    repo.upsert_store_otp(&otp_payload)
+        .map_err(ServiceError::from)?;
 
     info!(
         "Storefront OTP request accepted for hub {hub_id} and phone {}",
@@ -132,13 +176,35 @@ pub fn request_store_otp(
 }
 
 /// Verifies an OTP submission for the given hub.
-pub fn verify_store_otp(
+pub fn verify_store_otp<R>(
+    repo: &R,
     hub_id: i32,
     payload: StoreOtpVerifyPayload,
-) -> ServiceResult<StoreOtpResponse> {
+) -> ServiceResult<StoreOtpResponse>
+where
+    R: StoreOtpRepository,
+{
     let request = payload
         .into_request()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    let now = Utc::now().naive_utc();
+
+    let record = repo
+        .get_store_otp(hub_id, &request.phone)
+        .map_err(ServiceError::from)?
+        .ok_or_else(|| ServiceError::Form(OTP_INVALID_MESSAGE.to_string()))?;
+
+    if record.code != request.otp {
+        return Err(ServiceError::Form(OTP_INVALID_MESSAGE.to_string()));
+    }
+
+    if record.expires_at <= now {
+        return Err(ServiceError::Form(OTP_INVALID_MESSAGE.to_string()));
+    }
+
+    repo.delete_store_otp(hub_id, &request.phone)
+        .map_err(ServiceError::from)?;
 
     info!(
         "Storefront OTP verification for hub {hub_id} with phone {} and code {}",
@@ -430,12 +496,18 @@ where
 mod tests {
     use super::*;
     use crate::domain::{
+        customer::{Customer, CustomerListQuery},
         price_level::{PriceLevel, PriceLevelListQuery},
         product::ProductListQuery,
         product_price_level::ProductPriceLevelRate,
+        store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
     };
     use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
-    use crate::repository::mock::{MockCategoryReader, MockPriceLevelReader, MockProductReader};
+    use crate::repository::mock::{
+        MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockPriceLevelReader,
+        MockProductReader, MockStoreOtpRepository,
+    };
+    use crate::repository::{CustomerReader, CustomerWriter, StoreOtpRepository};
 
     use pushkind_common::repository::errors::RepositoryResult;
 
@@ -446,50 +518,268 @@ mod tests {
             .unwrap()
     }
 
+    struct MockOtpRequestRepo {
+        customer_reader: MockCustomerReader,
+        customer_writer: MockCustomerWriter,
+        otp_repository: MockStoreOtpRepository,
+    }
+
+    impl MockOtpRequestRepo {
+        fn new() -> Self {
+            Self {
+                customer_reader: MockCustomerReader::new(),
+                customer_writer: MockCustomerWriter::new(),
+                otp_repository: MockStoreOtpRepository::new(),
+            }
+        }
+    }
+
+    impl CustomerReader for MockOtpRequestRepo {
+        fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Customer>> {
+            self.customer_reader.get_customer_by_id(id, hub_id)
+        }
+
+        fn get_customer_by_email(
+            &self,
+            email: &str,
+            hub_id: i32,
+        ) -> RepositoryResult<Option<Customer>> {
+            self.customer_reader.get_customer_by_email(email, hub_id)
+        }
+
+        fn get_customer_by_phone(
+            &self,
+            phone: &str,
+            hub_id: i32,
+        ) -> RepositoryResult<Option<Customer>> {
+            self.customer_reader.get_customer_by_phone(phone, hub_id)
+        }
+
+        fn list_customers(
+            &self,
+            query: CustomerListQuery,
+        ) -> RepositoryResult<(usize, Vec<Customer>)> {
+            self.customer_reader.list_customers(query)
+        }
+    }
+
+    impl CustomerWriter for MockOtpRequestRepo {
+        fn create_customer(
+            &self,
+            new_customer: &crate::domain::customer::NewCustomer,
+        ) -> RepositoryResult<Customer> {
+            self.customer_writer.create_customer(new_customer)
+        }
+
+        fn assign_price_level_to_customers(
+            &self,
+            hub_id: i32,
+            customer_ids: &[i32],
+            price_level_id: Option<i32>,
+        ) -> RepositoryResult<()> {
+            self.customer_writer.assign_price_level_to_customers(
+                hub_id,
+                customer_ids,
+                price_level_id,
+            )
+        }
+    }
+
+    impl StoreOtpRepository for MockOtpRequestRepo {
+        fn get_store_otp(
+            &self,
+            hub_id: i32,
+            phone: &str,
+        ) -> RepositoryResult<Option<DomainStoreOtp>> {
+            self.otp_repository.get_store_otp(hub_id, phone)
+        }
+
+        fn upsert_store_otp(
+            &self,
+            new_otp: &DomainNewStoreOtp,
+        ) -> RepositoryResult<DomainStoreOtp> {
+            self.otp_repository.upsert_store_otp(new_otp)
+        }
+
+        fn delete_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<()> {
+            self.otp_repository.delete_store_otp(hub_id, phone)
+        }
+    }
+
+    fn sample_customer() -> Customer {
+        Customer {
+            id: 1,
+            hub_id: 99,
+            name: "Sample".to_string(),
+            email: None,
+            phone: "+15551234".to_string(),
+            price_level_id: None,
+        }
+    }
+
     #[test]
-    fn request_store_otp_returns_success() {
+    fn request_store_otp_creates_customer_when_missing() {
         let payload = StoreOtpRequestPayload {
             phone: "+15551234".to_string(),
         };
 
-        let response = request_store_otp(99, payload).expect("expected success");
+        let mut repo = MockOtpRequestRepo::new();
+        repo.customer_reader
+            .expect_get_customer_by_phone()
+            .withf(|phone, hub_id| phone == "+15551234" && *hub_id == 99)
+            .return_once(|_, _| Ok(None));
+        repo.customer_writer
+            .expect_create_customer()
+            .withf(|new_customer| {
+                new_customer.hub_id == 99
+                    && new_customer.phone == "+15551234"
+                    && new_customer.name == "+15551234"
+                    && new_customer.email.is_none()
+            })
+            .return_once(|_| Ok(sample_customer()));
+        repo.customer_writer
+            .expect_assign_price_level_to_customers()
+            .never();
+        repo.otp_repository
+            .expect_get_store_otp()
+            .withf(|hub_id, phone| *hub_id == 99 && phone == "+15551234")
+            .return_once(|_, _| Ok(None));
+        repo.otp_repository
+            .expect_upsert_store_otp()
+            .withf(|new_otp| {
+                new_otp.code.len() == 6 && new_otp.code.chars().all(|ch| ch.is_ascii_digit())
+            })
+            .return_once(|new_otp| {
+                Ok(DomainStoreOtp {
+                    hub_id: new_otp.hub_id,
+                    phone: new_otp.phone.clone(),
+                    code: new_otp.code.clone(),
+                    expires_at: new_otp.expires_at,
+                    last_sent_at: new_otp.last_sent_at,
+                })
+            });
+
+        let response = request_store_otp(&repo, 99, payload).expect("expected success");
 
         assert!(response.success);
     }
 
     #[test]
-    fn request_store_otp_propagates_form_errors() {
+    fn request_store_otp_throttles_recent_requests() {
         let payload = StoreOtpRequestPayload {
-            phone: "   ".to_string(),
+            phone: "+15551234".to_string(),
         };
 
-        let result = request_store_otp(1, payload);
+        let mut repo = MockOtpRequestRepo::new();
+        repo.customer_reader
+            .expect_get_customer_by_phone()
+            .return_once(|_, _| Ok(Some(sample_customer())));
+        repo.customer_writer.expect_create_customer().never();
+        repo.customer_writer
+            .expect_assign_price_level_to_customers()
+            .never();
+        repo.otp_repository
+            .expect_get_store_otp()
+            .return_once(|_, _| {
+                Ok(Some(DomainStoreOtp {
+                    hub_id: 99,
+                    phone: "+15551234".to_string(),
+                    code: "123456".to_string(),
+                    expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
+                    last_sent_at: Utc::now().naive_utc(),
+                }))
+            });
+        repo.otp_repository.expect_upsert_store_otp().never();
 
-        assert!(matches!(result, Err(ServiceError::Form(_))));
+        let result = request_store_otp(&repo, 99, payload);
+
+        match result {
+            Err(ServiceError::Form(message)) => assert_eq!(message, OTP_THROTTLE_MESSAGE),
+            other => panic!("unexpected result: {:?}", other),
+        }
     }
 
     #[test]
-    fn verify_store_otp_returns_success() {
+    fn verify_store_otp_checks_code_and_expiry() {
         let payload = StoreOtpVerifyPayload {
             phone: "+15551234".to_string(),
             otp: "123456".to_string(),
         };
 
-        let response = verify_store_otp(4, payload).expect("expected success");
+        let mut repo = MockStoreOtpRepository::new();
+        repo.expect_get_store_otp().return_once(|_, _| {
+            Ok(Some(DomainStoreOtp {
+                hub_id: 1,
+                phone: "+15551234".to_string(),
+                code: "123456".to_string(),
+                expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
+                last_sent_at: Utc::now().naive_utc(),
+            }))
+        });
+        repo.expect_delete_store_otp()
+            .withf(|hub_id, phone| *hub_id == 1 && phone == "+15551234")
+            .return_once(|_, _| Ok(()));
+        repo.expect_upsert_store_otp().never();
+
+        let response = verify_store_otp(&repo, 1, payload).expect("expected success");
 
         assert!(response.success);
     }
 
     #[test]
-    fn verify_store_otp_propagates_form_errors() {
+    fn verify_store_otp_rejects_invalid_code() {
         let payload = StoreOtpVerifyPayload {
             phone: "+15551234".to_string(),
-            otp: "12A456".to_string(),
+            otp: "000000".to_string(),
         };
 
-        let result = verify_store_otp(4, payload);
+        let mut repo = MockStoreOtpRepository::new();
+        repo.expect_get_store_otp().return_once(|_, _| {
+            Ok(Some(DomainStoreOtp {
+                hub_id: 1,
+                phone: "+15551234".to_string(),
+                code: "123456".to_string(),
+                expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
+                last_sent_at: Utc::now().naive_utc(),
+            }))
+        });
+        repo.expect_delete_store_otp().never();
+        repo.expect_upsert_store_otp().never();
 
-        assert!(matches!(result, Err(ServiceError::Form(_))));
+        let result = verify_store_otp(&repo, 1, payload);
+
+        match result {
+            Err(ServiceError::Form(message)) => assert_eq!(message, OTP_INVALID_MESSAGE),
+            other => panic!("unexpected result: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn verify_store_otp_rejects_expired_code() {
+        let payload = StoreOtpVerifyPayload {
+            phone: "+15551234".to_string(),
+            otp: "123456".to_string(),
+        };
+
+        let mut repo = MockStoreOtpRepository::new();
+        repo.expect_get_store_otp().return_once(|_, _| {
+            Ok(Some(DomainStoreOtp {
+                hub_id: 1,
+                phone: "+15551234".to_string(),
+                code: "123456".to_string(),
+                expires_at: Utc::now().naive_utc() - Duration::minutes(1),
+                last_sent_at: Utc::now().naive_utc(),
+            }))
+        });
+        repo.expect_delete_store_otp().never();
+        repo.expect_upsert_store_otp().never();
+
+        let result = verify_store_otp(&repo, 1, payload);
+
+        match result {
+            Err(ServiceError::Form(message)) => assert_eq!(message, OTP_INVALID_MESSAGE),
+            other => panic!("unexpected result: {:?}", other),
+        }
     }
 
     struct MockStoreProductRepo {
