@@ -107,6 +107,16 @@ async fn main() -> std::io::Result<()> {
             .service(not_assigned)
             .service(
                 web::scope("/api/v1/store")
+                    .wrap(
+                        SessionMiddleware::builder(
+                            CookieSessionStore::default(),
+                            secret_key.clone(),
+                        )
+                        .cookie_name("store-session".to_string())
+                        .cookie_secure(false)
+                        .cookie_domain(Some(format!(".{domain}")))
+                        .build(),
+                    )
                     .service(list_store_products)
                     .service(get_store_product)
                     .service(list_store_categories)

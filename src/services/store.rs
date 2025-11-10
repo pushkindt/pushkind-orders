@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use chrono::{Duration, NaiveDateTime, Utc};
 use log::info;
 use pushkind_common::pagination::DEFAULT_ITEMS_PER_PAGE;
@@ -25,51 +23,6 @@ const OTP_EXPIRY_MINUTES: i64 = 10;
 const OTP_THROTTLE_MINUTES: i64 = 2;
 const OTP_THROTTLE_MESSAGE: &str = "Please wait before requesting another OTP";
 const OTP_INVALID_MESSAGE: &str = "Invalid or expired OTP";
-
-/// Trait implemented by repositories that expose read access required by the
-/// storefront service layer.
-pub trait StoreClientRepository:
-    CategoryReader + ProductReader + TagReader + PriceLevelReader + Send + Sync
-{
-}
-
-impl<T> StoreClientRepository for T where
-    T: CategoryReader + ProductReader + TagReader + PriceLevelReader + Send + Sync
-{
-}
-
-/// Type alias for a trait object that satisfies [`StoreClientRepository`].
-pub type DynStoreClientRepository = dyn StoreClientRepository;
-
-/// Convenience alias used by handlers when storing an authenticated store
-/// client context inside the Actix request extensions.
-pub type StoreClientHandle = StoreClientContext<DynStoreClientRepository>;
-
-/// Context captured when a storefront request is associated with an optional
-/// authenticated client.
-pub struct StoreClientContext<R: ?Sized> {
-    repository: Arc<R>,
-}
-
-impl<R: ?Sized> StoreClientContext<R> {
-    /// Construct a new context backed by the supplied repository handle.
-    pub fn new(repository: Arc<R>) -> Self {
-        Self { repository }
-    }
-
-    /// Access the repository tied to this client context.
-    pub fn repository(&self) -> &R {
-        self.repository.as_ref()
-    }
-}
-
-impl<R: ?Sized> Clone for StoreClientContext<R> {
-    fn clone(&self) -> Self {
-        Self {
-            repository: Arc::clone(&self.repository),
-        }
-    }
-}
 
 /// Minimal representation of a category exposed to the storefront.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -266,7 +219,7 @@ pub struct StoreProduct {
 }
 
 impl StoreProduct {
-    fn from_domain(value: Product, default_price_level_id: Option<i32>) -> Self {
+    fn from_domain(value: Product, price_level_id: Option<i32>) -> Self {
         let Product {
             id,
             hub_id: _,
@@ -285,10 +238,10 @@ impl StoreProduct {
             amount,
         } = value;
 
-        let price_cents = default_price_level_id.and_then(|default_id| {
+        let price_cents = price_level_id.and_then(|level_id| {
             price_levels
                 .iter()
-                .find(|rate| rate.price_level_id == default_id)
+                .find(|rate| rate.price_level_id == level_id)
                 .map(|rate| rate.price_cents)
         });
 
@@ -370,22 +323,12 @@ pub fn load_store_categories<R>(
     repo: &R,
     hub_id: i32,
     filters: StoreCategoryFilters,
-    store_client: Option<&StoreClientHandle>,
 ) -> ServiceResult<Vec<StoreCategory>>
 where
     R: CategoryReader + ?Sized,
 {
     let query = CategoryTreeQuery::new(hub_id);
-    let categories = match store_client {
-        Some(client) => {
-            client
-                .repository()
-                .list_categories(query)
-                .map_err(ServiceError::from)?
-                .1
-        }
-        None => repo.list_categories(query).map_err(ServiceError::from)?.1,
-    };
+    let categories = repo.list_categories(query).map_err(ServiceError::from)?.1;
 
     let parent_id = filters.parent_id;
     let filtered = categories
@@ -406,35 +349,25 @@ pub fn load_store_products<R>(
     repo: &R,
     hub_id: i32,
     filters: StoreProductFilters,
-    store_client: Option<&StoreClientHandle>,
+    store_customer: Option<&Customer>,
 ) -> ServiceResult<Vec<StoreProduct>>
 where
     R: ProductReader + PriceLevelReader + ?Sized,
 {
-    let default_price_level_id = match store_client {
-        Some(client) => resolve_default_price_level_id(client.repository(), hub_id)?,
-        None => resolve_default_price_level_id(repo, hub_id)?,
-    };
+    let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
+    let effective_price_level_id = store_customer
+        .and_then(|customer| customer.price_level_id)
+        .or(default_price_level_id);
 
-    let products = match store_client {
-        Some(client) => {
-            client
-                .repository()
-                .list_products(filters.clone().into_query(hub_id))
-                .map_err(ServiceError::from)?
-                .1
-        }
-        None => {
-            repo.list_products(filters.into_query(hub_id))
-                .map_err(ServiceError::from)?
-                .1
-        }
-    };
+    let products = repo
+        .list_products(filters.into_query(hub_id))
+        .map_err(ServiceError::from)?
+        .1;
 
     let filtered = products
         .into_iter()
         .filter(|product| !product.is_archived)
-        .map(|product| StoreProduct::from_domain(product, default_price_level_id))
+        .map(|product| StoreProduct::from_domain(product, effective_price_level_id))
         .collect();
 
     Ok(filtered)
@@ -445,60 +378,40 @@ pub fn load_store_product<R>(
     repo: &R,
     hub_id: i32,
     product_id: i32,
-    store_client: Option<&StoreClientHandle>,
+    store_customer: Option<&Customer>,
 ) -> ServiceResult<Option<StoreProduct>>
 where
     R: ProductReader + PriceLevelReader + ?Sized,
 {
-    let product = match store_client {
-        Some(client) => client
-            .repository()
-            .get_product_by_id(product_id, hub_id)
-            .map_err(ServiceError::from)?,
-        None => repo
-            .get_product_by_id(product_id, hub_id)
-            .map_err(ServiceError::from)?,
-    };
+    let product = repo
+        .get_product_by_id(product_id, hub_id)
+        .map_err(ServiceError::from)?;
 
     let product = match product {
         Some(product) if !product.is_archived => product,
         _ => return Ok(None),
     };
 
-    let default_price_level_id = match store_client {
-        Some(client) => resolve_default_price_level_id(client.repository(), hub_id)?,
-        None => resolve_default_price_level_id(repo, hub_id)?,
-    };
+    let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
+    let effective_price_level_id = store_customer
+        .and_then(|customer| customer.price_level_id)
+        .or(default_price_level_id);
 
     Ok(Some(StoreProduct::from_domain(
         product,
-        default_price_level_id,
+        effective_price_level_id,
     )))
 }
 
 /// Load tags available to a storefront for the provided hub.
-pub fn load_store_tags<R>(
-    repo: &R,
-    hub_id: i32,
-    store_client: Option<&StoreClientHandle>,
-) -> ServiceResult<Vec<StoreTag>>
+pub fn load_store_tags<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<StoreTag>>
 where
     R: TagReader + ?Sized,
 {
-    let tags = match store_client {
-        Some(client) => {
-            client
-                .repository()
-                .list_tags(TagListQuery::new(hub_id))
-                .map_err(ServiceError::from)?
-                .1
-        }
-        None => {
-            repo.list_tags(TagListQuery::new(hub_id))
-                .map_err(ServiceError::from)?
-                .1
-        }
-    };
+    let tags = repo
+        .list_tags(TagListQuery::new(hub_id))
+        .map_err(ServiceError::from)?
+        .1;
 
     let mut formatted: Vec<StoreTag> = tags.into_iter().map(StoreTag::from).collect();
     formatted.sort_by(|a, b| a.name.cmp(&b.name));
@@ -907,7 +820,7 @@ mod tests {
             .withf(|query| query.hub_id == 1 && !query.include_archived)
             .return_once(move |_| Ok((2, categories.clone())));
 
-        let result = load_store_categories(&repo, 1, StoreCategoryFilters::default(), None)
+        let result = load_store_categories(&repo, 1, StoreCategoryFilters::default())
             .expect("load categories");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1);
@@ -948,14 +861,13 @@ mod tests {
             .times(2)
             .returning(move |_| Ok((2, categories_clone.clone())));
 
-        let roots = load_store_categories(&repo, 1, StoreCategoryFilters::default(), None)
+        let roots = load_store_categories(&repo, 1, StoreCategoryFilters::default())
             .expect("load root categories");
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].id, 1);
 
-        let children =
-            load_store_categories(&repo, 1, StoreCategoryFilters { parent_id: Some(1) }, None)
-                .expect("load child categories");
+        let children = load_store_categories(&repo, 1, StoreCategoryFilters { parent_id: Some(1) })
+            .expect("load child categories");
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].id, 2);
     }
@@ -1056,6 +968,98 @@ mod tests {
     }
 
     #[test]
+    fn load_store_products_uses_customer_price_level_when_present() {
+        let mut product_reader = MockProductReader::new();
+        let products = vec![Product {
+            id: 1,
+            hub_id: 1,
+            name: "Coffee".to_string(),
+            sku: Some("SKU-1".to_string()),
+            description: Some("Fresh beans".to_string()),
+            units: Some("kg".to_string()),
+            currency: "USD".to_string(),
+            is_archived: false,
+            category_id: Some(1),
+            price_levels: vec![
+                ProductPriceLevelRate {
+                    id: 1,
+                    product_id: 1,
+                    price_level_id: 10,
+                    price_cents: 450,
+                    created_at: sample_timestamp(),
+                    updated_at: sample_timestamp(),
+                },
+                ProductPriceLevelRate {
+                    id: 2,
+                    product_id: 1,
+                    price_level_id: 11,
+                    price_cents: 500,
+                    created_at: sample_timestamp(),
+                    updated_at: sample_timestamp(),
+                },
+            ],
+            tags: vec![Tag {
+                id: 1,
+                hub_id: 1,
+                name: "Organic".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            }],
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+            image_urls: vec!["https://example.com/coffee.png".to_string()],
+            amount: None,
+        }];
+
+        let product_clone = products.clone();
+        product_reader
+            .expect_list_products()
+            .withf(|query| {
+                query.hub_id == 1
+                    && !query.include_archived
+                    && query.only_without_category
+                    && query.category_id.is_none()
+            })
+            .return_once(move |_| Ok((1, product_clone)));
+
+        let mut price_level_reader = MockPriceLevelReader::new();
+        let price_levels = vec![
+            PriceLevel {
+                id: 10,
+                hub_id: 1,
+                name: "Default".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: true,
+            },
+            PriceLevel {
+                id: 11,
+                hub_id: 1,
+                name: "Premium".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: false,
+            },
+        ];
+
+        price_level_reader
+            .expect_list_price_levels()
+            .withf(|query| query.hub_id == 1)
+            .return_once(move |_| Ok((2, price_levels.clone())));
+
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+
+        let mut customer = sample_customer();
+        customer.hub_id = 1;
+        customer.price_level_id = Some(11);
+
+        let result = load_store_products(&repo, 1, StoreProductFilters::default(), Some(&customer))
+            .expect("load products for authenticated customer");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].price_cents, Some(500));
+    }
+
+    #[test]
     fn load_store_product_fetches_active_product() {
         let mut product_reader = MockProductReader::new();
         let product = Product {
@@ -1140,6 +1144,90 @@ mod tests {
             product.image_urls,
             vec!["https://example.com/latte.png".to_string()]
         );
+    }
+
+    #[test]
+    fn load_store_product_uses_customer_price_level() {
+        let mut product_reader = MockProductReader::new();
+        let product = Product {
+            id: 7,
+            hub_id: 1,
+            name: "Latte".to_string(),
+            sku: Some("SKU-LATTE".to_string()),
+            description: Some("Steamed milk with espresso".to_string()),
+            units: Some("cup".to_string()),
+            currency: "USD".to_string(),
+            is_archived: false,
+            category_id: Some(3),
+            price_levels: vec![
+                ProductPriceLevelRate {
+                    id: 1,
+                    product_id: 7,
+                    price_level_id: 10,
+                    price_cents: 450,
+                    created_at: sample_timestamp(),
+                    updated_at: sample_timestamp(),
+                },
+                ProductPriceLevelRate {
+                    id: 2,
+                    product_id: 7,
+                    price_level_id: 11,
+                    price_cents: 500,
+                    created_at: sample_timestamp(),
+                    updated_at: sample_timestamp(),
+                },
+            ],
+            tags: vec![Tag {
+                id: 2,
+                hub_id: 1,
+                name: "Barista's choice".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            }],
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+            image_urls: vec!["https://example.com/latte.png".to_string()],
+            amount: None,
+        };
+
+        product_reader
+            .expect_get_product_by_id()
+            .withf(|id, hub_id| *id == 7 && *hub_id == 1)
+            .return_once(move |_, _| Ok(Some(product.clone())));
+
+        let mut price_level_reader = MockPriceLevelReader::new();
+        let price_levels = vec![
+            PriceLevel {
+                id: 10,
+                hub_id: 1,
+                name: "Default".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: true,
+            },
+            PriceLevel {
+                id: 11,
+                hub_id: 1,
+                name: "Premium".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: false,
+            },
+        ];
+        price_level_reader
+            .expect_list_price_levels()
+            .withf(|query| query.hub_id == 1)
+            .return_once(move |_| Ok((2, price_levels.clone())));
+
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+
+        let mut customer = sample_customer();
+        customer.hub_id = 1;
+        customer.price_level_id = Some(11);
+
+        let result = load_store_product(&repo, 1, 7, Some(&customer)).expect("load single product");
+        let product = result.expect("product should be present");
+        assert_eq!(product.price_cents, Some(500));
     }
 
     #[test]
@@ -1264,205 +1352,5 @@ mod tests {
 
         let result = load_store_products(&repo, 1, filters, None).expect("load products");
         assert!(result.is_empty());
-    }
-
-    #[test]
-    fn prefers_store_client_context_when_present() {
-        struct PanicRepo;
-
-        impl CategoryReader for PanicRepo {
-            fn list_categories(
-                &self,
-                _query: CategoryTreeQuery,
-            ) -> RepositoryResult<(usize, Vec<Category>)> {
-                panic!("base repo should not be used");
-            }
-
-            fn get_category_by_id(
-                &self,
-                _category_id: i32,
-                _hub_id: i32,
-            ) -> RepositoryResult<Option<Category>> {
-                panic!("base repo should not be used");
-            }
-        }
-
-        impl ProductReader for PanicRepo {
-            fn get_product_by_id(
-                &self,
-                _id: i32,
-                _hub_id: i32,
-            ) -> RepositoryResult<Option<Product>> {
-                panic!("base repo should not be used");
-            }
-
-            fn list_products(
-                &self,
-                _query: ProductListQuery,
-            ) -> RepositoryResult<(usize, Vec<Product>)> {
-                panic!("base repo should not be used");
-            }
-        }
-
-        impl TagReader for PanicRepo {
-            fn list_tags(&self, _query: TagListQuery) -> RepositoryResult<(usize, Vec<Tag>)> {
-                panic!("base repo should not be used");
-            }
-        }
-
-        impl PriceLevelReader for PanicRepo {
-            fn get_price_level_by_id(
-                &self,
-                _id: i32,
-                _hub_id: i32,
-            ) -> RepositoryResult<Option<PriceLevel>> {
-                panic!("base repo should not be used");
-            }
-
-            fn list_price_levels(
-                &self,
-                _query: PriceLevelListQuery,
-            ) -> RepositoryResult<(usize, Vec<PriceLevel>)> {
-                panic!("base repo should not be used");
-            }
-        }
-
-        struct StaticRepo {
-            categories: Vec<Category>,
-            products: Vec<Product>,
-            tags: Vec<Tag>,
-            price_levels: Vec<PriceLevel>,
-        }
-
-        impl CategoryReader for StaticRepo {
-            fn list_categories(
-                &self,
-                _query: CategoryTreeQuery,
-            ) -> RepositoryResult<(usize, Vec<Category>)> {
-                Ok((self.categories.len(), self.categories.clone()))
-            }
-
-            fn get_category_by_id(
-                &self,
-                category_id: i32,
-                _hub_id: i32,
-            ) -> RepositoryResult<Option<Category>> {
-                Ok(self
-                    .categories
-                    .iter()
-                    .find(|c| c.id == category_id)
-                    .cloned())
-            }
-        }
-
-        impl ProductReader for StaticRepo {
-            fn get_product_by_id(
-                &self,
-                id: i32,
-                _hub_id: i32,
-            ) -> RepositoryResult<Option<Product>> {
-                Ok(self.products.iter().find(|p| p.id == id).cloned())
-            }
-
-            fn list_products(
-                &self,
-                _query: ProductListQuery,
-            ) -> RepositoryResult<(usize, Vec<Product>)> {
-                Ok((self.products.len(), self.products.clone()))
-            }
-        }
-
-        impl TagReader for StaticRepo {
-            fn list_tags(&self, _query: TagListQuery) -> RepositoryResult<(usize, Vec<Tag>)> {
-                Ok((self.tags.len(), self.tags.clone()))
-            }
-        }
-
-        impl PriceLevelReader for StaticRepo {
-            fn get_price_level_by_id(
-                &self,
-                id: i32,
-                _hub_id: i32,
-            ) -> RepositoryResult<Option<PriceLevel>> {
-                Ok(self.price_levels.iter().find(|p| p.id == id).cloned())
-            }
-
-            fn list_price_levels(
-                &self,
-                _query: PriceLevelListQuery,
-            ) -> RepositoryResult<(usize, Vec<PriceLevel>)> {
-                Ok((self.price_levels.len(), self.price_levels.clone()))
-            }
-        }
-
-        let static_repo = StaticRepo {
-            categories: vec![Category {
-                id: 1,
-                hub_id: 1,
-                parent_id: None,
-                name: "Coffee".to_string(),
-                description: None,
-                is_archived: false,
-                created_at: sample_timestamp(),
-                updated_at: sample_timestamp(),
-                image_url: None,
-            }],
-            products: vec![Product {
-                id: 1,
-                hub_id: 1,
-                name: "Coffee".to_string(),
-                sku: None,
-                description: None,
-                units: None,
-                currency: "USD".to_string(),
-                is_archived: false,
-                category_id: None,
-                price_levels: Vec::new(),
-                tags: Vec::new(),
-                created_at: sample_timestamp(),
-                updated_at: sample_timestamp(),
-                image_urls: Vec::new(),
-                amount: None,
-            }],
-            tags: vec![Tag {
-                id: 1,
-                hub_id: 1,
-                name: "Organic".to_string(),
-                created_at: sample_timestamp(),
-                updated_at: sample_timestamp(),
-            }],
-            price_levels: vec![PriceLevel {
-                id: 1,
-                hub_id: 1,
-                name: "Default".to_string(),
-                created_at: sample_timestamp(),
-                updated_at: sample_timestamp(),
-                is_default: true,
-            }],
-        };
-
-        let context: StoreClientHandle =
-            StoreClientContext::new(Arc::new(static_repo) as Arc<dyn StoreClientRepository>);
-
-        let categories = load_store_categories(
-            &PanicRepo,
-            1,
-            StoreCategoryFilters::default(),
-            Some(&context),
-        )
-        .expect("load categories from context");
-        assert_eq!(categories.len(), 1);
-
-        let products = load_store_products(
-            &PanicRepo,
-            1,
-            StoreProductFilters::default(),
-            Some(&context),
-        )
-        .expect("load products from context");
-        assert_eq!(products.len(), 1);
-
-        let tags = load_store_tags(&PanicRepo, 1, Some(&context)).expect("load tags from context");
-        assert_eq!(tags.len(), 1);
     }
 }

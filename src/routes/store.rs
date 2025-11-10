@@ -1,3 +1,4 @@
+use actix_session::Session;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use log::error;
 use serde::Deserialize;
@@ -5,10 +6,11 @@ use serde_json::json;
 
 use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
 use crate::repository::DieselRepository;
+use crate::routes::store_session::{get_store_customer, set_store_customer};
 use crate::services::ServiceError;
 use crate::services::store::{
-    StoreCategoryFilters, StoreClientHandle, StoreProductFilters, load_store_categories,
-    load_store_product, load_store_products, load_store_tags, request_store_otp, verify_store_otp,
+    StoreCategoryFilters, StoreProductFilters, load_store_categories, load_store_product,
+    load_store_products, load_store_tags, request_store_otp, verify_store_otp,
 };
 
 #[derive(Debug, Deserialize)]
@@ -51,7 +53,7 @@ pub async fn list_store_products(
     path: web::Path<HubPath>,
     params: Option<web::Query<StoreProductsQuery>>,
     repo: web::Data<DieselRepository>,
-    store_client: Option<web::ReqData<StoreClientHandle>>,
+    session: Session,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
@@ -60,7 +62,15 @@ pub async fn list_store_products(
     let filters = params
         .map(|query| StoreProductFilters::from(query.into_inner()))
         .unwrap_or_default();
-    match load_store_products(repo.get_ref(), hub_id, filters, store_client.as_deref()) {
+    let store_customer = match get_store_customer(&session) {
+        Ok(customer) => customer,
+        Err(err) => {
+            error!("Failed to read store session for hub {hub_id}: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    match load_store_products(repo.get_ref(), hub_id, filters, store_customer.as_ref()) {
         Ok(products) => HttpResponse::Ok().json(products),
         Err(err) => {
             error!("Failed to load storefront products for hub {hub_id}: {err}");
@@ -73,7 +83,7 @@ pub async fn list_store_products(
 pub async fn get_store_product(
     path: web::Path<StoreProductPath>,
     repo: web::Data<DieselRepository>,
-    store_client: Option<web::ReqData<StoreClientHandle>>,
+    session: Session,
 ) -> impl Responder {
     let path = path.into_inner();
     let hub_id = match path.hub_id.parse::<i32>() {
@@ -85,7 +95,15 @@ pub async fn get_store_product(
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    match load_store_product(repo.get_ref(), hub_id, product_id, store_client.as_deref()) {
+    let store_customer = match get_store_customer(&session) {
+        Ok(customer) => customer,
+        Err(err) => {
+            error!("Failed to read store session for hub {hub_id}: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    match load_store_product(repo.get_ref(), hub_id, product_id, store_customer.as_ref()) {
         Ok(Some(product)) => HttpResponse::Ok().json(product),
         Ok(None) => HttpResponse::NotFound().finish(),
         Err(err) => {
@@ -100,7 +118,6 @@ pub async fn list_store_categories(
     path: web::Path<HubPath>,
     params: Option<web::Query<StoreCategoriesQuery>>,
     repo: web::Data<DieselRepository>,
-    store_client: Option<web::ReqData<StoreClientHandle>>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
@@ -111,7 +128,7 @@ pub async fn list_store_categories(
             parent_id: query.parent_id,
         })
         .unwrap_or_default();
-    match load_store_categories(repo.get_ref(), hub_id, filters, store_client.as_deref()) {
+    match load_store_categories(repo.get_ref(), hub_id, filters) {
         Ok(categories) => HttpResponse::Ok().json(categories),
         Err(err) => {
             error!("Failed to load storefront categories for hub {hub_id}: {err}");
@@ -124,13 +141,12 @@ pub async fn list_store_categories(
 pub async fn list_store_tags(
     path: web::Path<HubPath>,
     repo: web::Data<DieselRepository>,
-    store_client: Option<web::ReqData<StoreClientHandle>>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
-    match load_store_tags(repo.get_ref(), hub_id, store_client.as_deref()) {
+    match load_store_tags(repo.get_ref(), hub_id) {
         Ok(tags) => HttpResponse::Ok().json(tags),
         Err(err) => {
             error!("Failed to load storefront tags for hub {hub_id}: {err}");
@@ -167,6 +183,7 @@ pub async fn verify_store_auth_otp(
     path: web::Path<HubPath>,
     payload: web::Json<StoreOtpVerifyPayload>,
     repo: web::Data<DieselRepository>,
+    session: Session,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
@@ -174,7 +191,14 @@ pub async fn verify_store_auth_otp(
     };
 
     match verify_store_otp(repo.get_ref(), hub_id, payload.into_inner()) {
-        Ok(response) => HttpResponse::Ok().json(response),
+        Ok(response) => {
+            if let Err(err) = set_store_customer(&session, &response.customer) {
+                error!("Failed to persist store customer for hub {hub_id}: {err}");
+                return HttpResponse::InternalServerError().finish();
+            }
+
+            HttpResponse::Ok().json(response)
+        }
         Err(ServiceError::Form(message)) => {
             HttpResponse::UnprocessableEntity().json(json!({ "error": message }))
         }
