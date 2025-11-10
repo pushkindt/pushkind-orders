@@ -6,7 +6,7 @@ use serde_json::json;
 
 use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
 use crate::repository::DieselRepository;
-use crate::routes::store_session::{get_store_customer, set_store_customer};
+use crate::routes::store_session::{get_store_customer_for_hub, set_store_customer};
 use crate::services::ServiceError;
 use crate::services::store::{
     StoreCategoryFilters, StoreProductFilters, load_store_categories, load_store_product,
@@ -62,7 +62,7 @@ pub async fn list_store_products(
     let filters = params
         .map(|query| StoreProductFilters::from(query.into_inner()))
         .unwrap_or_default();
-    let store_customer = match get_store_customer(&session) {
+    let store_customer = match get_store_customer_for_hub(&session, hub_id) {
         Ok(customer) => customer,
         Err(err) => {
             error!("Failed to read store session for hub {hub_id}: {err}");
@@ -95,7 +95,7 @@ pub async fn get_store_product(
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let store_customer = match get_store_customer(&session) {
+    let store_customer = match get_store_customer_for_hub(&session, hub_id) {
         Ok(customer) => customer,
         Err(err) => {
             error!("Failed to read store session for hub {hub_id}: {err}");
@@ -189,6 +189,13 @@ pub async fn verify_store_auth_otp(
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
+
+    if let Err(err) = get_store_customer_for_hub(&session, hub_id) {
+        error!(
+            "Failed to reset mismatched store session before OTP verification for hub {hub_id}: {err}"
+        );
+        return HttpResponse::InternalServerError().finish();
+    }
 
     match verify_store_otp(repo.get_ref(), hub_id, payload.into_inner()) {
         Ok(response) => {

@@ -32,3 +32,18 @@ pub fn clear_store_customer(session: &Session) -> Result<(), StoreSessionError> 
     session.remove(STORE_SESSION_CUSTOMER_KEY);
     Ok(())
 }
+
+/// Read the authenticated customer only if they belong to `hub_id`.
+pub fn get_store_customer_for_hub(
+    session: &Session,
+    hub_id: i32,
+) -> Result<Option<Customer>, StoreSessionError> {
+    match get_store_customer(session)? {
+        Some(customer) if customer.hub_id == hub_id => Ok(Some(customer)),
+        Some(_) => {
+            clear_store_customer(session)?;
+            Ok(None)
+        }
+        None => Ok(None),
+    }
+}
