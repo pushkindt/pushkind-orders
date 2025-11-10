@@ -1,10 +1,14 @@
+use std::sync::Arc;
+
 use actix_session::Session;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use log::error;
+use pushkind_common::zmq::ZmqSender;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
+use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
 use crate::routes::store_session::{get_store_customer_for_hub, set_store_customer};
 use crate::services::ServiceError;
@@ -160,13 +164,25 @@ pub async fn request_store_auth_otp(
     path: web::Path<HubPath>,
     payload: web::Json<StoreOtpRequestPayload>,
     repo: web::Data<DieselRepository>,
+    zmq_sender: web::Data<Arc<ZmqSender>>,
+    server_config: web::Data<ServerConfig>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    match request_store_otp(repo.get_ref(), hub_id, payload.into_inner()) {
+    let zmq_sender = zmq_sender.get_ref().as_ref();
+
+    match request_store_otp(
+        repo.get_ref(),
+        hub_id,
+        zmq_sender,
+        &server_config.sms_sender,
+        payload.into_inner(),
+    )
+    .await
+    {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(ServiceError::Form(message)) => {
             HttpResponse::UnprocessableEntity().json(json!({ "error": message }))

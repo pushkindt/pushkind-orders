@@ -12,6 +12,7 @@ use pushkind_common::db::establish_connection_pool;
 use pushkind_common::middleware::RedirectUnauthorized;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{logout, not_assigned};
+use pushkind_common::zmq::{ZmqSender, ZmqSenderOptions};
 use pushkind_orders::models::config::ServerConfig;
 use tera::Tera;
 
@@ -66,7 +67,20 @@ async fn main() -> std::io::Result<()> {
     };
 
     let crm_service_url = env::var("CRM_SERVICE_URL").unwrap_or_default();
-    let server_config = ServerConfig { crm_service_url };
+    let sms_sender = env::var("SMS_SENDER").unwrap_or("cns.shared".to_string());
+    let server_config = ServerConfig {
+        crm_service_url,
+        sms_sender,
+    };
+
+    let zmq_address = env::var("ZMQ_SMS_PUB").unwrap_or("tcp://127.0.0.1:5561".to_string());
+    let zmq_sender = match ZmqSender::start(ZmqSenderOptions::pub_default(&zmq_address)) {
+        Ok(zmq_sender) => zmq_sender,
+        Err(e) => {
+            log::error!("Failed to start ZMQ sender: {e}");
+            std::process::exit(1);
+        }
+    };
 
     let domain = env::var("DOMAIN").unwrap_or("localhost".to_string());
 
@@ -155,6 +169,7 @@ async fn main() -> std::io::Result<()> {
             )
             .app_data(web::Data::new(tera.clone()))
             .app_data(web::Data::new(repo.clone()))
+            .app_data(web::Data::new(zmq_sender.clone()))
             .app_data(web::Data::new(common_config.clone()))
             .app_data(web::Data::new(server_config.clone()))
     })

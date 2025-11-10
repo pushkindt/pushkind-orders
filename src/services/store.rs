@@ -1,6 +1,10 @@
 use chrono::{Duration, NaiveDateTime, Utc};
 use log::info;
-use pushkind_common::pagination::DEFAULT_ITEMS_PER_PAGE;
+use pushkind_common::{
+    models::sms::zmq::ZMQSendSmsMessage,
+    pagination::DEFAULT_ITEMS_PER_PAGE,
+    zmq::{ZmqSenderExt, ZmqSenderTrait},
+};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -88,9 +92,11 @@ pub struct StoreOtpVerifyResponse {
 }
 
 /// Accepts an OTP request for the given hub.
-pub fn request_store_otp<R>(
+pub async fn request_store_otp<R>(
     repo: &R,
     hub_id: i32,
+    zmq_sender: &impl ZmqSenderTrait,
+    sms_sender: &str,
     payload: StoreOtpRequestPayload,
 ) -> ServiceResult<StoreOtpAcceptResponse>
 where
@@ -110,12 +116,21 @@ where
         return Err(ServiceError::Form(OTP_THROTTLE_MESSAGE.to_string()));
     }
 
-    let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000));
+    let code = format!("{:06}", rand::rng().random_range(0..1_000_000));
     let expires_at = now + Duration::minutes(OTP_EXPIRY_MINUTES);
-    let otp_payload = NewStoreOtp::new(hub_id, request.phone.clone(), code, expires_at, now);
+    let otp_payload =
+        NewStoreOtp::new(hub_id, request.phone.clone(), code.clone(), expires_at, now);
 
     repo.upsert_store_otp(&otp_payload)
         .map_err(ServiceError::from)?;
+
+    let zmq_message = ZMQSendSmsMessage {
+        sender_id: sms_sender.to_string(),
+        phone_number: request.phone.clone(),
+        message: format!("Your OTP is {code}"),
+    };
+
+    zmq_sender.send_json(&zmq_message).await?;
 
     info!(
         "Storefront OTP request accepted for hub {hub_id} and phone {}",
@@ -437,6 +452,9 @@ mod tests {
     use crate::repository::{CustomerReader, CustomerWriter, StoreOtpRepository};
 
     use pushkind_common::repository::errors::RepositoryResult;
+    use pushkind_common::zmq::{SendFuture, ZmqSenderError, ZmqSenderTrait};
+    use serde_json;
+    use std::sync::{Arc, Mutex};
 
     fn sample_timestamp() -> NaiveDateTime {
         chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
@@ -544,10 +562,63 @@ mod tests {
         }
     }
 
-    #[test]
-    fn request_store_otp_accepts_first_request() {
+    #[derive(Clone)]
+    struct TestZmqSender {
+        recorded: Arc<Mutex<Vec<ZMQSendSmsMessage>>>,
+    }
+
+    impl TestZmqSender {
+        fn new() -> Self {
+            Self {
+                recorded: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+
+        fn messages(&self) -> Arc<Mutex<Vec<ZMQSendSmsMessage>>> {
+            Arc::clone(&self.recorded)
+        }
+    }
+
+    impl ZmqSenderTrait for TestZmqSender {
+        fn send_bytes<'a>(&'a self, bytes: Vec<u8>) -> SendFuture<'a> {
+            let recorded = Arc::clone(&self.recorded);
+            Box::pin(async move {
+                let msg: ZMQSendSmsMessage =
+                    serde_json::from_slice(&bytes).map_err(ZmqSenderError::Serialize)?;
+                recorded.lock().unwrap().push(msg);
+                Ok(())
+            })
+        }
+
+        fn try_send_bytes(&self, bytes: Vec<u8>) -> Result<(), ZmqSenderError> {
+            let msg: ZMQSendSmsMessage =
+                serde_json::from_slice(&bytes).map_err(ZmqSenderError::Serialize)?;
+            self.recorded.lock().unwrap().push(msg);
+            Ok(())
+        }
+
+        fn send_multipart<'a>(&'a self, frames: Vec<Vec<u8>>) -> SendFuture<'a> {
+            let recorded = Arc::clone(&self.recorded);
+            Box::pin(async move {
+                let mut iter = frames.into_iter();
+                iter.next();
+                if let Some(payload) = iter.next() {
+                    let msg: ZMQSendSmsMessage =
+                        serde_json::from_slice(&payload).map_err(ZmqSenderError::Serialize)?;
+                    recorded.lock().unwrap().push(msg);
+                    Ok(())
+                } else {
+                    Err(ZmqSenderError::QueueFull)
+                }
+            })
+        }
+    }
+
+    #[actix_web::rt::test]
+    async fn request_store_otp_accepts_first_request() {
+        let phone = "+15551234".to_string();
         let payload = StoreOtpRequestPayload {
-            phone: "+15551234".to_string(),
+            phone: phone.clone(),
         };
 
         let mut repo = MockStoreOtpRepository::new();
@@ -568,13 +639,26 @@ mod tests {
                 })
             });
 
-        let response = request_store_otp(&repo, 99, payload).expect("expected success");
+        let zmq_sender = TestZmqSender::new();
+        let sms_sender = "test-sms-sender".to_string();
+
+        let response = request_store_otp(&repo, 99, &zmq_sender, &sms_sender, payload)
+            .await
+            .expect("expected success");
+
+        let recorded = zmq_sender.messages();
+        let guard = recorded.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        let message = &guard[0];
+        assert_eq!(message.sender_id, sms_sender);
+        assert_eq!(message.phone_number, phone);
+        assert!(message.message.starts_with("Your OTP is "));
 
         assert!(response.success);
     }
 
-    #[test]
-    fn request_store_otp_throttles_recent_requests() {
+    #[actix_web::rt::test]
+    async fn request_store_otp_throttles_recent_requests() {
         let payload = StoreOtpRequestPayload {
             phone: "+15551234".to_string(),
         };
@@ -591,12 +675,17 @@ mod tests {
         });
         repo.expect_upsert_store_otp().never();
 
-        let result = request_store_otp(&repo, 99, payload);
+        let zmq_sender = TestZmqSender::new();
+        let sms_sender = "test-sms-sender".to_string();
+
+        let result = request_store_otp(&repo, 99, &zmq_sender, &sms_sender, payload).await;
 
         match result {
             Err(ServiceError::Form(message)) => assert_eq!(message, OTP_THROTTLE_MESSAGE),
             other => panic!("unexpected result: {:?}", other),
         }
+
+        assert!(zmq_sender.messages().lock().unwrap().is_empty());
     }
 
     #[test]
