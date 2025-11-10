@@ -1,4 +1,5 @@
 use std::env;
+use std::sync::Arc;
 
 use actix_cors::Cors;
 use actix_files::Files;
@@ -81,6 +82,7 @@ async fn main() -> std::io::Result<()> {
             std::process::exit(1);
         }
     };
+    let zmq_sender = Arc::new(zmq_sender);
 
     let domain = env::var("DOMAIN").unwrap_or("localhost".to_string());
 
