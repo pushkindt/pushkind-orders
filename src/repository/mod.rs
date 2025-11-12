@@ -168,6 +168,12 @@ pub trait CategoryReader {
         category_id: i32,
         hub_id: i32,
     ) -> RepositoryResult<Option<Category>>;
+    fn get_category_by_name_and_parent(
+        &self,
+        name: &str,
+        parent_id: Option<i32>,
+        hub_id: i32,
+    ) -> RepositoryResult<Option<Category>>;
 }
 
 /// Write operations over category records.

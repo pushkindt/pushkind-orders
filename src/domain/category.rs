@@ -3,7 +3,7 @@ use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
 /// Domain representation of a hierarchical product category belonging to a hub.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Category {
     /// Unique identifier of the category.
     pub id: i32,
@@ -26,7 +26,7 @@ pub struct Category {
 }
 
 /// Payload required to insert a new category for a hub.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NewCategory {
     /// Owning hub identifier.
     pub hub_id: i32,

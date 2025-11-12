@@ -17,8 +17,9 @@ use crate::forms::products::{
     AddProductForm, EditProductForm, EditProductUpdate, NewProductUpload, UploadProductsForm,
 };
 use crate::repository::{
-    CategoryReader, PriceLevelReader, ProductReader, ProductWriter, TagReader,
+    CategoryReader, CategoryWriter, PriceLevelReader, ProductReader, ProductWriter, TagReader,
 };
+use crate::services::categories::create_category_chain;
 use crate::services::{ServiceError, ServiceResult};
 
 /// Query parameters accepted by the products index page.
@@ -127,7 +128,7 @@ pub fn create_product<R>(
     form: AddProductForm,
 ) -> ServiceResult<Product>
 where
-    R: ProductWriter + PriceLevelReader + ?Sized,
+    R: ProductWriter + PriceLevelReader + CategoryReader + CategoryWriter + ?Sized,
 {
     if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
         return Err(ServiceError::Unauthorized);
@@ -149,7 +150,7 @@ pub fn import_products<R>(
     mut form: UploadProductsForm,
 ) -> ServiceResult<usize>
 where
-    R: ProductWriter + PriceLevelReader + ?Sized,
+    R: ProductWriter + PriceLevelReader + CategoryReader + CategoryWriter + ?Sized,
 {
     if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
         return Err(ServiceError::Unauthorized);
@@ -240,14 +241,20 @@ fn persist_new_product<R>(
     payload: NewProductUpload,
 ) -> ServiceResult<Product>
 where
-    R: ProductWriter + ?Sized,
+    R: ProductWriter + CategoryReader + CategoryWriter + ?Sized,
 {
     let NewProductUpload {
-        product,
+        mut product,
         price_levels,
         image_urls,
         tag_ids,
+        category,
     } = payload;
+
+    if let Some(category) = category {
+        let category = create_category_chain(&category, product.hub_id, repo)?;
+        product.category_id = Some(category.id);
+    }
 
     let mut created = repo.create_product(&product).map_err(ServiceError::from)?;
 
@@ -429,6 +436,7 @@ mod tests {
     use std::io::{Seek, SeekFrom, Write};
     use std::sync::{Arc, Mutex};
 
+    use crate::domain::category::{NewCategory, UpdateCategory};
     use crate::domain::{
         category::Category, price_level::PriceLevel, product::Product,
         product_price_level::ProductPriceLevelRate,
@@ -438,8 +446,8 @@ mod tests {
         UploadProductsForm,
     };
     use crate::repository::mock::{
-        MockCategoryReader, MockPriceLevelReader, MockProductReader, MockProductWriter,
-        MockTagReader,
+        MockCategoryReader, MockCategoryWriter, MockPriceLevelReader, MockProductReader,
+        MockProductWriter, MockTagReader,
     };
     use actix_multipart::form::tempfile::TempFile;
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
@@ -1319,6 +1327,7 @@ Banana,USD,7.50,
         product_writer: MockProductWriter,
         price_level_reader: MockPriceLevelReader,
         category_reader: MockCategoryReader,
+        category_writer: MockCategoryWriter,
         tag_reader: MockTagReader,
     }
 
@@ -1329,6 +1338,7 @@ Banana,USD,7.50,
                 product_writer: MockProductWriter::new(),
                 price_level_reader: MockPriceLevelReader::new(),
                 category_reader: MockCategoryReader::new(),
+                category_writer: MockCategoryWriter::new(),
                 tag_reader: MockTagReader::new(),
             }
         }
@@ -1378,6 +1388,36 @@ Banana,USD,7.50,
             hub_id: i32,
         ) -> RepositoryResult<Option<Category>> {
             self.category_reader.get_category_by_id(category_id, hub_id)
+        }
+
+        fn get_category_by_name_and_parent(
+            &self,
+            name: &str,
+            parent_id: Option<i32>,
+            hub_id: i32,
+        ) -> RepositoryResult<Option<Category>> {
+            self.category_reader
+                .get_category_by_name_and_parent(name, parent_id, hub_id)
+        }
+    }
+
+    impl CategoryWriter for FakeRepo {
+        fn create_category(&self, new_category: &NewCategory) -> RepositoryResult<Category> {
+            self.category_writer.create_category(new_category)
+        }
+
+        fn update_category(
+            &self,
+            category_id: i32,
+            hub_id: i32,
+            updates: &UpdateCategory,
+        ) -> RepositoryResult<Category> {
+            self.category_writer
+                .update_category(category_id, hub_id, updates)
+        }
+
+        fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()> {
+            self.category_writer.delete_category(category_id, hub_id)
         }
     }
 

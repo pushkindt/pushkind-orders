@@ -4,7 +4,7 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::category::{Category, CategoryTreeNode, CategoryTreeQuery};
+use crate::domain::category::{Category, CategoryTreeNode, CategoryTreeQuery, NewCategory};
 use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
 use crate::repository::{CategoryReader, CategoryWriter};
 use crate::services::{ServiceError, ServiceResult};
@@ -129,6 +129,36 @@ fn build_category_tree(categories: &[Category]) -> Vec<CategoryTreeNode> {
     build_branch(None, &children_by_parent)
 }
 
+/// Creates a chain of nested categories from a string like
+/// "Parent / Child / Grandchild".
+/// Returns the most nested child.
+/// Reuses existing categories if they exist.
+pub fn create_category_chain<R>(path: &str, hub_id: i32, repo: &R) -> ServiceResult<Category>
+where
+    R: CategoryReader + CategoryWriter + ?Sized,
+{
+    path.split('/')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .try_fold(None, |parent: Option<Category>, name| {
+            let parent_id = parent.as_ref().map(|c| c.id);
+
+            if let Some(cat) = repo.get_category_by_name_and_parent(name, parent_id, hub_id)? {
+                Ok::<Option<Category>, ServiceError>(Some(cat))
+            } else {
+                let new_category = NewCategory {
+                    hub_id,
+                    parent_id,
+                    name: name.to_owned(),
+                    ..Default::default()
+                };
+                let created = repo.create_category(&new_category)?;
+                Ok(Some(created))
+            }
+        })?
+        .ok_or(ServiceError::NotFound)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,6 +205,16 @@ mod tests {
             hub_id: i32,
         ) -> RepositoryResult<Option<Category>> {
             self.reader.get_category_by_id(category_id, hub_id)
+        }
+
+        fn get_category_by_name_and_parent(
+            &self,
+            name: &str,
+            parent_id: Option<i32>,
+            hub_id: i32,
+        ) -> RepositoryResult<Option<Category>> {
+            self.reader
+                .get_category_by_name_and_parent(name, parent_id, hub_id)
         }
     }
 
