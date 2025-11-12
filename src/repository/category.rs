@@ -89,6 +89,30 @@ impl CategoryReader for DieselRepository {
 
         Ok(category.map(DomainCategory::from))
     }
+
+    fn get_category_by_name_and_parent(
+        &self,
+        name: &str,
+        parent_id: Option<i32>,
+        hub_id: i32,
+    ) -> RepositoryResult<Option<DomainCategory>> {
+        use crate::schema::categories;
+
+        let mut conn = self.conn()?;
+
+        let mut query = categories::table
+            .filter(categories::name.eq(name))
+            .filter(categories::hub_id.eq(hub_id))
+            .into_boxed();
+
+        match parent_id {
+            Some(id) => query = query.filter(categories::parent_id.eq(id)),
+            None => query = query.filter(categories::parent_id.is_null()),
+        }
+
+        let category = query.first::<DbCategory>(&mut conn).optional()?;
+        Ok(category.map(DomainCategory::from))
+    }
 }
 
 impl CategoryWriter for DieselRepository {

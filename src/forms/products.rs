@@ -243,6 +243,7 @@ impl AddProductForm {
             price_levels: parsed_price_levels,
             image_urls: sanitize_image_urls(image_urls),
             tag_ids: sanitized_tags,
+            category: None,
         })
     }
 }
@@ -266,6 +267,8 @@ pub struct NewProductUpload {
     pub image_urls: Vec<String>,
     /// Sanitized tag identifiers submitted with the product form.
     pub tag_ids: Vec<i32>,
+    /// Optional category path for the product.
+    pub category: Option<String>,
 }
 
 /// Price level entry parsed for a newly uploaded product.
@@ -348,6 +351,11 @@ impl UploadProductsForm {
                 .and_then(|idx| record.get(idx))
                 .and_then(sanitize_text);
 
+            let category = header_indexes
+                .category_index
+                .and_then(|idx| record.get(idx))
+                .and_then(sanitize_text);
+
             let mut product = NewProduct::new(hub_id, sanitized_name, currency);
 
             if let Some(sku) = sku {
@@ -392,6 +400,7 @@ impl UploadProductsForm {
                 price_levels: parsed_price_levels,
                 image_urls: Vec::new(),
                 tag_ids: Vec::new(),
+                category,
             });
         }
 
@@ -578,6 +587,7 @@ struct ProductHeaderIndexes {
     units_index: Option<usize>,
     currency_index: Option<usize>,
     amount_index: Option<usize>,
+    category_index: Option<usize>,
 }
 
 fn locate_product_headers(headers: &StringRecord) -> ProductHeaderIndexes {
@@ -588,6 +598,7 @@ fn locate_product_headers(headers: &StringRecord) -> ProductHeaderIndexes {
         units_index: locate_header(headers, "units"),
         currency_index: locate_header(headers, "currency"),
         amount_index: locate_header(headers, "amount"),
+        category_index: locate_header(headers, "category"),
     }
 }
 
