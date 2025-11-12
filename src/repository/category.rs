@@ -89,6 +89,7 @@ impl CategoryReader for DieselRepository {
 
         Ok(category.map(DomainCategory::from))
     }
+
     fn get_category_by_name_and_parent(
         &self,
         name: &str,
@@ -99,13 +100,17 @@ impl CategoryReader for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        let category = categories::table
+        let mut query = categories::table
             .filter(categories::name.eq(name))
-            .filter(categories::parent_id.eq(parent_id))
             .filter(categories::hub_id.eq(hub_id))
-            .first::<DbCategory>(&mut conn)
-            .optional()?;
+            .into_boxed();
 
+        match parent_id {
+            Some(id) => query = query.filter(categories::parent_id.eq(id)),
+            None => query = query.filter(categories::parent_id.is_null()),
+        }
+
+        let category = query.first::<DbCategory>(&mut conn).optional()?;
         Ok(category.map(DomainCategory::from))
     }
 }
