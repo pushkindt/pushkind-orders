@@ -35,6 +35,7 @@ use pushkind_orders::routes::store::{
     get_store_product, list_store_categories, list_store_products, list_store_tags,
     request_store_auth_otp, verify_store_auth_otp,
 };
+use pushkind_orders::routes::store_session::get_store_session;
 use pushkind_orders::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
 
 #[actix_web::main]
@@ -138,7 +139,8 @@ async fn main() -> std::io::Result<()> {
                     .service(list_store_categories)
                     .service(list_store_tags)
                     .service(request_store_auth_otp)
-                    .service(verify_store_auth_otp),
+                    .service(verify_store_auth_otp)
+                    .service(get_store_session),
             )
             .service(
                 web::scope("/api")

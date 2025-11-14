@@ -1,7 +1,13 @@
 use actix_session::{Session, SessionGetError, SessionInsertError};
+use actix_web::{HttpResponse, Responder, get, web};
+use log::error;
+use serde::Deserialize;
 use thiserror::Error;
 
 use crate::domain::customer::Customer;
+use crate::repository::DieselRepository;
+use crate::services::ServiceError;
+use crate::services::store::load_store_session_customer;
 
 const STORE_SESSION_CUSTOMER_KEY: &str = "store_customer";
 
@@ -45,5 +51,45 @@ pub fn get_store_customer_for_hub(
             Ok(None)
         }
         None => Ok(None),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct HubPath {
+    hub_id: String,
+}
+
+#[get("/{hub_id}/auth/session")]
+pub async fn get_store_session(
+    path: web::Path<HubPath>,
+    repo: web::Data<DieselRepository>,
+    session: Session,
+) -> impl Responder {
+    let hub_id = match path.into_inner().hub_id.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+
+    let session_customer = match get_store_customer_for_hub(&session, hub_id) {
+        Ok(Some(customer)) => customer,
+        Ok(None) => return HttpResponse::Unauthorized().finish(),
+        Err(err) => {
+            error!("Failed to read store session for hub {hub_id}: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    match load_store_session_customer(repo.get_ref(), &session_customer) {
+        Ok(customer) => HttpResponse::Ok().json(customer),
+        Err(ServiceError::Unauthorized) => {
+            if let Err(err) = clear_store_customer(&session) {
+                error!("Failed to clear store session cookie for hub {hub_id}: {err}");
+            }
+            HttpResponse::Unauthorized().finish()
+        }
+        Err(err) => {
+            error!("Failed to validate store session customer for hub {hub_id}: {err}");
+            HttpResponse::InternalServerError().finish()
+        }
     }
 }
