@@ -434,6 +434,19 @@ where
     Ok(formatted)
 }
 
+/// Ensures the customer stored in the store session still exists in the database.
+pub fn load_store_session_customer<R>(
+    repo: &R,
+    session_customer: &Customer,
+) -> ServiceResult<Customer>
+where
+    R: CustomerReader + ?Sized,
+{
+    repo.get_customer_by_id(session_customer.id, session_customer.hub_id)
+        .map_err(ServiceError::from)?
+        .ok_or(ServiceError::Unauthorized)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -560,6 +573,32 @@ mod tests {
             phone: "+15551234".to_string(),
             price_level_id: None,
         }
+    }
+
+    #[test]
+    fn load_store_session_customer_returns_database_customer() {
+        let mut repo = MockCustomerReader::new();
+        let expected = sample_customer();
+        let match_sample = expected.clone();
+        let return_sample = expected.clone();
+        repo.expect_get_customer_by_id()
+            .withf(move |id, hub_id| *id == match_sample.id && *hub_id == match_sample.hub_id)
+            .return_once(move |_, _| Ok(Some(return_sample)));
+
+        let customer = load_store_session_customer(&repo, &expected).expect("expected customer");
+
+        assert_eq!(customer, expected);
+    }
+
+    #[test]
+    fn load_store_session_customer_rejects_missing_customer() {
+        let mut repo = MockCustomerReader::new();
+        repo.expect_get_customer_by_id()
+            .return_once(|_, _| Ok(None));
+
+        let result = load_store_session_customer(&repo, &sample_customer());
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
 
     #[derive(Clone)]
