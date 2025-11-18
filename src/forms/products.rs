@@ -172,8 +172,6 @@ impl AddProductForm {
 
         let sanitized_sku = sku.as_deref().and_then(sanitize_text);
 
-        let sanitized_description = description.as_deref().and_then(sanitize_text);
-
         let sanitized_units = units.as_deref().and_then(sanitize_text);
 
         let currency = sanitize_text(&currency)
@@ -186,8 +184,8 @@ impl AddProductForm {
             new_product = new_product.with_sku(sku);
         }
 
-        if let Some(description) = sanitized_description {
-            new_product = new_product.with_description(description);
+        if let Some(description) = description {
+            new_product = new_product.with_description(ammonia::clean(&description));
         }
 
         if let Some(units) = sanitized_units {
@@ -363,7 +361,7 @@ impl UploadProductsForm {
             }
 
             if let Some(description) = description {
-                product = product.with_description(description);
+                product = product.with_description(ammonia::clean(&description));
             }
 
             if let Some(units) = units {
@@ -511,10 +509,8 @@ impl EditProductForm {
             updates = updates.with_sku(sanitized);
         }
 
-        if let Some(description) = description
-            && let Some(sanitized) = sanitize_text(&description)
-        {
-            updates = updates.with_description(sanitized);
+        if let Some(description) = description {
+            updates = updates.with_description(ammonia::clean(&description));
         }
 
         if let Some(units) = units
@@ -724,7 +720,7 @@ mod tests {
         assert_eq!(payload.product.sku.as_deref(), Some("sku-001"));
         assert_eq!(
             payload.product.description.as_deref(),
-            Some("First line.\n\n Second line.")
+            Some(" First line.\n\n Second line.  ")
         );
         assert_eq!(payload.product.units.as_deref(), Some("Box"));
         assert_eq!(payload.product.currency, "USD");
@@ -995,7 +991,10 @@ Banana,usd,,Ripe banana,,8.50,
 
         assert_eq!(updates.name.as_str(), "Premium  Widget");
         assert!(updates.sku.is_none());
-        assert_eq!(updates.description.as_deref(), Some("Updated description."));
+        assert_eq!(
+            updates.description.as_deref(),
+            Some(" Updated description. \n\n ")
+        );
         assert_eq!(updates.units.as_deref(), Some("ea"));
         assert_eq!(updates.currency.as_str(), "EUR");
         assert!(updates.is_archived);

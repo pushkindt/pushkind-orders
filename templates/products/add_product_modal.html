@@ -23,14 +23,6 @@
                         </div>
                     </div>
                     <div class="row mb-3">
-                        <label for="productDescription" class="col-md-3 col-form-label">Описание</label>
-                        <div class="col-md-9">
-                            <textarea name="description" class="form-control" id="productDescription" rows="4"
-                                placeholder="Краткое описание товара"></textarea>
-                            <div class="form-text">Дополнительная информация, отображаемая покупателю.</div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
                         <label for="productImageUrls" class="col-md-3 col-form-label">Ссылки на изображения</label>
                         <div class="col-md-9">
                             <textarea name="image_urls" class="form-control" id="productImageUrls" rows="4"
@@ -123,6 +115,7 @@
                         </div>
                     </div>
                     {% endif %}
+                    {{ macros::markdown(id=0) }}
                     <div class="row mb-3">
                         <div class="col">
                             <button class="btn btn-primary" type="submit">Сохранить</button>
