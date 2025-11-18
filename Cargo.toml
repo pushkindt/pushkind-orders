@@ -37,6 +37,7 @@ actix-cors = "0.7.1"
 serde_qs = { version = "0.15.0" }
 phonenumber = "0.3"
 rand = "0.9.2"
+ammonia = "4.1.2"
 
 [dev-dependencies]
 diesel_migrations = "2.2.0"

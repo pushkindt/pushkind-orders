@@ -58,7 +58,7 @@
         </div>
         <div class="col-lg col-12">
             <span class="d-lg-none fw-bold">Описание:</span>
-            {{ product.description | default(value="—") }}
+            {{ product.description | default(value="") | safe }}
         </div>
         <div class="col-lg-1 col-6">
             <span class="d-lg-none fw-bold">Ед. изм.:</span>

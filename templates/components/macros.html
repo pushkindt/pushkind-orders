@@ -54,9 +54,9 @@
     </ul>
     <div class="tab-content mb-1" data-markdown-editor>
         <div class="tab-pane fade show active" id="editor-tab-pane{{id}}" role="tabpanel" aria-labelledby="editor-tab{{id}}" tabindex="0">
-            <textarea autofocus class="form-control border-top-0 rounded-top-0" rows="10" data-markdown-input required
-                placeholder="Содержание в формате markdown">{{message | default(value='') | safe}}</textarea>
-            <input type="hidden" name="message" required value="{{message | default(value='')}}"
+            <textarea id="editor-textarea{{id}}" autofocus class="form-control border-top-0 rounded-top-0" rows="10" data-markdown-input required
+                placeholder="Описание в формате markdown">{{message | default(value='') | safe}}</textarea>
+            <input type="hidden" name="description" required value="{{message | default(value='')}}"
                 data-markdown-output>
         </div>
         <div class="tab-pane fade" id="preview-tab-pane{{id}}" role="tabpanel" aria-labelledby="preview-tab{{id}}" tabindex="0" data-markdown-preview>

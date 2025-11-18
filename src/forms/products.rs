@@ -172,8 +172,6 @@ impl AddProductForm {
 
         let sanitized_sku = sku.as_deref().and_then(sanitize_text);
 
-        let sanitized_description = description.as_deref().and_then(sanitize_text);
-
         let sanitized_units = units.as_deref().and_then(sanitize_text);
 
         let currency = sanitize_text(&currency)
@@ -186,8 +184,8 @@ impl AddProductForm {
             new_product = new_product.with_sku(sku);
         }
 
-        if let Some(description) = sanitized_description {
-            new_product = new_product.with_description(description);
+        if let Some(description) = description {
+            new_product = new_product.with_description(ammonia::clean(&description));
         }
 
         if let Some(units) = sanitized_units {
@@ -363,7 +361,7 @@ impl UploadProductsForm {
             }
 
             if let Some(description) = description {
-                product = product.with_description(description);
+                product = product.with_description(ammonia::clean(&description));
             }
 
             if let Some(units) = units {
@@ -511,10 +509,8 @@ impl EditProductForm {
             updates = updates.with_sku(sanitized);
         }
 
-        if let Some(description) = description
-            && let Some(sanitized) = sanitize_text(&description)
-        {
-            updates = updates.with_description(sanitized);
+        if let Some(description) = description {
+            updates = updates.with_description(ammonia::clean(&description));
         }
 
         if let Some(units) = units

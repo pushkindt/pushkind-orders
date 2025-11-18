@@ -29,16 +29,6 @@
                         </div>
                     </div>
                     <div class="row mb-3">
-                        <label for="editProductDescription" class="col-md-3 col-form-label">Описание</label>
-                        <div class="col-md-9">
-                            <textarea name="description" class="form-control" id="editProductDescription" rows="4"
-                                      placeholder="Краткое описание товара"></textarea>
-                            <div class="form-text">
-                                Удалите текст, чтобы очистить описание.
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
                         <label for="editProductImageUrls" class="col-md-3 col-form-label">Ссылки на изображения</label>
                         <div class="col-md-9">
                             <textarea name="image_urls" class="form-control" id="editProductImageUrls" rows="4"
@@ -144,6 +134,7 @@
                         </div>
                     </div>
                     {% endif %}
+                    {{ macros::markdown(id=1) }}
                     <div class="row">
                         <div class="col">
                             <div class="form-check">
@@ -178,7 +169,7 @@
         const idInput = modalElement.querySelector("#editProductId");
         const nameInput = modalElement.querySelector("#editProductName");
         const skuInput = modalElement.querySelector("#editProductSku");
-        const descriptionInput = modalElement.querySelector("#editProductDescription");
+        const descriptionInput = modalElement.querySelector("#editor-textarea1");
         const imageUrlsInput = modalElement.querySelector("#editProductImageUrls");
         const unitsInput = modalElement.querySelector("#editProductUnits");
         const amountInput = modalElement.querySelector("#editProductAmount");
@@ -216,6 +207,15 @@
             });
         }
 
+        const triggerMarkdownRender = (input) => {
+            if (!input) {
+                return;
+            }
+
+            const updateEvent = new Event("input", { bubbles: true });
+            input.dispatchEvent(updateEvent);
+        };
+
         modalElement.addEventListener("show.bs.modal", (event) => {
             const trigger = event.relatedTarget;
             if (!trigger || !form || !idInput || !nameInput || !currencyInput || !archivedInput) {
@@ -227,6 +227,7 @@
             nameInput.value = dataset.productName || "";
             skuInput.value = dataset.productSku || "";
             descriptionInput.value = dataset.productDescription || "";
+            triggerMarkdownRender(descriptionInput);
             if (imageUrlsInput) {
                 imageUrlsInput.value = dataset.productImageUrls || "";
             }
@@ -299,6 +300,7 @@
             }
             if (descriptionInput) {
                 descriptionInput.value = "";
+                triggerMarkdownRender(descriptionInput);
             }
             if (unitsInput) {
                 unitsInput.value = "";
