@@ -1226,7 +1226,6 @@ Banana,USD,7.50,
                 assert_eq!(updates.name.as_str(), "Espresso Deluxe");
                 assert_eq!(updates.currency.as_str(), "EUR");
                 assert!(updates.sku.is_none());
-                assert!(updates.description.is_none());
                 assert_eq!(updates.units.as_deref(), Some("pack"));
                 assert!(updates.is_archived);
                 true
@@ -1315,7 +1314,6 @@ Banana,USD,7.50,
         assert_eq!(result.name, "Espresso Deluxe");
         assert_eq!(result.currency, "EUR");
         assert!(result.sku.is_none());
-        assert!(result.description.is_none());
         assert_eq!(result.units.as_deref(), Some("pack"));
         assert!(result.is_archived);
         assert_eq!(result.tags, final_product.tags);

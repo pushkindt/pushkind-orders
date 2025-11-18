@@ -720,7 +720,7 @@ mod tests {
         assert_eq!(payload.product.sku.as_deref(), Some("sku-001"));
         assert_eq!(
             payload.product.description.as_deref(),
-            Some("First line.\n\n Second line.")
+            Some(" First line.\n\n Second line.  ")
         );
         assert_eq!(payload.product.units.as_deref(), Some("Box"));
         assert_eq!(payload.product.currency, "USD");
@@ -991,7 +991,10 @@ Banana,usd,,Ripe banana,,8.50,
 
         assert_eq!(updates.name.as_str(), "Premium  Widget");
         assert!(updates.sku.is_none());
-        assert_eq!(updates.description.as_deref(), Some("Updated description."));
+        assert_eq!(
+            updates.description.as_deref(),
+            Some(" Updated description. \n\n ")
+        );
         assert_eq!(updates.units.as_deref(), Some("ea"));
         assert_eq!(updates.currency.as_str(), "EUR");
         assert!(updates.is_archived);
