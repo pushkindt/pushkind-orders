@@ -13,6 +13,7 @@ use crate::domain::{
     customer::{Customer, NewCustomer},
     price_level::PriceLevelListQuery,
     product::{Product, ProductListQuery},
+    product_price_level::ProductPriceLevelRate,
     store_otp::NewStoreOtp,
     tag::{Tag, TagListQuery},
 };
@@ -234,7 +235,35 @@ pub struct StoreProduct {
 }
 
 impl StoreProduct {
-    fn from_domain(value: Product, price_level_id: Option<i32>) -> Self {
+    fn resolve_price_cents(
+        price_levels: &[ProductPriceLevelRate],
+        customer_price_level_id: Option<i32>,
+        default_price_level_id: Option<i32>,
+    ) -> Option<i32> {
+        if let Some(level_id) = customer_price_level_id
+            && let Some(rate) = price_levels
+                .iter()
+                .find(|rate| rate.price_level_id == level_id)
+        {
+            return Some(rate.price_cents);
+        }
+
+        if let Some(level_id) = default_price_level_id
+            && let Some(rate) = price_levels
+                .iter()
+                .find(|rate| rate.price_level_id == level_id)
+        {
+            return Some(rate.price_cents);
+        }
+
+        None
+    }
+
+    fn from_domain(
+        value: Product,
+        customer_price_level_id: Option<i32>,
+        default_price_level_id: Option<i32>,
+    ) -> Self {
         let Product {
             id,
             hub_id: _,
@@ -253,12 +282,11 @@ impl StoreProduct {
             amount,
         } = value;
 
-        let price_cents = price_level_id.and_then(|level_id| {
-            price_levels
-                .iter()
-                .find(|rate| rate.price_level_id == level_id)
-                .map(|rate| rate.price_cents)
-        });
+        let price_cents = Self::resolve_price_cents(
+            &price_levels,
+            customer_price_level_id,
+            default_price_level_id,
+        );
 
         Self {
             id,
@@ -279,7 +307,7 @@ impl StoreProduct {
 
 impl From<Product> for StoreProduct {
     fn from(value: Product) -> Self {
-        Self::from_domain(value, None)
+        Self::from_domain(value, None, None)
     }
 }
 
@@ -370,9 +398,7 @@ where
     R: ProductReader + PriceLevelReader + ?Sized,
 {
     let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
-    let effective_price_level_id = store_customer
-        .and_then(|customer| customer.price_level_id)
-        .or(default_price_level_id);
+    let customer_price_level_id = store_customer.and_then(|customer| customer.price_level_id);
 
     let products = repo
         .list_products(filters.into_query(hub_id))
@@ -382,7 +408,9 @@ where
     let filtered = products
         .into_iter()
         .filter(|product| !product.is_archived)
-        .map(|product| StoreProduct::from_domain(product, effective_price_level_id))
+        .map(|product| {
+            StoreProduct::from_domain(product, customer_price_level_id, default_price_level_id)
+        })
         .collect();
 
     Ok(filtered)
@@ -408,13 +436,12 @@ where
     };
 
     let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
-    let effective_price_level_id = store_customer
-        .and_then(|customer| customer.price_level_id)
-        .or(default_price_level_id);
+    let customer_price_level_id = store_customer.and_then(|customer| customer.price_level_id);
 
     Ok(Some(StoreProduct::from_domain(
         product,
-        effective_price_level_id,
+        customer_price_level_id,
+        default_price_level_id,
     )))
 }
 
@@ -1188,6 +1215,82 @@ mod tests {
     }
 
     #[test]
+    fn load_store_products_falls_back_to_default_when_customer_rate_absent() {
+        let mut product_reader = MockProductReader::new();
+        let products = vec![Product {
+            id: 1,
+            hub_id: 1,
+            name: "Coffee".to_string(),
+            sku: Some("SKU-1".to_string()),
+            description: Some("Fresh beans".to_string()),
+            units: Some("kg".to_string()),
+            currency: "USD".to_string(),
+            is_archived: false,
+            category_id: Some(1),
+            price_levels: vec![ProductPriceLevelRate {
+                id: 1,
+                product_id: 1,
+                price_level_id: 10,
+                price_cents: 450,
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            }],
+            tags: vec![],
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+            image_urls: Vec::new(),
+            amount: None,
+        }];
+
+        let product_clone = products.clone();
+        product_reader
+            .expect_list_products()
+            .withf(|query| {
+                query.hub_id == 1
+                    && !query.include_archived
+                    && query.only_without_category
+                    && query.category_id.is_none()
+            })
+            .return_once(move |_| Ok((1, product_clone)));
+
+        let mut price_level_reader = MockPriceLevelReader::new();
+        let price_levels = vec![
+            PriceLevel {
+                id: 10,
+                hub_id: 1,
+                name: "Default".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: true,
+            },
+            PriceLevel {
+                id: 11,
+                hub_id: 1,
+                name: "Premium".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: false,
+            },
+        ];
+
+        price_level_reader
+            .expect_list_price_levels()
+            .withf(|query| query.hub_id == 1)
+            .return_once(move |_| Ok((2, price_levels.clone())));
+
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+
+        let mut customer = sample_customer();
+        customer.hub_id = 1;
+        customer.price_level_id = Some(11);
+
+        let result = load_store_products(&repo, 1, StoreProductFilters::default(), Some(&customer))
+            .expect("load products for authenticated customer");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].price_cents, Some(450));
+    }
+
+    #[test]
     fn load_store_product_fetches_active_product() {
         let mut product_reader = MockProductReader::new();
         let product = Product {
@@ -1356,6 +1459,74 @@ mod tests {
         let result = load_store_product(&repo, 1, 7, Some(&customer)).expect("load single product");
         let product = result.expect("product should be present");
         assert_eq!(product.price_cents, Some(500));
+    }
+
+    #[test]
+    fn load_store_product_falls_back_to_default_when_customer_rate_absent() {
+        let mut product_reader = MockProductReader::new();
+        let product = Product {
+            id: 7,
+            hub_id: 1,
+            name: "Latte".to_string(),
+            sku: Some("SKU-LATTE".to_string()),
+            description: Some("Steamed milk with espresso".to_string()),
+            units: Some("cup".to_string()),
+            currency: "USD".to_string(),
+            is_archived: false,
+            category_id: Some(3),
+            price_levels: vec![ProductPriceLevelRate {
+                id: 1,
+                product_id: 7,
+                price_level_id: 10,
+                price_cents: 450,
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            }],
+            tags: vec![],
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+            image_urls: Vec::new(),
+            amount: None,
+        };
+
+        product_reader
+            .expect_get_product_by_id()
+            .withf(|id, hub_id| *id == 7 && *hub_id == 1)
+            .return_once(move |_, _| Ok(Some(product.clone())));
+
+        let mut price_level_reader = MockPriceLevelReader::new();
+        let price_levels = vec![
+            PriceLevel {
+                id: 10,
+                hub_id: 1,
+                name: "Default".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: true,
+            },
+            PriceLevel {
+                id: 11,
+                hub_id: 1,
+                name: "Premium".to_string(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+                is_default: false,
+            },
+        ];
+        price_level_reader
+            .expect_list_price_levels()
+            .withf(|query| query.hub_id == 1)
+            .return_once(move |_| Ok((2, price_levels.clone())));
+
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+
+        let mut customer = sample_customer();
+        customer.hub_id = 1;
+        customer.price_level_id = Some(11);
+
+        let result = load_store_product(&repo, 1, 7, Some(&customer)).expect("load single product");
+        let product = result.expect("product should be present");
+        assert_eq!(product.price_cents, Some(450));
     }
 
     #[test]
