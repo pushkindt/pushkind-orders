@@ -216,6 +216,7 @@ impl ProductListQuery {
 
     /// Filter the results by a search term applied to the name or description.
     pub fn search(mut self, term: impl Into<String>) -> Self {
+        self.only_without_category = false;
         self.search = Some(term.into());
         self
     }
