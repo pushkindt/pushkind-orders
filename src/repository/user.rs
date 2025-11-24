@@ -39,35 +39,26 @@ impl UserReader for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        let mut count_query = users::table
-            .filter(users::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let query_builder = || {
+            let mut items = users::table
+                .filter(users::hub_id.eq(query.hub_id))
+                .into_boxed::<diesel::sqlite::Sqlite>();
 
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            count_query = count_query.filter(
-                users::name
-                    .like(pattern.clone())
-                    .or(users::email.like(pattern)),
-            );
-        }
+            if let Some(term) = query.search.as_ref() {
+                let pattern = format!("%{}%", term);
+                items = items.filter(
+                    users::name
+                        .like(pattern.clone())
+                        .or(users::email.like(pattern)),
+                );
+            }
 
-        let total = count_query.count().get_result::<i64>(&mut conn)? as usize;
+            items
+        };
 
-        let mut items = users::table
-            .filter(users::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let total = query_builder().count().get_result::<i64>(&mut conn)? as usize;
 
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            items = items.filter(
-                users::name
-                    .like(pattern.clone())
-                    .or(users::email.like(pattern)),
-            );
-        }
-
-        items = items.order(users::created_at.desc());
+        let mut items = query_builder().order(users::created_at.desc());
 
         if let Some(pagination) = &query.pagination {
             let offset = ((pagination.page.max(1) - 1) * pagination.per_page) as i64;

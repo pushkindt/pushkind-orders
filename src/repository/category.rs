@@ -21,49 +21,36 @@ impl CategoryReader for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        let mut count_query = categories::table
-            .filter(categories::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let query_builder = || {
+            let mut items = categories::table
+                .filter(categories::hub_id.eq(query.hub_id))
+                .into_boxed::<diesel::sqlite::Sqlite>();
 
-        if !query.include_archived {
-            count_query = count_query.filter(categories::is_archived.eq(false));
-        }
+            if !query.include_archived {
+                items = items.filter(categories::is_archived.eq(false));
+            }
 
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            count_query = count_query.filter(
-                categories::name
-                    .like(pattern.clone())
-                    .or(categories::description.like(pattern)),
-            );
-        }
+            if let Some(term) = query.search.as_ref() {
+                let pattern = format!("%{}%", term);
+                items = items.filter(
+                    categories::name
+                        .like(pattern.clone())
+                        .or(categories::description.like(pattern)),
+                );
+            }
 
-        let total = count_query.count().get_result::<i64>(&mut conn)? as usize;
+            items
+        };
 
-        let mut items_query = categories::table
-            .filter(categories::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let total = query_builder().count().get_result::<i64>(&mut conn)? as usize;
 
-        if !query.include_archived {
-            items_query = items_query.filter(categories::is_archived.eq(false));
-        }
-
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            items_query = items_query.filter(
-                categories::name
-                    .like(pattern.clone())
-                    .or(categories::description.like(pattern)),
-            );
-        }
-
-        items_query = items_query.order((categories::parent_id.asc(), categories::name.asc()));
+        let mut items_query =
+            query_builder().order((categories::parent_id.asc(), categories::name.asc()));
 
         if let Some(pagination) = &query.pagination {
-            let page = pagination.page.max(1);
-            let per_page = pagination.per_page as i64;
-            let offset = ((page - 1) * pagination.per_page) as i64;
-            items_query = items_query.offset(offset).limit(per_page);
+            let offset = ((pagination.page.max(1) - 1) * pagination.per_page) as i64;
+            let limit = pagination.per_page as i64;
+            items_query = items_query.offset(offset).limit(limit);
         }
 
         let categories = items_query.load::<DbCategory>(&mut conn)?;

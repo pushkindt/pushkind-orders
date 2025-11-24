@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
+use diesel::dsl::exists;
 use diesel::prelude::*;
+use diesel::sql_types::{Bool, Text};
 use diesel::sqlite::SqliteConnection;
+use pushkind_common::repository::build_fts_match_query;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
@@ -56,71 +59,51 @@ impl ProductReader for DieselRepository {
         &self,
         query: ProductListQuery,
     ) -> RepositoryResult<(usize, Vec<DomainProduct>)> {
-        use crate::schema::products;
+        use crate::schema::{product_fts, products};
 
         let mut conn = self.conn()?;
 
-        let mut count_query = products::table
-            .filter(products::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let query_builder = || {
+            let mut items = products::table
+                .filter(products::hub_id.eq(query.hub_id))
+                .into_boxed::<diesel::sqlite::Sqlite>();
+            if !query.include_archived {
+                items = items.filter(products::is_archived.eq(false));
+            }
 
-        if !query.include_archived {
-            count_query = count_query.filter(products::is_archived.eq(false));
-        }
+            if query.only_without_category {
+                items = items.filter(products::category_id.is_null());
+            }
 
-        if query.only_without_category {
-            count_query = count_query.filter(products::category_id.is_null());
-        }
+            if let Some(category_id) = query.category_id {
+                items = items.filter(products::category_id.eq(Some(category_id)));
+            }
 
-        if let Some(category_id) = query.category_id {
-            count_query = count_query.filter(products::category_id.eq(Some(category_id)));
-        }
+            if let Some(term) = query.search.as_ref()
+                && let Some(fts_query) = build_fts_match_query(term)
+            {
+                let fts_filter = exists(
+                    product_fts::table
+                        .filter(product_fts::rowid.eq(products::id))
+                        .filter(
+                            diesel::dsl::sql::<Bool>("product_fts MATCH ")
+                                .bind::<Text, _>(fts_query),
+                        ),
+                );
+                items = items.filter(fts_filter);
+            }
 
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            count_query = count_query.filter(
-                products::name
-                    .like(pattern.clone())
-                    .or(products::description.like(pattern)),
-            );
-        }
+            if let Some(sku) = query.sku.as_ref() {
+                items = items.filter(products::sku.eq(sku));
+            }
+            items
+        };
 
-        if let Some(sku) = query.sku.as_ref() {
-            count_query = count_query.filter(products::sku.eq(sku));
-        }
+        // Get the total count before applying pagination
+        let total = query_builder().count().get_result::<i64>(&mut conn)? as usize;
 
-        let total = count_query.count().get_result::<i64>(&mut conn)? as usize;
-
-        let mut items = products::table
-            .filter(products::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
-
-        if !query.include_archived {
-            items = items.filter(products::is_archived.eq(false));
-        }
-
-        if query.only_without_category {
-            items = items.filter(products::category_id.is_null());
-        }
-
-        if let Some(category_id) = query.category_id {
-            items = items.filter(products::category_id.eq(Some(category_id)));
-        }
-
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            items = items.filter(
-                products::name
-                    .like(pattern.clone())
-                    .or(products::description.like(pattern)),
-            );
-        }
-
-        if let Some(sku) = query.sku.as_ref() {
-            items = items.filter(products::sku.eq(sku));
-        }
-
-        items = items.order((products::is_archived.asc(), products::created_at.desc()));
+        let mut items =
+            query_builder().order((products::is_archived.asc(), products::created_at.desc()));
 
         if let Some(pagination) = &query.pagination {
             let offset = ((pagination.page.max(1) - 1) * pagination.per_page) as i64;
