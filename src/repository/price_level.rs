@@ -39,27 +39,23 @@ impl PriceLevelReader for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        let mut count_query = price_levels::table
-            .filter(price_levels::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let query_builder = || {
+            let mut items = price_levels::table
+                .filter(price_levels::hub_id.eq(query.hub_id))
+                .into_boxed::<diesel::sqlite::Sqlite>();
 
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            count_query = count_query.filter(price_levels::name.like(pattern.clone()));
-        }
+            if let Some(term) = query.search.as_ref() {
+                let pattern = format!("%{}%", term);
+                items = items.filter(price_levels::name.like(pattern.clone()));
+            }
 
-        let total = count_query.count().get_result::<i64>(&mut conn)? as usize;
+            items
+        };
 
-        let mut items = price_levels::table
-            .filter(price_levels::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let total = query_builder().count().get_result::<i64>(&mut conn)? as usize;
 
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            items = items.filter(price_levels::name.like(pattern.clone()));
-        }
-
-        items = items.order((price_levels::name.asc(), price_levels::created_at.asc()));
+        let mut items =
+            query_builder().order((price_levels::name.asc(), price_levels::created_at.asc()));
 
         if let Some(pagination) = &query.pagination {
             let offset = ((pagination.page.max(1) - 1) * pagination.per_page) as i64;
