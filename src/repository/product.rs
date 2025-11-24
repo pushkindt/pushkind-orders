@@ -60,67 +60,42 @@ impl ProductReader for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        let mut count_query = products::table
-            .filter(products::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let query_builder = || {
+            let mut items = products::table
+                .filter(products::hub_id.eq(query.hub_id))
+                .into_boxed::<diesel::sqlite::Sqlite>();
+            if !query.include_archived {
+                items = items.filter(products::is_archived.eq(false));
+            }
 
-        if !query.include_archived {
-            count_query = count_query.filter(products::is_archived.eq(false));
-        }
+            if query.only_without_category {
+                items = items.filter(products::category_id.is_null());
+            }
 
-        if query.only_without_category {
-            count_query = count_query.filter(products::category_id.is_null());
-        }
+            if let Some(category_id) = query.category_id {
+                items = items.filter(products::category_id.eq(Some(category_id)));
+            }
 
-        if let Some(category_id) = query.category_id {
-            count_query = count_query.filter(products::category_id.eq(Some(category_id)));
-        }
+            if let Some(term) = query.search.as_ref() {
+                let pattern = format!("%{}%", term);
+                items = items.filter(
+                    products::name
+                        .like(pattern.clone())
+                        .or(products::description.like(pattern)),
+                );
+            }
 
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            count_query = count_query.filter(
-                products::name
-                    .like(pattern.clone())
-                    .or(products::description.like(pattern)),
-            );
-        }
+            if let Some(sku) = query.sku.as_ref() {
+                items = items.filter(products::sku.eq(sku));
+            }
+            items
+        };
 
-        if let Some(sku) = query.sku.as_ref() {
-            count_query = count_query.filter(products::sku.eq(sku));
-        }
+        // Get the total count before applying pagination
+        let total = query_builder().count().get_result::<i64>(&mut conn)? as usize;
 
-        let total = count_query.count().get_result::<i64>(&mut conn)? as usize;
-
-        let mut items = products::table
-            .filter(products::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
-
-        if !query.include_archived {
-            items = items.filter(products::is_archived.eq(false));
-        }
-
-        if query.only_without_category {
-            items = items.filter(products::category_id.is_null());
-        }
-
-        if let Some(category_id) = query.category_id {
-            items = items.filter(products::category_id.eq(Some(category_id)));
-        }
-
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            items = items.filter(
-                products::name
-                    .like(pattern.clone())
-                    .or(products::description.like(pattern)),
-            );
-        }
-
-        if let Some(sku) = query.sku.as_ref() {
-            items = items.filter(products::sku.eq(sku));
-        }
-
-        items = items.order((products::is_archived.asc(), products::created_at.desc()));
+        let mut items =
+            query_builder().order((products::is_archived.asc(), products::created_at.desc()));
 
         if let Some(pagination) = &query.pagination {
             let offset = ((pagination.page.max(1) - 1) * pagination.per_page) as i64;
