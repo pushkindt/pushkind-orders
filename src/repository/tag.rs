@@ -13,33 +13,27 @@ impl TagReader for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        let mut count_query = tags::table
-            .filter(tags::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let query_builder = || {
+            let mut items = tags::table
+                .filter(tags::hub_id.eq(query.hub_id))
+                .into_boxed::<diesel::sqlite::Sqlite>();
 
-        if let Some(search) = query.search.as_ref() {
-            let pattern = format!("%{}%", search);
-            count_query = count_query.filter(tags::name.like(pattern.clone()));
-        }
+            if let Some(search) = query.search.as_ref() {
+                let pattern = format!("%{}%", search);
+                items = items.filter(tags::name.like(pattern.clone()));
+            }
 
-        let total = count_query.count().get_result::<i64>(&mut conn)? as usize;
+            items
+        };
 
-        let mut items_query = tags::table
-            .filter(tags::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let total = query_builder().count().get_result::<i64>(&mut conn)? as usize;
 
-        if let Some(search) = query.search.as_ref() {
-            let pattern = format!("%{}%", search);
-            items_query = items_query.filter(tags::name.like(pattern));
-        }
-
-        items_query = items_query.order(tags::name.asc());
+        let mut items_query = query_builder().order(tags::name.asc());
 
         if let Some(pagination) = &query.pagination {
-            let page = pagination.page.max(1);
-            let per_page = pagination.per_page as i64;
-            let offset = ((page - 1) * pagination.per_page) as i64;
-            items_query = items_query.offset(offset).limit(per_page);
+            let offset = ((pagination.page.max(1) - 1) * pagination.per_page) as i64;
+            let limit = pagination.per_page as i64;
+            items_query = items_query.offset(offset).limit(limit);
         }
 
         let db_tags = items_query.load::<DbTag>(&mut conn)?;
