@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
+use diesel::dsl::exists;
 use diesel::prelude::*;
+use diesel::sql_types::{Bool, Text};
 use diesel::sqlite::SqliteConnection;
+use pushkind_common::repository::build_fts_match_query;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
@@ -56,7 +59,7 @@ impl ProductReader for DieselRepository {
         &self,
         query: ProductListQuery,
     ) -> RepositoryResult<(usize, Vec<DomainProduct>)> {
-        use crate::schema::products;
+        use crate::schema::{product_fts, products};
 
         let mut conn = self.conn()?;
 
@@ -76,13 +79,18 @@ impl ProductReader for DieselRepository {
                 items = items.filter(products::category_id.eq(Some(category_id)));
             }
 
-            if let Some(term) = query.search.as_ref() {
-                let pattern = format!("%{}%", term);
-                items = items.filter(
-                    products::name
-                        .like(pattern.clone())
-                        .or(products::description.like(pattern)),
+            if let Some(term) = query.search.as_ref()
+                && let Some(fts_query) = build_fts_match_query(term)
+            {
+                let fts_filter = exists(
+                    product_fts::table
+                        .filter(product_fts::rowid.eq(products::id))
+                        .filter(
+                            diesel::dsl::sql::<Bool>("product_fts MATCH ")
+                                .bind::<Text, _>(fts_query),
+                        ),
                 );
+                items = items.filter(fts_filter);
             }
 
             if let Some(sku) = query.sku.as_ref() {
