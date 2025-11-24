@@ -68,43 +68,30 @@ impl CustomerReader for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        let mut count_query = customers::table
-            .filter(customers::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let query_builder = || {
+            let mut items = customers::table
+                .filter(customers::hub_id.eq(query.hub_id))
+                .into_boxed::<diesel::sqlite::Sqlite>();
 
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            count_query = count_query.filter(
-                customers::name
-                    .like(pattern.clone())
-                    .or(customers::email.like(pattern)),
-            );
-        }
+            if let Some(term) = query.search.as_ref() {
+                let pattern = format!("%{}%", term);
+                items = items.filter(
+                    customers::name
+                        .like(pattern.clone())
+                        .or(customers::email.like(pattern)),
+                );
+            }
 
-        if let Some(price_level_id) = query.price_level_id {
-            count_query = count_query.filter(customers::price_level_id.eq(price_level_id));
-        }
+            if let Some(price_level_id) = query.price_level_id {
+                items = items.filter(customers::price_level_id.eq(price_level_id));
+            }
 
-        let total = count_query.count().get_result::<i64>(&mut conn)? as usize;
+            items
+        };
 
-        let mut items = customers::table
-            .filter(customers::hub_id.eq(query.hub_id))
-            .into_boxed::<diesel::sqlite::Sqlite>();
+        let total = query_builder().count().get_result::<i64>(&mut conn)? as usize;
 
-        if let Some(term) = query.search.as_ref() {
-            let pattern = format!("%{}%", term);
-            items = items.filter(
-                customers::name
-                    .like(pattern.clone())
-                    .or(customers::email.like(pattern)),
-            );
-        }
-
-        if let Some(price_level_id) = query.price_level_id {
-            items = items.filter(customers::price_level_id.eq(price_level_id));
-        }
-
-        items = items.order(customers::created_at.desc());
+        let mut items = query_builder().order(customers::created_at.desc());
 
         if let Some(pagination) = &query.pagination {
             let offset = ((pagination.page.max(1) - 1) * pagination.per_page) as i64;
