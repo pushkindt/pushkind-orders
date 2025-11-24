@@ -70,6 +70,47 @@ diesel::table! {
 }
 
 diesel::table! {
+    product_fts (rowid) {
+        rowid -> Integer,
+        name -> Nullable<Binary>,
+        sku -> Nullable<Binary>,
+        description -> Nullable<Binary>,
+        #[sql_name = "product_fts"]
+        product_fts_col -> Nullable<Binary>,
+        rank -> Nullable<Binary>,
+    }
+}
+
+diesel::table! {
+    product_fts_config (k) {
+        k -> Binary,
+        v -> Nullable<Binary>,
+    }
+}
+
+diesel::table! {
+    product_fts_data (id) {
+        id -> Nullable<Integer>,
+        block -> Nullable<Binary>,
+    }
+}
+
+diesel::table! {
+    product_fts_docsize (id) {
+        id -> Nullable<Integer>,
+        sz -> Nullable<Binary>,
+    }
+}
+
+diesel::table! {
+    product_fts_idx (segid, term) {
+        segid -> Binary,
+        term -> Binary,
+        pgno -> Nullable<Binary>,
+    }
+}
+
+diesel::table! {
     product_images (id) {
         id -> Integer,
         product_id -> Integer,
@@ -162,6 +203,11 @@ diesel::allow_tables_to_appear_in_same_query!(
     order_products,
     orders,
     price_levels,
+    product_fts,
+    product_fts_config,
+    product_fts_data,
+    product_fts_docsize,
+    product_fts_idx,
     product_images,
     product_price_levels,
     product_tags,
