@@ -15,8 +15,8 @@ use pushkind_orders::repository::{
     TagWriter,
 };
 use pushkind_orders::routes::store::{
-    create_store_order_handler, get_store_product, list_store_categories, list_store_orders_handler,
-    list_store_products, list_store_tags,
+    create_store_order_handler, get_store_product, list_store_categories,
+    list_store_orders_handler, list_store_products, list_store_tags,
 };
 use pushkind_orders::routes::store_session::set_store_customer;
 use pushkind_orders::services::store::{StoreCategory, StoreProduct, StoreTag};

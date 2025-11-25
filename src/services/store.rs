@@ -958,10 +958,7 @@ mod tests {
             self.order_reader.get_order_by_id(id, hub_id)
         }
 
-        fn list_orders(
-            &self,
-            query: OrderListQuery,
-        ) -> RepositoryResult<(usize, Vec<Order>)> {
+        fn list_orders(&self, query: OrderListQuery) -> RepositoryResult<(usize, Vec<Order>)> {
             self.order_reader.list_orders(query)
         }
     }
@@ -976,7 +973,12 @@ mod tests {
             notes: None,
             total_cents: 500,
             currency: "USD".to_string(),
-            products: vec![OrderProduct::new("Item".to_string(), 500, "USD".to_string(), 1)],
+            products: vec![OrderProduct::new(
+                "Item".to_string(),
+                500,
+                "USD".to_string(),
+                1,
+            )],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
         }
@@ -997,8 +999,8 @@ mod tests {
             })
             .return_once(move |_| Ok((1, vec![sample_order(1, 99, match_customer.id)])));
 
-        let orders = list_store_orders(&repo, customer.hub_id, &customer, None)
-            .expect("expected orders");
+        let orders =
+            list_store_orders(&repo, customer.hub_id, &customer, None).expect("expected orders");
 
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].id, 1);

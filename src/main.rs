@@ -32,8 +32,9 @@ use pushkind_orders::routes::products::{
     add_product, edit_product, show_products, upload_products,
 };
 use pushkind_orders::routes::store::{
-    create_store_order_handler, get_store_product, list_store_categories, list_store_orders_handler,
-    list_store_products, list_store_tags, request_store_auth_otp, verify_store_auth_otp,
+    create_store_order_handler, get_store_product, list_store_categories,
+    list_store_orders_handler, list_store_products, list_store_tags, request_store_auth_otp,
+    verify_store_auth_otp,
 };
 use pushkind_orders::routes::store_session::get_store_session;
 use pushkind_orders::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
