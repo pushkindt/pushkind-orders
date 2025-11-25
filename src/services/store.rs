@@ -11,15 +11,19 @@ use serde::{Deserialize, Serialize};
 use crate::domain::{
     category::{Category, CategoryTreeQuery},
     customer::{Customer, NewCustomer},
+    order::{NewOrder, Order, OrderProduct, OrderStatus},
     price_level::PriceLevelListQuery,
     product::{Product, ProductListQuery},
     product_price_level::ProductPriceLevelRate,
     store_otp::NewStoreOtp,
     tag::{Tag, TagListQuery},
 };
-use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
+use crate::forms::store::{
+    StoreOrderLinePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload,
+    validate_store_order_lines,
+};
 use crate::repository::{
-    CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader, ProductReader,
+    CategoryReader, CustomerReader, CustomerWriter, OrderWriter, PriceLevelReader, ProductReader,
     StoreOtpRepository, TagReader,
 };
 use crate::services::{ServiceError, ServiceResult};
@@ -361,6 +365,92 @@ where
         .map(|level| level.id))
 }
 
+/// Create a storefront order for the authenticated customer.
+pub fn create_store_order<R>(
+    repo: &R,
+    hub_id: i32,
+    customer: &Customer,
+    payloads: Vec<StoreOrderLinePayload>,
+) -> ServiceResult<Order>
+where
+    R: ProductReader + PriceLevelReader + OrderWriter + ?Sized,
+{
+    let items =
+        validate_store_order_lines(payloads).map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
+    let customer_price_level_id = customer.price_level_id;
+
+    let mut currency: Option<String> = None;
+    let mut total_cents: i32 = 0;
+    let mut products: Vec<OrderProduct> = Vec::new();
+
+    for item in items {
+        if item.quantity <= 0 {
+            return Err(ServiceError::Form("quantity must be positive".to_string()));
+        }
+
+        let product = repo
+            .get_product_by_id(item.product_id, hub_id)
+            .map_err(ServiceError::from)?
+            .filter(|product| !product.is_archived)
+            .ok_or_else(|| ServiceError::Form("product not found".to_string()))?;
+
+        let price_cents = StoreProduct::resolve_price_cents(
+            &product.price_levels,
+            customer_price_level_id,
+            default_price_level_id,
+        )
+        .ok_or_else(|| ServiceError::Form("price unavailable".to_string()))?;
+
+        let product_currency = product.currency.clone();
+        match &currency {
+            Some(expected) if expected != &product_currency => {
+                return Err(ServiceError::Form(
+                    "mixed currencies are not allowed".to_string(),
+                ));
+            }
+            None => currency = Some(product_currency.clone()),
+            _ => {}
+        }
+
+        let line_total = price_cents
+            .checked_mul(item.quantity)
+            .ok_or_else(|| ServiceError::Form("invalid order total".to_string()))?;
+
+        total_cents = total_cents
+            .checked_add(line_total)
+            .ok_or_else(|| ServiceError::Form("invalid order total".to_string()))?;
+
+        let mut order_product = OrderProduct::new(
+            product.name.clone(),
+            line_total,
+            product_currency.clone(),
+            item.quantity,
+        )
+        .with_product_id(product.id);
+
+        if let Some(sku) = &product.sku {
+            order_product = order_product.with_sku(sku.clone());
+        }
+
+        if let Some(description) = &product.description {
+            order_product = order_product.with_description(description.clone());
+        }
+
+        products.push(order_product);
+    }
+
+    let currency = currency.unwrap_or_default();
+
+    let new_order = NewOrder::new(hub_id, total_cents, currency)
+        .with_customer_id(customer.id)
+        .with_status(OrderStatus::Pending)
+        .with_products(products);
+
+    repo.create_order(&new_order).map_err(ServiceError::from)
+}
+
 /// Load categories available to a storefront for the provided hub.
 pub fn load_store_categories<R>(
     repo: &R,
@@ -479,28 +569,140 @@ mod tests {
     use super::*;
     use crate::domain::{
         customer::{Customer, CustomerListQuery},
+        order::{Order as DomainOrder, OrderStatus as DomainOrderStatus, UpdateOrder},
         price_level::{PriceLevel, PriceLevelListQuery},
         product::ProductListQuery,
         product_price_level::ProductPriceLevelRate,
         store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
     };
-    use crate::forms::store::{StoreOtpRequestPayload, StoreOtpVerifyPayload};
-    use crate::repository::mock::{
-        MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockPriceLevelReader,
-        MockProductReader, MockStoreOtpRepository,
+    use crate::forms::store::{
+        StoreOrderLinePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload,
     };
-    use crate::repository::{CustomerReader, CustomerWriter, StoreOtpRepository};
+    use crate::repository::mock::{
+        MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockOrderWriter,
+        MockPriceLevelReader, MockProductReader, MockStoreOtpRepository,
+    };
+    use crate::repository::{CustomerReader, CustomerWriter, OrderWriter, StoreOtpRepository};
 
     use pushkind_common::repository::errors::RepositoryResult;
     use pushkind_common::zmq::{SendFuture, ZmqSenderError, ZmqSenderTrait};
     use serde_json;
     use std::sync::{Arc, Mutex};
 
+    struct MockStoreOrderRepo {
+        product_reader: MockProductReader,
+        price_level_reader: MockPriceLevelReader,
+        order_writer: MockOrderWriter,
+    }
+
+    impl MockStoreOrderRepo {
+        fn new() -> Self {
+            Self {
+                product_reader: MockProductReader::new(),
+                price_level_reader: MockPriceLevelReader::new(),
+                order_writer: MockOrderWriter::new(),
+            }
+        }
+    }
+
+    impl ProductReader for MockStoreOrderRepo {
+        fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Product>> {
+            self.product_reader.get_product_by_id(id, hub_id)
+        }
+
+        fn list_products(
+            &self,
+            query: ProductListQuery,
+        ) -> RepositoryResult<(usize, Vec<Product>)> {
+            self.product_reader.list_products(query)
+        }
+    }
+
+    impl PriceLevelReader for MockStoreOrderRepo {
+        fn get_price_level_by_id(
+            &self,
+            id: i32,
+            hub_id: i32,
+        ) -> RepositoryResult<Option<PriceLevel>> {
+            self.price_level_reader.get_price_level_by_id(id, hub_id)
+        }
+
+        fn list_price_levels(
+            &self,
+            query: PriceLevelListQuery,
+        ) -> RepositoryResult<(usize, Vec<PriceLevel>)> {
+            self.price_level_reader.list_price_levels(query)
+        }
+    }
+
+    impl OrderWriter for MockStoreOrderRepo {
+        fn create_order(&self, new_order: &NewOrder) -> RepositoryResult<Order> {
+            self.order_writer.create_order(new_order)
+        }
+
+        fn update_order(
+            &self,
+            order_id: i32,
+            hub_id: i32,
+            updates: &UpdateOrder,
+        ) -> RepositoryResult<Order> {
+            self.order_writer.update_order(order_id, hub_id, updates)
+        }
+
+        fn delete_order(&self, order_id: i32, hub_id: i32) -> RepositoryResult<()> {
+            self.order_writer.delete_order(order_id, hub_id)
+        }
+    }
+
     fn sample_timestamp() -> NaiveDateTime {
         chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+    }
+
+    fn sample_price_level(id: i32, is_default: bool) -> PriceLevel {
+        PriceLevel {
+            id,
+            hub_id: 1,
+            name: format!("Level {id}"),
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+            is_default,
+        }
+    }
+
+    fn sample_product(
+        id: i32,
+        hub_id: i32,
+        price_level_id: i32,
+        price_cents: i32,
+        currency: &str,
+    ) -> Product {
+        Product {
+            id,
+            hub_id,
+            name: format!("Product {id}"),
+            sku: Some(format!("SKU{id}")),
+            description: Some(format!("Description {id}")),
+            units: None,
+            currency: currency.to_string(),
+            is_archived: false,
+            category_id: None,
+            price_levels: vec![ProductPriceLevelRate {
+                id,
+                product_id: id,
+                price_level_id,
+                price_cents,
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            }],
+            tags: Vec::new(),
+            image_urls: Vec::new(),
+            amount: None,
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+        }
     }
 
     struct MockOtpRequestRepo {
@@ -517,6 +719,203 @@ mod tests {
                 otp_repository: MockStoreOtpRepository::new(),
             }
         }
+    }
+
+    #[test]
+    fn create_store_order_creates_pending_order() {
+        let mut repo = MockStoreOrderRepo::new();
+        let customer = Customer {
+            id: 10,
+            hub_id: 1,
+            name: "Customer".to_string(),
+            email: None,
+            phone: "+111".to_string(),
+            price_level_id: None,
+        };
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|query| {
+                assert_eq!(query.hub_id, 1);
+                Ok((1, vec![sample_price_level(2, true)]))
+            });
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .returning(|product_id, hub_id| match product_id {
+                1 => Ok(Some(sample_product(1, hub_id, 2, 500, "USD"))),
+                2 => Ok(Some(sample_product(2, hub_id, 2, 300, "USD"))),
+                _ => Ok(None),
+            });
+
+        repo.order_writer
+            .expect_create_order()
+            .times(1)
+            .withf(|new_order| {
+                assert_eq!(new_order.hub_id, 1);
+                assert_eq!(new_order.customer_id, Some(10));
+                assert_eq!(new_order.total_cents, 1300);
+                assert_eq!(new_order.currency, "USD");
+                assert_eq!(new_order.status, DomainOrderStatus::Pending);
+                assert_eq!(new_order.products.len(), 2);
+                assert_eq!(new_order.products[0].product_id, Some(1));
+                assert_eq!(new_order.products[0].price_cents, 1000);
+                true
+            })
+            .returning(|new_order| {
+                Ok(DomainOrder {
+                    id: 99,
+                    hub_id: new_order.hub_id,
+                    customer_id: new_order.customer_id,
+                    reference: None,
+                    status: DomainOrderStatus::Pending,
+                    notes: None,
+                    total_cents: new_order.total_cents,
+                    currency: new_order.currency.clone(),
+                    products: new_order.products.clone(),
+                    created_at: sample_timestamp(),
+                    updated_at: sample_timestamp(),
+                })
+            });
+
+        let payload = vec![
+            StoreOrderLinePayload {
+                product_id: 1,
+                quantity: 2,
+            },
+            StoreOrderLinePayload {
+                product_id: 2,
+                quantity: 1,
+            },
+        ];
+
+        let result = create_store_order(&repo, 1, &customer, payload);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn create_store_order_rejects_unknown_product() {
+        let mut repo = MockStoreOrderRepo::new();
+        let customer = Customer {
+            id: 10,
+            hub_id: 1,
+            name: "Customer".to_string(),
+            email: None,
+            phone: "+111".to_string(),
+            price_level_id: None,
+        };
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|_| Ok((0, vec![sample_price_level(1, true)])));
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .returning(|_, _| Ok(None));
+
+        let payload = vec![StoreOrderLinePayload {
+            product_id: 1,
+            quantity: 1,
+        }];
+
+        let result = create_store_order(&repo, 1, &customer, payload);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
+    }
+
+    #[test]
+    fn create_store_order_rejects_missing_price() {
+        let mut repo = MockStoreOrderRepo::new();
+        let customer = Customer {
+            id: 10,
+            hub_id: 1,
+            name: "Customer".to_string(),
+            email: None,
+            phone: "+111".to_string(),
+            price_level_id: None,
+        };
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|_| Ok((0, vec![sample_price_level(1, true)])));
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .returning(|product_id, hub_id| {
+                Ok(Some(sample_product(product_id, hub_id, 99, 500, "USD")))
+            });
+
+        let payload = vec![StoreOrderLinePayload {
+            product_id: 1,
+            quantity: 1,
+        }];
+
+        let result = create_store_order(&repo, 1, &customer, payload);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
+    }
+
+    #[test]
+    fn create_store_order_rejects_mixed_currency() {
+        let mut repo = MockStoreOrderRepo::new();
+        let customer = Customer {
+            id: 10,
+            hub_id: 1,
+            name: "Customer".to_string(),
+            email: None,
+            phone: "+111".to_string(),
+            price_level_id: None,
+        };
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|_| Ok((0, vec![sample_price_level(1, true)])));
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .returning(|product_id, hub_id| match product_id {
+                1 => Ok(Some(sample_product(1, hub_id, 1, 500, "USD"))),
+                2 => Ok(Some(sample_product(2, hub_id, 1, 300, "EUR"))),
+                _ => Ok(None),
+            });
+
+        let payload = vec![
+            StoreOrderLinePayload {
+                product_id: 1,
+                quantity: 1,
+            },
+            StoreOrderLinePayload {
+                product_id: 2,
+                quantity: 1,
+            },
+        ];
+
+        let result = create_store_order(&repo, 1, &customer, payload);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
+    }
+
+    #[test]
+    fn create_store_order_rejects_invalid_quantities() {
+        let repo = MockStoreOrderRepo::new();
+        let customer = Customer {
+            id: 10,
+            hub_id: 1,
+            name: "Customer".to_string(),
+            email: None,
+            phone: "+111".to_string(),
+            price_level_id: None,
+        };
+
+        let payload = vec![StoreOrderLinePayload {
+            product_id: 1,
+            quantity: 0,
+        }];
+
+        let result = create_store_order(&repo, 1, &customer, payload);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
     }
 
     impl CustomerReader for MockOtpRequestRepo {

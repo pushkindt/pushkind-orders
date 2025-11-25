@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::forms::{PhoneNormalizationError, normalize_phone_to_e164};
 
@@ -95,6 +95,54 @@ pub struct StoreOtpVerifyInput {
     pub otp: String,
 }
 
+/// Payload describing a single line in a storefront order request.
+#[derive(Debug, Clone, Deserialize, Validate, PartialEq, Eq)]
+pub struct StoreOrderLinePayload {
+    /// Identifier of the product being ordered.
+    #[validate(range(min = 1))]
+    pub product_id: i32,
+    /// Quantity requested for the product.
+    #[validate(range(min = 1))]
+    pub quantity: i32,
+}
+
+impl StoreOrderLinePayload {
+    /// Validate and normalize the payload, ensuring a positive quantity.
+    pub fn into_request(self) -> StoreFormResult<StoreOrderLineInput> {
+        self.validate()?;
+
+        Ok(StoreOrderLineInput {
+            product_id: self.product_id,
+            quantity: self.quantity,
+        })
+    }
+}
+
+/// Normalized order line forwarded to the service layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoreOrderLineInput {
+    /// Identifier of the product being ordered.
+    pub product_id: i32,
+    /// Quantity requested for the product.
+    pub quantity: i32,
+}
+
+/// Validate a batch of storefront order line payloads.
+pub fn validate_store_order_lines(
+    payloads: Vec<StoreOrderLinePayload>,
+) -> StoreFormResult<Vec<StoreOrderLineInput>> {
+    if payloads.is_empty() {
+        let mut errors = ValidationErrors::new();
+        errors.add("items", ValidationError::new("length"));
+        return Err(StoreFormError::Validation(errors));
+    }
+
+    payloads
+        .into_iter()
+        .map(StoreOrderLinePayload::into_request)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,5 +203,37 @@ mod tests {
         let result = payload.into_request();
 
         assert!(matches!(result, Err(StoreFormError::InvalidPhone)));
+    }
+
+    #[test]
+    fn store_order_line_payload_accepts_positive_quantity() {
+        let payload = StoreOrderLinePayload {
+            product_id: 1,
+            quantity: 2,
+        };
+
+        let normalized = payload.into_request().expect("valid order line");
+
+        assert_eq!(normalized.product_id, 1);
+        assert_eq!(normalized.quantity, 2);
+    }
+
+    #[test]
+    fn store_order_line_payload_rejects_zero_quantity() {
+        let payload = StoreOrderLinePayload {
+            product_id: 1,
+            quantity: 0,
+        };
+
+        let result = payload.into_request();
+
+        assert!(matches!(result, Err(StoreFormError::Validation(_))));
+    }
+
+    #[test]
+    fn validate_store_order_lines_rejects_empty_payloads() {
+        let result = validate_store_order_lines(Vec::new());
+
+        assert!(matches!(result, Err(StoreFormError::Validation(_))));
     }
 }
