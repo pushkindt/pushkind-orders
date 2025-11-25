@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::{
     category::{Category, CategoryTreeQuery},
     customer::{Customer, NewCustomer},
-    order::{NewOrder, Order, OrderProduct, OrderStatus},
+    order::{NewOrder, Order, OrderListQuery, OrderProduct, OrderStatus},
     price_level::PriceLevelListQuery,
     product::{Product, ProductListQuery},
     product_price_level::ProductPriceLevelRate,
@@ -23,8 +23,8 @@ use crate::forms::store::{
     validate_store_order_lines,
 };
 use crate::repository::{
-    CategoryReader, CustomerReader, CustomerWriter, OrderWriter, PriceLevelReader, ProductReader,
-    StoreOtpRepository, TagReader,
+    CategoryReader, CustomerReader, CustomerWriter, OrderReader, OrderWriter, PriceLevelReader,
+    ProductReader, StoreOtpRepository, TagReader,
 };
 use crate::services::{ServiceError, ServiceResult};
 
@@ -451,6 +451,27 @@ where
     repo.create_order(&new_order).map_err(ServiceError::from)
 }
 
+/// Load orders placed by a storefront customer for the provided hub.
+pub fn list_store_orders<R>(
+    repo: &R,
+    hub_id: i32,
+    customer: &Customer,
+    page: Option<usize>,
+) -> ServiceResult<Vec<Order>>
+where
+    R: OrderReader + ?Sized,
+{
+    let mut query = OrderListQuery::new(hub_id).customer_id(customer.id);
+
+    if let Some(page) = page.filter(|page| *page > 0) {
+        query = query.paginate(page, DEFAULT_ITEMS_PER_PAGE);
+    }
+
+    let (_, orders) = repo.list_orders(query).map_err(ServiceError::from)?;
+
+    Ok(orders)
+}
+
 /// Load categories available to a storefront for the provided hub.
 pub fn load_store_categories<R>(
     repo: &R,
@@ -579,10 +600,12 @@ mod tests {
         StoreOrderLinePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload,
     };
     use crate::repository::mock::{
-        MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockOrderWriter,
-        MockPriceLevelReader, MockProductReader, MockStoreOtpRepository,
+        MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockOrderReader,
+        MockOrderWriter, MockPriceLevelReader, MockProductReader, MockStoreOtpRepository,
     };
-    use crate::repository::{CustomerReader, CustomerWriter, OrderWriter, StoreOtpRepository};
+    use crate::repository::{
+        CustomerReader, CustomerWriter, OrderReader, OrderWriter, StoreOtpRepository,
+    };
 
     use pushkind_common::repository::errors::RepositoryResult;
     use pushkind_common::zmq::{SendFuture, ZmqSenderError, ZmqSenderTrait};
@@ -916,6 +939,92 @@ mod tests {
         let result = create_store_order(&repo, 1, &customer, payload);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
+    }
+
+    struct MockListStoreOrdersRepo {
+        order_reader: MockOrderReader,
+    }
+
+    impl MockListStoreOrdersRepo {
+        fn new() -> Self {
+            Self {
+                order_reader: MockOrderReader::new(),
+            }
+        }
+    }
+
+    impl OrderReader for MockListStoreOrdersRepo {
+        fn get_order_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Order>> {
+            self.order_reader.get_order_by_id(id, hub_id)
+        }
+
+        fn list_orders(&self, query: OrderListQuery) -> RepositoryResult<(usize, Vec<Order>)> {
+            self.order_reader.list_orders(query)
+        }
+    }
+
+    fn sample_order(id: i32, hub_id: i32, customer_id: i32) -> Order {
+        Order {
+            id,
+            hub_id,
+            customer_id: Some(customer_id),
+            reference: None,
+            status: DomainOrderStatus::Pending,
+            notes: None,
+            total_cents: 500,
+            currency: "USD".to_string(),
+            products: vec![OrderProduct::new(
+                "Item".to_string(),
+                500,
+                "USD".to_string(),
+                1,
+            )],
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+        }
+    }
+
+    #[test]
+    fn list_store_orders_returns_orders_for_customer() {
+        let mut repo = MockListStoreOrdersRepo::new();
+        let customer = sample_customer();
+        let match_customer = customer.clone();
+
+        repo.order_reader
+            .expect_list_orders()
+            .withf(move |query| {
+                query.hub_id == match_customer.hub_id
+                    && query.customer_id == Some(match_customer.id)
+                    && query.pagination.is_none()
+            })
+            .return_once(move |_| Ok((1, vec![sample_order(1, 99, match_customer.id)])));
+
+        let orders =
+            list_store_orders(&repo, customer.hub_id, &customer, None).expect("expected orders");
+
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].id, 1);
+    }
+
+    #[test]
+    fn list_store_orders_applies_pagination() {
+        let mut repo = MockListStoreOrdersRepo::new();
+        let customer = sample_customer();
+
+        repo.order_reader
+            .expect_list_orders()
+            .withf(|query| {
+                query
+                    .pagination
+                    .as_ref()
+                    .is_some_and(|pagination| pagination.page == 2)
+            })
+            .return_once(|_| Ok((0, Vec::new())));
+
+        let orders = list_store_orders(&repo, customer.hub_id, &customer, Some(2))
+            .expect("expected empty orders");
+
+        assert!(orders.is_empty());
     }
 
     impl CustomerReader for MockOtpRequestRepo {
