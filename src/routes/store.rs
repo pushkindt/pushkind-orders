@@ -14,7 +14,8 @@ use crate::routes::store_session::{get_store_customer_for_hub, set_store_custome
 use crate::services::ServiceError;
 use crate::services::store::{
     StoreCategoryFilters, StoreProductFilters, create_store_order, load_store_categories,
-    load_store_product, load_store_products, load_store_tags, request_store_otp, verify_store_otp,
+    load_store_product, load_store_products, load_store_tags, list_store_orders,
+    request_store_otp, verify_store_otp,
 };
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +51,12 @@ struct StoreProductPath {
 #[serde(rename_all = "camelCase")]
 struct StoreCategoriesQuery {
     parent_id: Option<i32>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoreOrdersQuery {
+    page: Option<usize>,
 }
 
 #[get("/{hub_id}/products")]
@@ -266,6 +273,39 @@ pub async fn create_store_order_handler(
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
         Err(err) => {
             error!("Failed to create storefront order for hub {hub_id}: {err}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[get("/{hub_id}/orders")]
+pub async fn list_store_orders_handler(
+    path: web::Path<HubPath>,
+    params: Option<web::Query<StoreOrdersQuery>>,
+    repo: web::Data<DieselRepository>,
+    session: Session,
+) -> impl Responder {
+    let hub_id = match path.into_inner().hub_id.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+
+    let store_customer = match get_store_customer_for_hub(&session, hub_id) {
+        Ok(Some(customer)) => customer,
+        Ok(None) => return HttpResponse::Unauthorized().finish(),
+        Err(err) => {
+            error!("Failed to read store session for hub {hub_id}: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let page = params.and_then(|query| query.page);
+
+    match list_store_orders(repo.get_ref(), hub_id, &store_customer, page) {
+        Ok(orders) => HttpResponse::Ok().json(orders),
+        Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
+        Err(err) => {
+            error!("Failed to list storefront orders for hub {hub_id}: {err}");
             HttpResponse::InternalServerError().finish()
         }
     }

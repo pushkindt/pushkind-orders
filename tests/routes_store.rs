@@ -6,16 +6,17 @@ use actix_web::{
     test, web,
 };
 use pushkind_orders::domain::{
-    category::NewCategory, customer::Customer, customer::NewCustomer, order::Order,
-    price_level::NewPriceLevel, product::NewProduct, product_price_level::NewProductPriceLevelRate,
-    tag::NewTag,
+    category::NewCategory, customer::Customer, customer::NewCustomer, order::NewOrder,
+    order::Order, order::OrderProduct, price_level::NewPriceLevel, product::NewProduct,
+    product_price_level::NewProductPriceLevelRate, tag::NewTag,
 };
 use pushkind_orders::repository::{
-    CategoryWriter, CustomerWriter, DieselRepository, PriceLevelWriter, ProductWriter, TagWriter,
+    CategoryWriter, CustomerWriter, DieselRepository, OrderWriter, PriceLevelWriter, ProductWriter,
+    TagWriter,
 };
 use pushkind_orders::routes::store::{
-    create_store_order_handler, get_store_product, list_store_categories, list_store_products,
-    list_store_tags,
+    create_store_order_handler, get_store_product, list_store_categories, list_store_orders_handler,
+    list_store_products, list_store_tags,
 };
 use pushkind_orders::routes::store_session::set_store_customer;
 use pushkind_orders::services::store::{StoreCategory, StoreProduct, StoreTag};
@@ -486,4 +487,147 @@ async fn create_store_order_creates_order() {
     assert_eq!(order.total_cents, 1000);
     assert_eq!(order.products.len(), 1);
     assert_eq!(order.products[0].price_cents, 1000);
+}
+
+#[actix_web::test]
+async fn list_store_orders_requires_authentication() {
+    let test_db = common::TestDb::new("routes_store_orders_requires_auth.db");
+    let repo = DieselRepository::new(test_db.pool());
+
+    let key = Key::generate();
+    let app_repo = repo.clone();
+    let app = test::init_service(
+        App::new()
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), key)
+                    .cookie_name("store-session".to_string())
+                    .cookie_secure(false)
+                    .build(),
+            )
+            .app_data(web::Data::new(app_repo))
+            .service(web::scope("/api/v1/store").service(list_store_orders_handler)),
+    )
+    .await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/store/1/orders")
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[actix_web::test]
+async fn list_store_orders_returns_orders_for_customer() {
+    let test_db = common::TestDb::new("routes_store_orders_returns_data.db");
+    let repo = DieselRepository::new(test_db.pool());
+    let customer = repo
+        .create_customer(&NewCustomer::new(1, "Customer", "+111"))
+        .expect("create customer");
+
+    let product = OrderProduct::new("Coffee", 500, "USD", 1).with_product_id(1);
+    let new_order = NewOrder::new(1, 500, "USD")
+        .with_customer_id(customer.id)
+        .with_products(vec![product]);
+    repo.create_order(&new_order).expect("create order");
+
+    let key = Key::generate();
+    let app_repo = repo.clone();
+    let app_customer = customer.clone();
+    let app = test::init_service(
+        App::new()
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), key.clone())
+                    .cookie_name("store-session".to_string())
+                    .cookie_secure(false)
+                    .build(),
+            )
+            .app_data(web::Data::new(app_repo))
+            .app_data(web::Data::new(app_customer))
+            .service(
+                web::scope("/api/v1/store")
+                    .service(list_store_orders_handler)
+                    .service(web::resource("/login").route(web::post().to(set_session_customer))),
+            ),
+    )
+    .await;
+
+    let login_req = test::TestRequest::post()
+        .uri("/api/v1/store/login")
+        .to_request();
+    let login_resp = test::call_service(&app, login_req).await;
+    assert_eq!(login_resp.status(), StatusCode::OK);
+    let cookie = login_resp
+        .response()
+        .cookies()
+        .next()
+        .expect("session cookie");
+    let cookie_header = format!("{}={}", cookie.name(), cookie.value());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/store/1/orders")
+        .insert_header((header::COOKIE, cookie_header))
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let orders: Vec<Order> = test::read_body_json(resp).await;
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].customer_id, Some(customer.id));
+    assert_eq!(orders[0].total_cents, 500);
+}
+
+#[actix_web::test]
+async fn list_store_orders_returns_empty_results() {
+    let test_db = common::TestDb::new("routes_store_orders_empty_results.db");
+    let repo = DieselRepository::new(test_db.pool());
+    let customer = repo
+        .create_customer(&NewCustomer::new(1, "Customer", "+111"))
+        .expect("create customer");
+
+    let key = Key::generate();
+    let app_repo = repo.clone();
+    let app_customer = customer.clone();
+    let app = test::init_service(
+        App::new()
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), key.clone())
+                    .cookie_name("store-session".to_string())
+                    .cookie_secure(false)
+                    .build(),
+            )
+            .app_data(web::Data::new(app_repo))
+            .app_data(web::Data::new(app_customer))
+            .service(
+                web::scope("/api/v1/store")
+                    .service(list_store_orders_handler)
+                    .service(web::resource("/login").route(web::post().to(set_session_customer))),
+            ),
+    )
+    .await;
+
+    let login_req = test::TestRequest::post()
+        .uri("/api/v1/store/login")
+        .to_request();
+    let login_resp = test::call_service(&app, login_req).await;
+    assert_eq!(login_resp.status(), StatusCode::OK);
+    let cookie = login_resp
+        .response()
+        .cookies()
+        .next()
+        .expect("session cookie");
+    let cookie_header = format!("{}={}", cookie.name(), cookie.value());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/store/1/orders")
+        .insert_header((header::COOKIE, cookie_header))
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let orders: Vec<Order> = test::read_body_json(resp).await;
+    assert!(orders.is_empty());
 }
