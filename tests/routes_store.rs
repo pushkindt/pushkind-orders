@@ -1,12 +1,34 @@
-use actix_web::{App, http::StatusCode, test, web};
-use pushkind_orders::domain::{category::NewCategory, product::NewProduct, tag::NewTag};
-use pushkind_orders::repository::{CategoryWriter, DieselRepository, ProductWriter, TagWriter};
-use pushkind_orders::routes::store::{
-    get_store_product, list_store_categories, list_store_products, list_store_tags,
+use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
+use actix_web::cookie::Key;
+use actix_web::{
+    App, HttpResponse,
+    http::{StatusCode, header},
+    test, web,
 };
+use pushkind_orders::domain::{
+    category::NewCategory, customer::Customer, customer::NewCustomer, order::Order,
+    price_level::NewPriceLevel, product::NewProduct, product_price_level::NewProductPriceLevelRate,
+    tag::NewTag,
+};
+use pushkind_orders::repository::{
+    CategoryWriter, CustomerWriter, DieselRepository, PriceLevelWriter, ProductWriter, TagWriter,
+};
+use pushkind_orders::routes::store::{
+    create_store_order_handler, get_store_product, list_store_categories, list_store_products,
+    list_store_tags,
+};
+use pushkind_orders::routes::store_session::set_store_customer;
 use pushkind_orders::services::store::{StoreCategory, StoreProduct, StoreTag};
+use serde_json::json;
 
 mod common;
+
+async fn set_session_customer(session: Session, customer: web::Data<Customer>) -> HttpResponse {
+    match set_store_customer(&session, &customer) {
+        Ok(()) => HttpResponse::Ok().finish(),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
+}
 
 #[actix_web::test]
 async fn store_endpoints_return_data() {
@@ -272,4 +294,196 @@ async fn store_product_returns_not_found_for_unknown_id() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[actix_web::test]
+async fn create_store_order_requires_authentication() {
+    let test_db = common::TestDb::new("routes_store_order_requires_auth.db");
+    let repo = DieselRepository::new(test_db.pool());
+    let price_level = repo
+        .create_price_level(&NewPriceLevel::new(1, "Default", true))
+        .expect("create price level");
+    let product = repo
+        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .expect("create product");
+    repo.replace_product_price_levels(
+        product.id,
+        1,
+        &[NewProductPriceLevelRate::new(
+            product.id,
+            price_level.id,
+            500,
+        )],
+    )
+    .expect("attach price level");
+
+    let key = Key::generate();
+    let app_repo = repo.clone();
+    let app = test::init_service(
+        App::new()
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), key)
+                    .cookie_name("store-session".to_string())
+                    .cookie_secure(false)
+                    .build(),
+            )
+            .app_data(web::Data::new(app_repo))
+            .service(web::scope("/api/v1/store").service(create_store_order_handler)),
+    )
+    .await;
+
+    let request_body = json!([{ "product_id": product.id, "quantity": 1 }]);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/store/1/orders")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .set_payload(request_body.to_string())
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[actix_web::test]
+async fn create_store_order_validates_payload() {
+    let test_db = common::TestDb::new("routes_store_order_validates_payload.db");
+    let repo = DieselRepository::new(test_db.pool());
+    let price_level = repo
+        .create_price_level(&NewPriceLevel::new(1, "Default", true))
+        .expect("create price level");
+    let product = repo
+        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .expect("create product");
+    repo.replace_product_price_levels(
+        product.id,
+        1,
+        &[NewProductPriceLevelRate::new(
+            product.id,
+            price_level.id,
+            500,
+        )],
+    )
+    .expect("attach price level");
+    let customer = repo
+        .create_customer(&NewCustomer::new(1, "John", "+111"))
+        .expect("create customer");
+
+    let key = Key::generate();
+    let app_repo = repo.clone();
+    let app = test::init_service(
+        App::new()
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), key.clone())
+                    .cookie_name("store-session".to_string())
+                    .cookie_secure(false)
+                    .build(),
+            )
+            .app_data(web::Data::new(app_repo))
+            .app_data(web::Data::new(customer.clone()))
+            .service(
+                web::scope("/api/v1/store")
+                    .service(create_store_order_handler)
+                    .service(web::resource("/login").route(web::post().to(set_session_customer))),
+            ),
+    )
+    .await;
+
+    let login_req = test::TestRequest::post()
+        .uri("/api/v1/store/login")
+        .to_request();
+    let login_resp = test::call_service(&app, login_req).await;
+    assert_eq!(login_resp.status(), StatusCode::OK);
+    let cookie = login_resp
+        .response()
+        .cookies()
+        .next()
+        .expect("session cookie");
+    let cookie_header = format!("{}={}", cookie.name(), cookie.value());
+
+    let request_body = json!([{ "product_id": product.id, "quantity": 0 }]);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/store/1/orders")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::COOKIE, cookie_header))
+        .set_payload(request_body.to_string())
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[actix_web::test]
+async fn create_store_order_creates_order() {
+    let test_db = common::TestDb::new("routes_store_order_creates.db");
+    let repo = DieselRepository::new(test_db.pool());
+    let price_level = repo
+        .create_price_level(&NewPriceLevel::new(1, "Default", true))
+        .expect("create price level");
+    let product = repo
+        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .expect("create product");
+    repo.replace_product_price_levels(
+        product.id,
+        1,
+        &[NewProductPriceLevelRate::new(
+            product.id,
+            price_level.id,
+            500,
+        )],
+    )
+    .expect("attach price level");
+    let customer = repo
+        .create_customer(&NewCustomer::new(1, "John", "+111"))
+        .expect("create customer");
+
+    let key = Key::generate();
+    let app_repo = repo.clone();
+    let app_customer = customer.clone();
+    let app = test::init_service(
+        App::new()
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), key.clone())
+                    .cookie_name("store-session".to_string())
+                    .cookie_secure(false)
+                    .build(),
+            )
+            .app_data(web::Data::new(app_repo))
+            .app_data(web::Data::new(app_customer))
+            .service(
+                web::scope("/api/v1/store")
+                    .service(create_store_order_handler)
+                    .service(web::resource("/login").route(web::post().to(set_session_customer))),
+            ),
+    )
+    .await;
+
+    let login_req = test::TestRequest::post()
+        .uri("/api/v1/store/login")
+        .to_request();
+    let login_resp = test::call_service(&app, login_req).await;
+    assert_eq!(login_resp.status(), StatusCode::OK);
+    let cookie = login_resp
+        .response()
+        .cookies()
+        .next()
+        .expect("session cookie");
+    let cookie_header = format!("{}={}", cookie.name(), cookie.value());
+
+    let request_body = json!([{ "product_id": product.id, "quantity": 2 }]);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/store/1/orders")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::COOKIE, cookie_header))
+        .set_payload(request_body.to_string())
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let order: Order = test::read_body_json(resp).await;
+    assert_eq!(order.customer_id, Some(customer.id));
+    assert_eq!(order.total_cents, 1000);
+    assert_eq!(order.products.len(), 1);
+    assert_eq!(order.products[0].price_cents, 1000);
 }
