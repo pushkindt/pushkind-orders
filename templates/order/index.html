@@ -37,8 +37,14 @@
                         <dd class="col-7 mb-2 text-uppercase">{{ order.currency }}</dd>
                         <dt class="col-5 text-muted">Клиент</dt>
                         <dd class="col-7 mb-2">
-                            {% if order.customer_id %}
-                                #{{ order.customer_id }}
+                            {% if customer %}
+                                <div class="fw-semibold">{{ customer.name }}</div>
+                                <div class="text-muted small">{{ customer.phone }}</div>
+                                {% if customer.email %}
+                                    <div class="text-muted small">{{ customer.email }}</div>
+                                {% endif %}
+                            {% elif order.customer_id %}
+                                <span class="text-muted">Клиент не найден</span>
                             {% else %}
                                 <span class="text-muted">Не указан</span>
                             {% endif %}

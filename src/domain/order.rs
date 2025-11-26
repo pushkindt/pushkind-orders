@@ -2,6 +2,8 @@ use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
+use crate::domain::customer::Customer;
+
 /// Possible lifecycle states for an order managed by a hub.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OrderStatus {
@@ -74,6 +76,15 @@ pub struct Order {
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the order record.
     pub updated_at: NaiveDateTime,
+}
+
+/// Aggregated order details with optional customer information.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OrderDetails {
+    /// Order record with product snapshots.
+    pub order: Order,
+    /// Customer assigned to the order, if the reference still exists.
+    pub customer: Option<Customer>,
 }
 
 /// Payload required to insert a new order for a hub.

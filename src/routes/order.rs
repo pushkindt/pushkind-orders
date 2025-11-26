@@ -20,14 +20,15 @@ pub async fn show_order(
     let order_id = path.into_inner();
 
     match order_service::load_order_details(repo.get_ref(), &user, order_id) {
-        Ok(order) => {
+        Ok(details) => {
             let mut context = base_context(
                 &flash_messages,
                 &user,
                 "index",
                 &server_config.auth_service_url,
             );
-            context.insert("order", &order);
+            context.insert("order", &details.order);
+            context.insert("customer", &details.customer);
             render_template(&tera, "order/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {
