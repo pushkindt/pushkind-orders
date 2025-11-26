@@ -23,17 +23,29 @@
         </div>
     </div>
 
-    <div class="row d-none d-sm-flex fw-bold">
-        <div class="col-sm overflow-hidden">Идентификатор</div>
-    </div>
     <div id="orderList">
         {% for order in orders.items %}
-            <div class="row my-1 py-1 border-top selectable" data-id="{{ order.id }}">
-                <div class="col-sm-2">
+            <div class="row my-1 py-2 border-top selectable align-items-center" data-id="{{ order.id }}">
+                <div class="col-12 col-sm-3">
                     <strong>{{ order.id }}</strong>
                     <div class="text-muted small">
                         <i class="bi bi-clock-history" aria-hidden="true"></i> {{ order.updated_at | date(format="%Y-%m-%d %H:%M") }}
                     </div>
+                </div>
+                <div class="col-6 col-sm-3 mt-2 mt-sm-0">
+                    <div class="text-muted small">Создан</div>
+                    <div>{{ order.created_at | date(format="%Y-%m-%d %H:%M") }}</div>
+                </div>
+                <div class="col-6 col-sm-3 mt-2 mt-sm-0">
+                    <div class="text-muted small">Сумма</div>
+                    <div class="fw-semibold"
+                        data-order-total-cents="{{ order.total_cents }}"
+                        data-order-currency="{{ order.currency }}">
+                    </div>
+                </div>
+                <div class="col-6 col-sm-3 mt-2 mt-sm-0">
+                    <div class="text-muted small">Товаров</div>
+                    <div class="fw-semibold">{{ order.products | length }}</div>
                 </div>
             </div>
         {% else %}
@@ -131,6 +143,43 @@
         if (badge && hasActiveFilters) {
             badge.classList.remove("d-none");
         }
+
+        const formatterCache = new Map();
+        const getFormatter = (currency) => {
+            if (formatterCache.has(currency)) {
+                return formatterCache.get(currency);
+            }
+
+            try {
+                const formatter = new Intl.NumberFormat("ru-RU", {
+                    style: "currency",
+                    currency,
+                });
+                formatterCache.set(currency, formatter);
+            } catch {
+                formatterCache.set(currency, null);
+            }
+
+            return formatterCache.get(currency);
+        };
+
+        document
+            .querySelectorAll("[data-order-total-cents][data-order-currency]")
+            .forEach((node) => {
+                const cents = Number(node.dataset.orderTotalCents);
+                const currency = node.dataset.orderCurrency;
+
+                if (!Number.isFinite(cents) || !currency) {
+                    node.textContent = "-";
+                    return;
+                }
+
+                const price = cents / 100;
+                const formatter = getFormatter(currency);
+                node.textContent = formatter
+                    ? formatter.format(price)
+                    : `${price.toFixed(2)} ${currency}`;
+            });
     });
 </script>
 {% endblock %}

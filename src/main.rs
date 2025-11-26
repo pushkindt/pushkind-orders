@@ -25,6 +25,7 @@ use pushkind_orders::routes::categories::{
     add_category, delete_category, edit_category, show_categories,
 };
 use pushkind_orders::routes::main::show_index;
+use pushkind_orders::routes::order::show_order;
 use pushkind_orders::routes::price_levels::{
     add_price_level, delete_price_level, edit_price_level, show_price_levels,
 };
@@ -156,6 +157,7 @@ async fn main() -> std::io::Result<()> {
                 web::scope("")
                     .wrap(RedirectUnauthorized)
                     .service(show_index)
+                    .service(show_order)
                     .service(show_categories)
                     .service(add_category)
                     .service(edit_category)

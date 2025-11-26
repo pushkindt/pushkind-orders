@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'components/navigation.html' %}
+
+<div class="container my-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <p class="text-muted text-uppercase small mb-1">Заказ</p>
+            <h1 class="h3 mb-0">#{{ order.id }}{% if order.reference %}<span class="text-muted ms-2">{{ order.reference }}</span>{% endif %}</h1>
+        </div>
+        <a class="btn btn-outline-secondary" href="/"><i class="bi bi-arrow-left me-2"></i>К списку заказов</a>
+    </div>
+
+    {% set status_value = order.status | default(value="Draft") %}
+    {% set status_color = "secondary" %}
+    {% if status_value == "Completed" %}
+        {% set status_color = "success" %}
+    {% elif status_value == "Processing" %}
+        {% set status_color = "primary" %}
+    {% elif status_value == "Pending" %}
+        {% set status_color = "warning" %}
+    {% elif status_value == "Cancelled" %}
+        {% set status_color = "danger" %}
+    {% endif %}
+
+    <div class="row g-3 mt-2">
+        <div class="col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div>
+                            <div class="text-muted text-uppercase small">Статус</div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge text-bg-{{ status_color }}">{{ status_value }}</span>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <div class="text-muted text-uppercase small">Итого</div>
+                            <div class="fs-4 fw-semibold" data-price-cents="{{ order.total_cents }}" data-price-currency="{{ order.currency }}"></div>
+                        </div>
+                    </div>
+                    <dl class="row mb-0 small">
+                        <dt class="col-5 text-muted">Создан</dt>
+                        <dd class="col-7 mb-2">{{ order.created_at | date(format="%Y-%m-%d %H:%M") }}</dd>
+                        <dt class="col-5 text-muted">Обновлён</dt>
+                        <dd class="col-7 mb-2">{{ order.updated_at | date(format="%Y-%m-%d %H:%M") }}</dd>
+                        <dt class="col-5 text-muted">Валюта</dt>
+                        <dd class="col-7 mb-2 text-uppercase">{{ order.currency }}</dd>
+                        <dt class="col-5 text-muted">Клиент</dt>
+                        <dd class="col-7 mb-2">
+                            {% if order.customer_id %}
+                                #{{ order.customer_id }}
+                            {% else %}
+                                <span class="text-muted">Не указан</span>
+                            {% endif %}
+                        </dd>
+                        <dt class="col-5 text-muted">Заметки</dt>
+                        <dd class="col-7">
+                            {% if order.notes %}
+                                {{ order.notes }}
+                            {% else %}
+                                <span class="text-muted">Нет заметок</span>
+                            {% endif %}
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted text-uppercase small">Товары</div>
+                        <div class="fw-semibold">{{ order.products | length }} позиций</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="text-muted text-uppercase small">Сумма заказа</div>
+                        <div class="fw-semibold" data-price-cents="{{ order.total_cents }}" data-price-currency="{{ order.currency }}"></div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Название</th>
+                                <th scope="col" class="text-nowrap">SKU</th>
+                                <th scope="col" class="text-end">Кол-во</th>
+                                <th scope="col" class="text-end">Сумма</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in order.products %}
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold">{{ product.name }}</div>
+                                        {% if product.description %}
+                                            <div class="text-muted small">{{ product.description }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-muted">
+                                        {% if product.sku %}
+                                            {{ product.sku }}
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {{ product.quantity }}
+                                    </td>
+                                    <td class="text-end fw-semibold" data-price-cents="{{ product.price_cents }}" data-price-currency="{{ product.currency }}"></td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-4">
+                                        В заказе нет товаров.
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const formatterCache = new Map();
+        const getFormatter = (currency) => {
+            if (formatterCache.has(currency)) {
+                return formatterCache.get(currency);
+            }
+
+            try {
+                const formatter = new Intl.NumberFormat("ru-RU", {
+                    style: "currency",
+                    currency,
+                });
+                formatterCache.set(currency, formatter);
+            } catch {
+                formatterCache.set(currency, null);
+            }
+
+            return formatterCache.get(currency);
+        };
+
+        document.querySelectorAll("[data-price-cents][data-price-currency]").forEach((node) => {
+            const cents = Number(node.dataset.priceCents);
+            const currency = node.dataset.priceCurrency;
+            if (!Number.isFinite(cents) || !currency) {
+                node.textContent = "-";
+                return;
+            }
+
+            const value = cents / 100;
+            const formatter = getFormatter(currency);
+            node.textContent = formatter ? formatter.format(value) : `${value.toFixed(2)} ${currency}`;
+        });
+    });
+</script>
+{% endblock %}
