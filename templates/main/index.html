@@ -24,33 +24,18 @@
     </div>
 
     <div class="row d-none d-sm-flex fw-bold">
-        <div class="col-sm-2 overflow-hidden">Идентификатор</div>
-        <div class="col-sm overflow-hidden">Название</div>
-        <div class="col-sm overflow-hidden">Описание</div>
-        <div class="col-sm-2 overflow-hidden">Статус</div>
+        <div class="col-sm overflow-hidden">Идентификатор</div>
     </div>
     <div id="orderList">
         {% for order in orders.items %}
-        <div class="row my-1 py-1 border-top selectable {% if order.id in recently_updated_order_ids %}order-recent{% endif %}" data-id="{{ order.id }}">
-            <div class="col-sm-2">
-                <strong>{{ order.id }}</strong>
-                <div class="text-muted small">
-                    <i class="bi bi-clock-history" aria-hidden="true"></i> {{ order.updated_at | date(format="%Y-%m-%d %H:%M") }}
+            <div class="row my-1 py-1 border-top selectable" data-id="{{ order.id }}">
+                <div class="col-sm-2">
+                    <strong>{{ order.id }}</strong>
+                    <div class="text-muted small">
+                        <i class="bi bi-clock-history" aria-hidden="true"></i> {{ order.updated_at | date(format="%Y-%m-%d %H:%M") }}
+                    </div>
                 </div>
             </div>
-            <div class="col-sm">
-                <span class="d-sm-none fw-bold">Название:</span>
-                {{ order.title }}
-            </div>
-            <div class="col-sm">
-                <span class="d-sm-none fw-bold">Описание:</span>
-                {{ macros::order_description(description=order.description) }}
-            </div>
-            <div class="col-sm-2">
-                <span class="d-sm-none fw-bold">Статус:</span>
-                {{ macros::order_status(value=order.status) }}
-            </div>
-        </div>
         {% else %}
         <div class="alert alert-warning my-2" role="alert">
             Нет заказов для отображения.

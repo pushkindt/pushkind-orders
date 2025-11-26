@@ -351,6 +351,90 @@ impl StoreProductFilters {
     }
 }
 
+/// Order payload formatted for storefront consumers.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreOrder {
+    /// Unique identifier of the order.
+    pub id: i32,
+    /// Owning hub identifier.
+    pub hub_id: i32,
+    /// Optional reference to the customer placing the order.
+    pub customer_id: Option<i32>,
+    /// External human-friendly reference for the order.
+    pub reference: Option<String>,
+    /// Current lifecycle status of the order.
+    pub status: OrderStatus,
+    /// Optional notes supplied by the operator.
+    pub notes: Option<String>,
+    /// Total amount represented in the smallest currency unit (for example cents).
+    pub total_cents: i32,
+    /// ISO 4217 currency code used for the order total.
+    pub currency: String,
+    /// Product snapshots captured when the order was created.
+    pub products: Vec<StoreOrderProduct>,
+    /// Timestamp for when the order record was created.
+    pub created_at: NaiveDateTime,
+    /// Timestamp for the last update to the order record.
+    pub updated_at: NaiveDateTime,
+}
+
+impl From<Order> for StoreOrder {
+    fn from(value: Order) -> Self {
+        Self {
+            id: value.id,
+            hub_id: value.hub_id,
+            customer_id: value.customer_id,
+            reference: value.reference,
+            status: value.status,
+            notes: value.notes,
+            total_cents: value.total_cents,
+            currency: value.currency,
+            products: value
+                .products
+                .into_iter()
+                .map(StoreOrderProduct::from)
+                .collect(),
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+/// Ordered product payload formatted for storefront consumers.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreOrderProduct {
+    /// Identifier of the original product, if it still exists.
+    pub product_id: Option<i32>,
+    /// Human-readable name captured at the time of ordering.
+    pub name: String,
+    /// Stock keeping unit captured at the time of ordering.
+    pub sku: Option<String>,
+    /// Description captured at the time of ordering.
+    pub description: Option<String>,
+    /// Price represented in the smallest currency unit for the ordered quantity.
+    pub price_cents: i32,
+    /// ISO 4217 currency captured at the time of ordering.
+    pub currency: String,
+    /// Quantity of the product ordered.
+    pub quantity: i32,
+}
+
+impl From<OrderProduct> for StoreOrderProduct {
+    fn from(value: OrderProduct) -> Self {
+        Self {
+            product_id: value.product_id,
+            name: value.name,
+            sku: value.sku,
+            description: value.description,
+            price_cents: value.price_cents,
+            currency: value.currency,
+            quantity: value.quantity,
+        }
+    }
+}
+
 fn resolve_default_price_level_id<R>(repo: &R, hub_id: i32) -> ServiceResult<Option<i32>>
 where
     R: PriceLevelReader + ?Sized,
@@ -457,7 +541,7 @@ pub fn list_store_orders<R>(
     hub_id: i32,
     customer: &Customer,
     page: Option<usize>,
-) -> ServiceResult<Vec<Order>>
+) -> ServiceResult<Vec<StoreOrder>>
 where
     R: OrderReader + ?Sized,
 {
@@ -469,7 +553,7 @@ where
 
     let (_, orders) = repo.list_orders(query).map_err(ServiceError::from)?;
 
-    Ok(orders)
+    Ok(orders.into_iter().map(StoreOrder::from).collect())
 }
 
 /// Load categories available to a storefront for the provided hub.

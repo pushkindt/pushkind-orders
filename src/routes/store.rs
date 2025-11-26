@@ -13,7 +13,7 @@ use crate::repository::DieselRepository;
 use crate::routes::store_session::{get_store_customer_for_hub, set_store_customer};
 use crate::services::ServiceError;
 use crate::services::store::{
-    StoreCategoryFilters, StoreProductFilters, create_store_order, list_store_orders,
+    StoreCategoryFilters, StoreOrder, StoreProductFilters, create_store_order, list_store_orders,
     load_store_categories, load_store_product, load_store_products, load_store_tags,
     request_store_otp, verify_store_otp,
 };
@@ -266,7 +266,7 @@ pub async fn create_store_order_handler(
         &store_customer,
         payload.into_inner(),
     ) {
-        Ok(order) => HttpResponse::Created().json(order),
+        Ok(order) => HttpResponse::Created().json(StoreOrder::from(order)),
         Err(ServiceError::Form(message)) => {
             HttpResponse::UnprocessableEntity().json(json!({ "error": message }))
         }

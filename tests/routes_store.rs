@@ -7,7 +7,7 @@ use actix_web::{
 };
 use pushkind_orders::domain::{
     category::NewCategory, customer::Customer, customer::NewCustomer, order::NewOrder,
-    order::Order, order::OrderProduct, price_level::NewPriceLevel, product::NewProduct,
+    order::OrderProduct, price_level::NewPriceLevel, product::NewProduct,
     product_price_level::NewProductPriceLevelRate, tag::NewTag,
 };
 use pushkind_orders::repository::{
@@ -19,7 +19,7 @@ use pushkind_orders::routes::store::{
     list_store_orders_handler, list_store_products, list_store_tags,
 };
 use pushkind_orders::routes::store_session::set_store_customer;
-use pushkind_orders::services::store::{StoreCategory, StoreProduct, StoreTag};
+use pushkind_orders::services::store::{StoreCategory, StoreOrder, StoreProduct, StoreTag};
 use serde_json::json;
 
 mod common;
@@ -333,7 +333,7 @@ async fn create_store_order_requires_authentication() {
     )
     .await;
 
-    let request_body = json!([{ "product_id": product.id, "quantity": 1 }]);
+    let request_body = json!([{ "productId": product.id, "quantity": 1 }]);
     let req = test::TestRequest::post()
         .uri("/api/v1/store/1/orders")
         .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -401,7 +401,7 @@ async fn create_store_order_validates_payload() {
         .expect("session cookie");
     let cookie_header = format!("{}={}", cookie.name(), cookie.value());
 
-    let request_body = json!([{ "product_id": product.id, "quantity": 0 }]);
+    let request_body = json!([{ "productId": product.id, "quantity": 0 }]);
     let req = test::TestRequest::post()
         .uri("/api/v1/store/1/orders")
         .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -471,7 +471,7 @@ async fn create_store_order_creates_order() {
         .expect("session cookie");
     let cookie_header = format!("{}={}", cookie.name(), cookie.value());
 
-    let request_body = json!([{ "product_id": product.id, "quantity": 2 }]);
+    let request_body = json!([{ "productId": product.id, "quantity": 2 }]);
     let req = test::TestRequest::post()
         .uri("/api/v1/store/1/orders")
         .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -482,7 +482,7 @@ async fn create_store_order_creates_order() {
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), StatusCode::CREATED);
-    let order: Order = test::read_body_json(resp).await;
+    let order: StoreOrder = test::read_body_json(resp).await;
     assert_eq!(order.customer_id, Some(customer.id));
     assert_eq!(order.total_cents, 1000);
     assert_eq!(order.products.len(), 1);
@@ -573,7 +573,7 @@ async fn list_store_orders_returns_orders_for_customer() {
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    let orders: Vec<Order> = test::read_body_json(resp).await;
+    let orders: Vec<StoreOrder> = test::read_body_json(resp).await;
     assert_eq!(orders.len(), 1);
     assert_eq!(orders[0].customer_id, Some(customer.id));
     assert_eq!(orders[0].total_cents, 500);
@@ -628,6 +628,6 @@ async fn list_store_orders_returns_empty_results() {
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    let orders: Vec<Order> = test::read_body_json(resp).await;
+    let orders: Vec<StoreOrder> = test::read_body_json(resp).await;
     assert!(orders.is_empty());
 }

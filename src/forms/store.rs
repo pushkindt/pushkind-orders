@@ -97,6 +97,7 @@ pub struct StoreOtpVerifyInput {
 
 /// Payload describing a single line in a storefront order request.
 #[derive(Debug, Clone, Deserialize, Validate, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct StoreOrderLinePayload {
     /// Identifier of the product being ordered.
     #[validate(range(min = 1))]
