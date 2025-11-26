@@ -15,6 +15,30 @@
     {% endif %}
 {% endmacro user_popover %}
 
+{% macro order_status_badge(status) %}
+    {% set status_value = status | default(value="Draft") %}
+    {% set status_color = "secondary" %}
+    {% set status_label = "Черновик" %}
+
+    {% if status_value == "Completed" %}
+        {% set status_color = "success" %}
+        {% set status_label = "Завершён" %}
+    {% elif status_value == "Processing" %}
+        {% set status_color = "primary" %}
+        {% set status_label = "В обработке" %}
+    {% elif status_value == "Pending" %}
+        {% set status_color = "warning" %}
+        {% set status_label = "Ожидает" %}
+    {% elif status_value == "Cancelled" %}
+        {% set status_color = "danger" %}
+        {% set status_label = "Отменён" %}
+    {% elif status_value != "Draft" %}
+        {% set status_label = "Неизвестно" %}
+    {% endif %}
+
+    <span class="badge text-bg-{{ status_color }}">{{ status_label }}</span>
+{% endmacro order_status_badge %}
+
 {% macro pagination(pages, current_page=1, search_query="") %}
     {% if pages | length > 1 %}
         <nav aria-label="pagination">

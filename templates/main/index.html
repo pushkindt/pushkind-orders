@@ -26,26 +26,32 @@
     <div id="orderList">
         {% for order in orders.items %}
             <div class="row my-1 py-2 border-top selectable align-items-center" data-id="{{ order.id }}">
-                <div class="col-12 col-sm-3">
+                <div class="col-12 col-md-2">
                     <strong>{{ order.id }}</strong>
                     <div class="text-muted small">
                         <i class="bi bi-clock-history" aria-hidden="true"></i> {{ order.updated_at | date(format="%Y-%m-%d %H:%M") }}
                     </div>
                 </div>
-                <div class="col-6 col-sm-3 mt-2 mt-sm-0">
+                <div class="col-6 col-md-2 mt-2 mt-md-0">
                     <div class="text-muted small">Создан</div>
                     <div>{{ order.created_at | date(format="%Y-%m-%d %H:%M") }}</div>
                 </div>
-                <div class="col-6 col-sm-3 mt-2 mt-sm-0">
+                <div class="col-6 col-md-3 mt-2 mt-md-0">
                     <div class="text-muted small">Сумма</div>
                     <div class="fw-semibold"
                         data-order-total-cents="{{ order.total_cents }}"
                         data-order-currency="{{ order.currency }}">
                     </div>
                 </div>
-                <div class="col-6 col-sm-3 mt-2 mt-sm-0">
+                <div class="col-6 col-md-2 mt-2 mt-md-0">
                     <div class="text-muted small">Товаров</div>
                     <div class="fw-semibold">{{ order.products | length }}</div>
+                </div>
+                <div class="col-6 col-md-3 mt-2 mt-md-0">
+                    <div class="text-muted small">Статус</div>
+                    <div class="d-flex align-items-center gap-2">
+                        {{ macros::order_status_badge(status=order.status) }}
+                    </div>
                 </div>
             </div>
         {% else %}

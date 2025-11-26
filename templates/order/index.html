@@ -12,18 +12,6 @@
         <a class="btn btn-outline-secondary" href="/"><i class="bi bi-arrow-left me-2"></i>К списку заказов</a>
     </div>
 
-    {% set status_value = order.status | default(value="Draft") %}
-    {% set status_color = "secondary" %}
-    {% if status_value == "Completed" %}
-        {% set status_color = "success" %}
-    {% elif status_value == "Processing" %}
-        {% set status_color = "primary" %}
-    {% elif status_value == "Pending" %}
-        {% set status_color = "warning" %}
-    {% elif status_value == "Cancelled" %}
-        {% set status_color = "danger" %}
-    {% endif %}
-
     <div class="row g-3 mt-2">
         <div class="col-lg-4">
             <div class="card h-100 shadow-sm">
@@ -32,7 +20,7 @@
                         <div>
                             <div class="text-muted text-uppercase small">Статус</div>
                             <div class="d-flex align-items-center gap-2">
-                                <span class="badge text-bg-{{ status_color }}">{{ status_value }}</span>
+                                {{ macros::order_status_badge(status=order.status) }}
                             </div>
                         </div>
                         <div class="text-end">
@@ -95,9 +83,6 @@
                                 <tr>
                                     <td>
                                         <div class="fw-semibold">{{ product.name }}</div>
-                                        {% if product.description %}
-                                            <div class="text-muted small">{{ product.description }}</div>
-                                        {% endif %}
                                     </td>
                                     <td class="text-muted">
                                         {% if product.sku %}
