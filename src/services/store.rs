@@ -349,7 +349,7 @@ where
     R: TagReader + ?Sized,
 {
     let tags = repo
-        .list_tags(TagListQuery::new(hub_id))
+        .list_tags(TagListQuery::try_new(hub_id).map_err(|_| ServiceError::Internal)?)
         .map_err(ServiceError::from)?
         .1;
 
@@ -375,6 +375,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::{HubId, TagId, TagName};
     use crate::domain::{
         category::Category,
         customer::{Customer, CustomerListQuery},
@@ -514,6 +515,16 @@ mod tests {
             tags: Vec::new(),
             image_urls: Vec::new(),
             amount: None,
+            created_at: sample_timestamp(),
+            updated_at: sample_timestamp(),
+        }
+    }
+
+    fn tag(id: i32, hub_id: i32, name: &str) -> Tag {
+        Tag {
+            id: TagId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: TagName::new(name).unwrap(),
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
         }
@@ -1348,13 +1359,7 @@ mod tests {
                     created_at: sample_timestamp(),
                     updated_at: sample_timestamp(),
                 }],
-                tags: vec![Tag {
-                    id: 1,
-                    hub_id: 1,
-                    name: "Organic".to_string(),
-                    created_at: sample_timestamp(),
-                    updated_at: sample_timestamp(),
-                }],
+                tags: vec![tag(1, 1, "Organic")],
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 image_urls: vec!["https://example.com/coffee.png".to_string()],
@@ -1452,13 +1457,7 @@ mod tests {
                     updated_at: sample_timestamp(),
                 },
             ],
-            tags: vec![Tag {
-                id: 1,
-                hub_id: 1,
-                name: "Organic".to_string(),
-                created_at: sample_timestamp(),
-                updated_at: sample_timestamp(),
-            }],
+            tags: vec![tag(1, 1, "Organic")],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
             image_urls: vec!["https://example.com/coffee.png".to_string()],
@@ -1620,13 +1619,7 @@ mod tests {
                     updated_at: sample_timestamp(),
                 },
             ],
-            tags: vec![Tag {
-                id: 2,
-                hub_id: 1,
-                name: "Barista's choice".to_string(),
-                created_at: sample_timestamp(),
-                updated_at: sample_timestamp(),
-            }],
+            tags: vec![tag(2, 1, "Barista's choice")],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
             image_urls: vec!["https://example.com/latte.png".to_string()],
@@ -1707,13 +1700,7 @@ mod tests {
                     updated_at: sample_timestamp(),
                 },
             ],
-            tags: vec![Tag {
-                id: 2,
-                hub_id: 1,
-                name: "Barista's choice".to_string(),
-                created_at: sample_timestamp(),
-                updated_at: sample_timestamp(),
-            }],
+            tags: vec![tag(2, 1, "Barista's choice")],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
             image_urls: vec!["https://example.com/latte.png".to_string()],

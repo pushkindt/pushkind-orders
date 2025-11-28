@@ -40,13 +40,13 @@ async fn store_endpoints_return_data() {
         .create_category(&NewCategory::new(1, "Beverages"))
         .expect("create category");
     let tag = repo
-        .create_tag(&NewTag::new(1, "Organic"))
+        .create_tag(&NewTag::try_new(1, "Organic").expect("build tag"))
         .expect("create tag");
 
     let product = repo
         .create_product(&NewProduct::new(1, "Coffee", "USD"))
         .expect("create product");
-    repo.replace_product_tags(product.id, 1, &[tag.id])
+    repo.replace_product_tags(product.id, 1, &[tag.id.get()])
         .expect("attach tag");
 
     let app_repo = repo.clone();

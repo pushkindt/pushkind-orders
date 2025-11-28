@@ -23,6 +23,9 @@ pub enum TagFormError {
     /// The provided name is empty after sanitization.
     #[error("tag name cannot be empty")]
     EmptyName,
+    /// Domain constraint validation failed.
+    #[error("invalid tag data: {0}")]
+    Constraint(String),
 }
 
 /// Form payload emitted when submitting the "Add tag" form.
@@ -39,7 +42,8 @@ impl AddTagForm {
         self.validate()?;
 
         match sanitize_text(&self.name) {
-            Some(sanitized_name) => Ok(NewTag::new(hub_id, sanitized_name)),
+            Some(sanitized_name) => NewTag::try_new(hub_id, sanitized_name)
+                .map_err(|err| TagFormError::Constraint(err.to_string())),
             None => Err(TagFormError::EmptyName),
         }
     }
@@ -62,7 +66,8 @@ impl EditTagForm {
         self.validate()?;
 
         match sanitize_text(&self.name) {
-            Some(sanitized_name) => Ok(UpdateTag::new(sanitized_name)),
+            Some(sanitized_name) => UpdateTag::try_new(sanitized_name)
+                .map_err(|err| TagFormError::Constraint(err.to_string())),
             None => Err(TagFormError::EmptyName),
         }
     }
@@ -82,8 +87,8 @@ mod tests {
             .into_new_tag(5)
             .expect("expected conversion to succeed");
 
-        assert_eq!(new_tag.hub_id, 5);
-        assert_eq!(new_tag.name, "Seasonal \t Specials");
+        assert_eq!(new_tag.hub_id.get(), 5);
+        assert_eq!(new_tag.name.as_str(), "Seasonal \t Specials");
     }
 
     #[test]
@@ -110,7 +115,7 @@ mod tests {
             .expect("expected payload conversion to succeed");
 
         assert_eq!(tag_id, 9);
-        assert_eq!(update.name, "Limited\nEdition");
+        assert_eq!(update.name.as_str(), "Limited\nEdition");
     }
 
     #[test]

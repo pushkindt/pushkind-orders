@@ -4,8 +4,13 @@ use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 use crate::domain::tag::{
     NewTag as DomainNewTag, Tag as DomainTag, TagListQuery, UpdateTag as DomainUpdateTag,
 };
+use crate::domain::types::TypeConstraintError;
 use crate::models::tag::{NewTag as DbNewTag, Tag as DbTag, UpdateTag as DbUpdateTag};
 use crate::repository::{DieselRepository, TagReader, TagWriter};
+
+fn map_type_error(err: TypeConstraintError) -> RepositoryError {
+    RepositoryError::Unexpected(format!("Invalid tag data: {err}"))
+}
 
 impl TagReader for DieselRepository {
     fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<DomainTag>)> {
@@ -15,7 +20,7 @@ impl TagReader for DieselRepository {
 
         let query_builder = || {
             let mut items = tags::table
-                .filter(tags::hub_id.eq(query.hub_id))
+                .filter(tags::hub_id.eq(query.hub_id.get()))
                 .into_boxed::<diesel::sqlite::Sqlite>();
 
             if let Some(search) = query.search.as_ref() {
@@ -37,7 +42,11 @@ impl TagReader for DieselRepository {
         }
 
         let db_tags = items_query.load::<DbTag>(&mut conn)?;
-        let tags = db_tags.into_iter().map(DomainTag::from).collect();
+        let tags = db_tags
+            .into_iter()
+            .map(DomainTag::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_type_error)?;
 
         Ok((total, tags))
     }
@@ -54,7 +63,7 @@ impl TagWriter for DieselRepository {
             .values(&insertable)
             .get_result::<DbTag>(&mut conn)?;
 
-        Ok(created.into())
+        DomainTag::try_from(created).map_err(map_type_error)
     }
 
     fn update_tag(
@@ -76,7 +85,7 @@ impl TagWriter for DieselRepository {
             .set(&db_updates)
             .get_result::<DbTag>(&mut conn)?;
 
-        Ok(updated.into())
+        DomainTag::try_from(updated).map_err(map_type_error)
     }
 
     fn delete_tag(&self, tag_id: i32, hub_id: i32) -> RepositoryResult<()> {

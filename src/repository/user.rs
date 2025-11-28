@@ -23,10 +23,9 @@ impl UserReader for DieselRepository {
             .first::<DbUser>(&mut conn)
             .optional()?;
 
-        Ok(user
-            .map(DomainUser::try_from)
+        user.map(DomainUser::try_from)
             .transpose()
-            .map_err(map_type_error)?)
+            .map_err(map_type_error)
     }
 
     fn get_user_by_email(&self, email: &str, hub_id: i32) -> RepositoryResult<Option<DomainUser>> {
@@ -39,10 +38,9 @@ impl UserReader for DieselRepository {
             .first::<DbUser>(&mut conn)
             .optional()?;
 
-        Ok(user
-            .map(DomainUser::try_from)
+        user.map(DomainUser::try_from)
             .transpose()
-            .map_err(map_type_error)?)
+            .map_err(map_type_error)
     }
 
     fn list_users(&self, query: UserListQuery) -> RepositoryResult<(usize, Vec<DomainUser>)> {

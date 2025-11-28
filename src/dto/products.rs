@@ -144,8 +144,8 @@ pub struct ProductTagView {
 impl ProductTagView {
     fn from_tag(tag: Tag) -> Self {
         Self {
-            id: tag.id,
-            name: tag.name,
+            id: tag.id.get(),
+            name: tag.name.as_str().to_string(),
         }
     }
 }

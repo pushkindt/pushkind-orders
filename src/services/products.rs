@@ -67,10 +67,9 @@ where
     categories.retain(|category| !category.is_archived);
     categories.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let (_, mut tags) = repo
-        .list_tags(TagListQuery::new(user.hub_id))
-        .map_err(ServiceError::from)?;
-    tags.sort_by(|a, b| a.name.cmp(&b.name));
+    let tag_query = TagListQuery::try_new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let (_, mut tags) = repo.list_tags(tag_query).map_err(ServiceError::from)?;
+    tags.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
     let level_lookup: HashMap<i32, &PriceLevel> =
         price_levels.iter().map(|level| (level.id, level)).collect();
@@ -295,6 +294,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::domain::category::{NewCategory, UpdateCategory};
+    use crate::domain::types::{HubId, TagId, TagName};
     use crate::domain::{
         category::Category, price_level::PriceLevel, product::Product,
         product_price_level::ProductPriceLevelRate, tag::Tag,
@@ -382,6 +382,7 @@ mod tests {
         };
 
         let expected_hub = user.hub_id;
+        let expected_hub_id = HubId::new(expected_hub).unwrap();
 
         let price_level_rows = vec![
             price_level(10, expected_hub, "Retail"),
@@ -474,7 +475,7 @@ mod tests {
             .expect_list_tags()
             .times(1)
             .withf(move |qry| {
-                assert_eq!(qry.hub_id, expected_hub);
+                assert_eq!(qry.hub_id, expected_hub_id);
                 assert!(qry.search.is_none());
                 assert!(qry.pagination.is_none());
                 true
@@ -1381,9 +1382,9 @@ Banana,USD,7.50,
 
     fn tag(id: i32, hub_id: i32, name: &str) -> Tag {
         Tag {
-            id,
-            hub_id,
-            name: name.to_string(),
+            id: TagId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: TagName::new(name).unwrap(),
             created_at: datetime(),
             updated_at: datetime(),
         }

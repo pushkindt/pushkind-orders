@@ -25,7 +25,7 @@ where
     let TagQuery { search, page } = query;
     let page = page.unwrap_or(1);
 
-    let mut list_query = TagListQuery::new(user.hub_id);
+    let mut list_query = TagListQuery::try_new(user.hub_id).map_err(|_| ServiceError::Internal)?;
 
     if let Some(term) = search.as_ref() {
         list_query = list_query.search(term);
@@ -93,6 +93,7 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
     use serde_json::Value;
 
+    use crate::domain::types::{HubId, TagId, TagName};
     use crate::dto::tags::TagQuery;
     use crate::repository::mock::{MockTagReader, MockTagWriter};
 
@@ -116,9 +117,9 @@ mod tests {
 
     fn sample_tag(id: i32, hub_id: i32, name: &str) -> Tag {
         Tag {
-            id,
-            hub_id,
-            name: name.to_string(),
+            id: TagId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: TagName::new(name).unwrap(),
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
         }
@@ -143,11 +144,12 @@ mod tests {
             page: Some(2),
         };
         let expected_hub = user.hub_id;
+        let expected_hub_id = HubId::new(expected_hub).unwrap();
 
         repo.expect_list_tags()
             .times(1)
             .withf(move |query| {
-                assert_eq!(query.hub_id, expected_hub);
+                assert_eq!(query.hub_id, expected_hub_id);
                 assert_eq!(query.search.as_deref(), Some("sea"));
                 match &query.pagination {
                     Some(pagination) => {
@@ -230,8 +232,8 @@ mod tests {
         repo.expect_create_tag()
             .times(1)
             .withf(|new_tag| {
-                assert_eq!(new_tag.hub_id, 7);
-                assert_eq!(new_tag.name, "Seasonal\tPicks");
+                assert_eq!(new_tag.hub_id.get(), 7);
+                assert_eq!(new_tag.name.as_str(), "Seasonal\tPicks");
                 true
             })
             .returning(|_| Ok(sample_tag(3, 7, "Seasonal\tPicks")));
@@ -242,8 +244,8 @@ mod tests {
 
         let created = create_tag(&repo, &user, form).expect("expected success");
 
-        assert_eq!(created.id, 3);
-        assert_eq!(created.name, "Seasonal\tPicks");
+        assert_eq!(created.id.get(), 3);
+        assert_eq!(created.name.as_str(), "Seasonal\tPicks");
     }
 
     #[test]
@@ -283,7 +285,7 @@ mod tests {
             .withf(|tag_id, hub_id, updates| {
                 assert_eq!(*tag_id, 5);
                 assert_eq!(*hub_id, 7);
-                assert_eq!(updates.name, "Limited\nEdition");
+                assert_eq!(updates.name.as_str(), "Limited\nEdition");
                 true
             })
             .returning(|_, _, _| Ok(sample_tag(5, 7, "Limited\nEdition")));
@@ -295,8 +297,8 @@ mod tests {
 
         let updated = modify_tag(&repo, &user, form).expect("expected success");
 
-        assert_eq!(updated.id, 5);
-        assert_eq!(updated.name, "Limited\nEdition");
+        assert_eq!(updated.id.get(), 5);
+        assert_eq!(updated.name.as_str(), "Limited\nEdition");
     }
 
     #[test]

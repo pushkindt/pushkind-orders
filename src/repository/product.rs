@@ -18,6 +18,7 @@ use crate::{
     },
     domain::product_tag::NewProductTag as DomainNewProductTag,
     domain::tag::Tag as DomainTag,
+    domain::types::TypeConstraintError,
     models::product::{
         NewProduct as DbNewProduct, Product as DbProduct, UpdateProduct as DbUpdateProduct,
     },
@@ -29,6 +30,10 @@ use crate::{
     models::tag::Tag as DbTag,
     repository::{DieselRepository, ProductReader, ProductWriter},
 };
+
+fn map_tag_type_error(err: TypeConstraintError) -> RepositoryError {
+    RepositoryError::Unexpected(format!("Invalid tag data: {err}"))
+}
 
 impl ProductReader for DieselRepository {
     fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainProduct>> {
@@ -452,7 +457,9 @@ fn load_tags_for_products(
 
     let mut map: HashMap<i32, Vec<DomainTag>> = HashMap::new();
     for (link, tag) in rows {
-        map.entry(link.product_id).or_default().push(tag.into());
+        map.entry(link.product_id)
+            .or_default()
+            .push(DomainTag::try_from(tag).map_err(map_tag_type_error)?);
     }
 
     Ok(map)

@@ -52,8 +52,8 @@ pub struct StoreTag {
 impl From<Tag> for StoreTag {
     fn from(value: Tag) -> Self {
         Self {
-            id: value.id,
-            name: value.name,
+            id: value.id.get(),
+            name: value.name.as_str().to_string(),
         }
     }
 }

@@ -69,6 +69,7 @@ macro_rules! id_newtype {
 
 id_newtype!(UserId);
 id_newtype!(HubId);
+id_newtype!(TagId);
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Lower-cased and validated email address.
@@ -223,6 +224,56 @@ impl TryFrom<&str> for UserName {
 
 impl From<UserName> for String {
     fn from(value: UserName) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Tag name wrapper enforcing non-empty values.
+pub struct TagName(String);
+
+impl TagName {
+    /// Constructs a tag name that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let name = NonEmptyString::new(value)?;
+        Ok(Self(name.into_inner()))
+    }
+
+    /// Borrow the tag name.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Extract the owned tag name.
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for TagName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for TagName {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for TagName {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<TagName> for String {
+    fn from(value: TagName) -> Self {
         value.0
     }
 }

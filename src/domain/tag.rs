@@ -2,15 +2,17 @@ use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
+use crate::domain::types::{HubId, TagId, TagName, TypeConstraintError};
+
 /// Domain representation of a reusable tag that can be attached to multiple products.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Tag {
     /// Unique identifier of the tag.
-    pub id: i32,
+    pub id: TagId,
     /// Owning hub identifier.
-    pub hub_id: i32,
+    pub hub_id: HubId,
     /// Human-readable name of the tag.
-    pub name: String,
+    pub name: TagName,
     /// Timestamp for when the tag record was created.
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the tag record.
@@ -21,16 +23,20 @@ pub struct Tag {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewTag {
     /// Owning hub identifier.
-    pub hub_id: i32,
+    pub hub_id: HubId,
     /// Human-readable name of the tag.
-    pub name: String,
+    pub name: TagName,
 }
 
 impl NewTag {
     /// Construct a new tag payload; callers must supply pre-normalised fields.
-    pub fn new(hub_id: i32, name: impl Into<String>) -> Self {
-        let name = name.into();
+    pub fn new(hub_id: HubId, name: TagName) -> Self {
         Self { hub_id, name }
+    }
+
+    /// Attempt to construct a tag payload by enforcing domain constraints.
+    pub fn try_new(hub_id: i32, name: impl Into<String>) -> Result<Self, TypeConstraintError> {
+        Ok(Self::new(HubId::new(hub_id)?, TagName::new(name)?))
     }
 }
 
@@ -38,17 +44,21 @@ impl NewTag {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateTag {
     /// Updated human-readable name of the tag.
-    pub name: String,
+    pub name: TagName,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }
 
 impl UpdateTag {
     /// Construct a new patch payload; callers must supply pre-normalised fields.
-    pub fn new(name: impl Into<String>) -> Self {
-        let name = name.into();
+    pub fn new(name: TagName) -> Self {
         let updated_at = chrono::Utc::now().naive_utc();
         Self { name, updated_at }
+    }
+
+    /// Attempt to build a tag update by enforcing domain constraints.
+    pub fn try_new(name: impl Into<String>) -> Result<Self, TypeConstraintError> {
+        Ok(Self::new(TagName::new(name)?))
     }
 }
 
@@ -56,7 +66,7 @@ impl UpdateTag {
 #[derive(Debug, Clone)]
 pub struct TagListQuery {
     /// Owning hub identifier.
-    pub hub_id: i32,
+    pub hub_id: HubId,
     /// Optional case-insensitive substring search.
     pub search: Option<String>,
     /// Optional pagination options applied to the query.
@@ -65,12 +75,17 @@ pub struct TagListQuery {
 
 impl TagListQuery {
     /// Construct a query that targets all tags belonging to `hub_id`.
-    pub fn new(hub_id: i32) -> Self {
+    pub fn new(hub_id: HubId) -> Self {
         Self {
             hub_id,
             search: None,
             pagination: None,
         }
+    }
+
+    /// Attempt to construct a query from a raw hub identifier.
+    pub fn try_new(hub_id: i32) -> Result<Self, TypeConstraintError> {
+        Ok(Self::new(HubId::new(hub_id)?))
     }
 
     /// Filter the results by a search term applied to the tag name.
