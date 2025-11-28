@@ -1,7 +1,10 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
-use crate::domain::store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp};
+use crate::domain::{
+    store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
+    types::{HubId, OtpCode, PhoneNumber, TypeConstraintError},
+};
 
 #[derive(Debug, Clone, Queryable, Identifiable, Selectable)]
 #[diesel(primary_key(hub_id, phone))]
@@ -24,24 +27,26 @@ pub struct NewStoreOtp {
     pub last_sent_at: NaiveDateTime,
 }
 
-impl From<StoreOtp> for DomainStoreOtp {
-    fn from(value: StoreOtp) -> Self {
-        Self {
-            hub_id: value.hub_id,
-            phone: value.phone,
-            code: value.code,
+impl TryFrom<StoreOtp> for DomainStoreOtp {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: StoreOtp) -> Result<Self, Self::Error> {
+        Ok(Self {
+            hub_id: HubId::new(value.hub_id)?,
+            phone: PhoneNumber::new(value.phone)?,
+            code: OtpCode::new(value.code)?,
             expires_at: value.expires_at,
             last_sent_at: value.last_sent_at,
-        }
+        })
     }
 }
 
 impl From<&DomainNewStoreOtp> for NewStoreOtp {
     fn from(value: &DomainNewStoreOtp) -> Self {
         Self {
-            hub_id: value.hub_id,
-            phone: value.phone.clone(),
-            code: value.code.clone(),
+            hub_id: value.hub_id.get(),
+            phone: value.phone.as_str().to_string(),
+            code: value.code.as_str().to_string(),
             expires_at: value.expires_at,
             last_sent_at: value.last_sent_at,
         }

@@ -21,6 +21,12 @@ pub enum TypeConstraintError {
     /// Provided string contained no non-whitespace characters.
     #[error("value cannot be empty")]
     EmptyString,
+    /// Phone number did not meet expected format.
+    #[error("invalid phone number")]
+    InvalidPhone,
+    /// OTP code is not six ASCII digits.
+    #[error("invalid OTP code")]
+    InvalidOtpCode,
 }
 
 /// Macro to generate lightweight newtypes for positive identifiers.
@@ -274,6 +280,118 @@ impl TryFrom<&str> for TagName {
 
 impl From<TagName> for String {
     fn from(value: TagName) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Normalized phone number wrapper (expected E.164).
+pub struct PhoneNumber(String);
+
+impl PhoneNumber {
+    /// Constructs a phone number ensuring it is non-empty and matches `+` followed by digits.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let trimmed = value.into().trim().to_string();
+        if trimmed.is_empty() {
+            return Err(TypeConstraintError::EmptyString);
+        }
+        let mut chars = trimmed.chars();
+        let valid = match chars.next() {
+            Some('+') => chars.all(|c| c.is_ascii_digit()),
+            Some(first) => first.is_ascii_digit() && chars.all(|c| c.is_ascii_digit()),
+            None => false,
+        };
+        if !valid {
+            return Err(TypeConstraintError::InvalidPhone);
+        }
+        Ok(Self(trimmed))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for PhoneNumber {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for PhoneNumber {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for PhoneNumber {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<PhoneNumber> for String {
+    fn from(value: PhoneNumber) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Six-digit one-time password wrapper.
+pub struct OtpCode(String);
+
+impl OtpCode {
+    /// Ensures the code is exactly six ASCII digits.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let code = value.into();
+        if code.len() == 6 && code.chars().all(|c| c.is_ascii_digit()) {
+            Ok(Self(code))
+        } else {
+            Err(TypeConstraintError::InvalidOtpCode)
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for OtpCode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for OtpCode {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for OtpCode {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<OtpCode> for String {
+    fn from(value: OtpCode) -> Self {
         value.0
     }
 }

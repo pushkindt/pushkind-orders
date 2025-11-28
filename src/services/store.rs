@@ -62,7 +62,8 @@ where
     let code = format!("{:06}", rand::rng().random_range(0..1_000_000));
     let expires_at = now + Duration::minutes(OTP_EXPIRY_MINUTES);
     let otp_payload =
-        NewStoreOtp::new(hub_id, request.phone.clone(), code.clone(), expires_at, now);
+        NewStoreOtp::try_new(hub_id, request.phone.clone(), code.clone(), expires_at, now)
+            .map_err(|err| ServiceError::Form(err.to_string()))?;
 
     repo.upsert_store_otp(&otp_payload)
         .map_err(ServiceError::from)?;
@@ -103,7 +104,7 @@ where
         .map_err(ServiceError::from)?
         .ok_or_else(|| ServiceError::Form(OTP_INVALID_MESSAGE.to_string()))?;
 
-    if record.code != request.otp {
+    if record.code.as_str() != request.otp {
         return Err(ServiceError::Form(OTP_INVALID_MESSAGE.to_string()));
     }
 
@@ -385,6 +386,7 @@ mod tests {
         product_price_level::ProductPriceLevelRate,
         store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
         tag::Tag,
+        types::{OtpCode, PhoneNumber},
     };
     use crate::dto::store::{StoreCategoryFilters, StoreProductFilters};
     use crate::forms::store::{
@@ -528,6 +530,14 @@ mod tests {
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
         }
+    }
+
+    fn phone_number(value: &str) -> PhoneNumber {
+        PhoneNumber::new(value).unwrap()
+    }
+
+    fn otp_code(value: &str) -> OtpCode {
+        OtpCode::new(value).unwrap()
     }
 
     struct MockOtpRequestRepo {
@@ -1003,7 +1013,8 @@ mod tests {
             .return_once(|_, _| Ok(None));
         repo.expect_upsert_store_otp()
             .withf(|new_otp| {
-                new_otp.code.len() == 6 && new_otp.code.chars().all(|ch| ch.is_ascii_digit())
+                new_otp.code.as_str().len() == 6
+                    && new_otp.code.as_str().chars().all(|ch| ch.is_ascii_digit())
             })
             .return_once(|new_otp| {
                 Ok(DomainStoreOtp {
@@ -1042,9 +1053,9 @@ mod tests {
         let mut repo = MockStoreOtpRepository::new();
         repo.expect_get_store_otp().return_once(|_, _| {
             Ok(Some(DomainStoreOtp {
-                hub_id: 99,
-                phone: "+15551234".to_string(),
-                code: "123456".to_string(),
+                hub_id: HubId::new(99).unwrap(),
+                phone: phone_number("+15551234"),
+                code: otp_code("123456"),
                 expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
                 last_sent_at: Utc::now().naive_utc(),
             }))
@@ -1076,9 +1087,9 @@ mod tests {
             .expect_get_store_otp()
             .return_once(|_, _| {
                 Ok(Some(DomainStoreOtp {
-                    hub_id: 1,
-                    phone: "+15551234".to_string(),
-                    code: "123456".to_string(),
+                    hub_id: HubId::new(1).unwrap(),
+                    phone: phone_number("+15551234"),
+                    code: otp_code("123456"),
                     expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
                     last_sent_at: Utc::now().naive_utc(),
                 }))
@@ -1111,9 +1122,9 @@ mod tests {
             .expect_get_store_otp()
             .return_once(|_, _| {
                 Ok(Some(DomainStoreOtp {
-                    hub_id: 1,
-                    phone: "+15551234".to_string(),
-                    code: "123456".to_string(),
+                    hub_id: HubId::new(1).unwrap(),
+                    phone: phone_number("+15551234"),
+                    code: otp_code("123456"),
                     expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
                     last_sent_at: Utc::now().naive_utc(),
                 }))
@@ -1154,9 +1165,9 @@ mod tests {
             .expect_get_store_otp()
             .return_once(|_, _| {
                 Ok(Some(DomainStoreOtp {
-                    hub_id: 1,
-                    phone: "+15551234".to_string(),
-                    code: "123456".to_string(),
+                    hub_id: HubId::new(1).unwrap(),
+                    phone: phone_number("+15551234"),
+                    code: otp_code("123456"),
                     expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
                     last_sent_at: Utc::now().naive_utc(),
                 }))
@@ -1188,9 +1199,9 @@ mod tests {
             .expect_get_store_otp()
             .return_once(|_, _| {
                 Ok(Some(DomainStoreOtp {
-                    hub_id: 1,
-                    phone: "+15551234".to_string(),
-                    code: "123456".to_string(),
+                    hub_id: HubId::new(1).unwrap(),
+                    phone: phone_number("+15551234"),
+                    code: otp_code("123456"),
                     expires_at: Utc::now().naive_utc() - Duration::minutes(1),
                     last_sent_at: Utc::now().naive_utc(),
                 }))
