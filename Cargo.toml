@@ -6,15 +6,15 @@ default-run = "pushkind-orders"
 
 [dependencies]
 thiserror = "2.0.17"
-actix-files = "0.6.6"
+actix-files = "0.6.9"
 actix-identity = "0.9.0"
 actix-multipart = "0.7.2"
 actix-session = { version = "0.11.0", features = ["cookie-session"] }
-actix-web = "4.11.0"
+actix-web = "4.12.1"
 actix-web-flash-messages = { version = "0.5.0", features = ["cookies"] }
 chrono = { version = "0.4.41", features = ["serde"] }
 csv = "1.4.0"
-diesel = { version = "2.3.3", features = [
+diesel = { version = "2.3.4", features = [
     "sqlite",
     "r2d2",
     "chrono",
@@ -38,9 +38,10 @@ serde_qs = { version = "0.15.0" }
 phonenumber = "0.3"
 rand = "0.9.2"
 ammonia = "4.1.2"
+config = { version = "0.15.19", default-features = false, features = ["yaml"] }
 
 [dev-dependencies]
-diesel_migrations = "2.2.0"
-mockall = "0.13.1"
+diesel_migrations = "2.3.1"
+mockall = "0.14.0"
 actix-rt = "2.11.0"
 tempfile = "3.13.0"

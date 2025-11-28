@@ -1,0 +1,4 @@
+domain: pushkind.com
+port: 9007
+auth_service_url: https://users.pushkind.com
+crm_service_url: https://crm.pushkind.com
