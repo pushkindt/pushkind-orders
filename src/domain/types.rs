@@ -87,11 +87,17 @@ macro_rules! id_newtype {
 id_newtype!(UserId, "Unique identifier for a user.");
 id_newtype!(HubId, "Unique identifier for a hub.");
 id_newtype!(TagId, "Unique identifier for a tag.");
-id_newtype!(ProductTagId, "Unique identifier for a product-tag association.");
+id_newtype!(
+    ProductTagId,
+    "Unique identifier for a product-tag association."
+);
 id_newtype!(ProductId, "Unique identifier for a product.");
 id_newtype!(CustomerId, "Unique identifier for a customer.");
 id_newtype!(CategoryId, "Unique identifier for a category.");
-id_newtype!(ProductPriceLevelRateId, "Unique identifier for a product price level rate.");
+id_newtype!(
+    ProductPriceLevelRateId,
+    "Unique identifier for a product price level rate."
+);
 id_newtype!(PriceLevelId, "Unique identifier for a price level.");
 id_newtype!(OrderId, "Unique identifier for an order.");
 
