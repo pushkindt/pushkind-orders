@@ -9,6 +9,7 @@ use pushkind_orders::domain::{
     product::{NewProduct, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
     user::{NewUser, UpdateUser},
+    types::PriceLevelId,
 };
 use pushkind_orders::models::category::NewCategory as DbNewCategory;
 use pushkind_orders::models::product_price_level::NewProductPriceLevel as DbNewProductPriceLevel;
@@ -115,9 +116,15 @@ fn test_customer_repository_crud() {
         .create_price_level(&NewPriceLevel::new(1, "VIP", false))
         .expect("failed to create price level");
 
-    let alice_new = NewCustomer::new(1, "Alice", "+15551234").with_email("alice@example.com");
-    let bob_new = NewCustomer::new(1, "Bob", "+15550000").with_email("bob@example.com");
-    let carla_new = NewCustomer::new(2, "Carla", "+18880000").with_email("carla@example.com");
+    let alice_new = NewCustomer::try_new(1, "Alice", "+15551234")
+        .and_then(|customer| customer.with_email("alice@example.com"))
+        .expect("valid alice");
+    let bob_new = NewCustomer::try_new(1, "Bob", "+15550000")
+        .and_then(|customer| customer.with_email("bob@example.com"))
+        .expect("valid bob");
+    let carla_new = NewCustomer::try_new(2, "Carla", "+18880000")
+        .and_then(|customer| customer.with_email("carla@example.com"))
+        .expect("valid carla");
 
     let alice = repo
         .create_customer(&alice_new)
@@ -129,20 +136,23 @@ fn test_customer_repository_crud() {
         .create_customer(&carla_new)
         .expect("failed to create Carla");
 
-    assert_eq!(alice.email.as_deref(), Some("alice@example.com"));
-    assert_eq!(alice.phone, "+15551234");
+    assert_eq!(
+        alice.email.as_ref().map(|email| email.as_str()),
+        Some("alice@example.com")
+    );
+    assert_eq!(alice.phone.as_str(), "+15551234");
     assert_eq!(bob.price_level_id, None);
-    assert_eq!(carla.hub_id, 2);
+    assert_eq!(carla.hub_id.get(), 2);
 
     let fetched = repo
-        .get_customer_by_id(alice.id, 1)
+        .get_customer_by_id(alice.id.into(), 1)
         .expect("failed to fetch customer")
         .expect("expected Alice to exist");
     assert_eq!(fetched.id, alice.id);
-    assert_eq!(fetched.phone, "+15551234");
+    assert_eq!(fetched.phone.as_str(), "+15551234");
 
     assert!(
-        repo.get_customer_by_id(alice.id, 2)
+        repo.get_customer_by_id(alice.id.into(), 2)
             .expect("failed to fetch scoped customer")
             .is_none()
     );
@@ -178,38 +188,51 @@ fn test_customer_repository_crud() {
     assert_eq!(fetched_bob_by_phone.id, bob.id);
 
     let (total_all, customers_all) = repo
-        .list_customers(CustomerListQuery::new(1))
+        .list_customers(CustomerListQuery::try_new(1).expect("valid hub id"))
         .expect("failed to list customers");
     assert_eq!(total_all, 2);
     assert_eq!(customers_all.len(), 2);
 
     let (total_filtered, customers_filtered) = repo
-        .list_customers(CustomerListQuery::new(1).search("bob"))
+        .list_customers(CustomerListQuery::try_new(1).expect("valid hub").search("bob"))
         .expect("failed to search customers");
     assert_eq!(total_filtered, 1);
     assert_eq!(customers_filtered[0].id, bob.id);
 
-    repo.assign_price_level_to_customers(1, &[alice.id], Some(vip_level.id))
+    repo.assign_price_level_to_customers(1, &[alice.id.into()], Some(vip_level.id))
         .expect("failed to assign price level");
 
     let (total_vip, vip_customers) = repo
-        .list_customers(CustomerListQuery::new(1).price_level(vip_level.id))
+        .list_customers(
+            CustomerListQuery::try_new(1)
+                .expect("valid hub")
+                .price_level(PriceLevelId::new(vip_level.id).unwrap()),
+        )
         .expect("failed to list vip customers");
     assert_eq!(total_vip, 1);
     assert_eq!(vip_customers[0].id, alice.id);
-    assert_eq!(vip_customers[0].price_level_id, Some(vip_level.id));
+    assert_eq!(
+        vip_customers[0]
+            .price_level_id
+            .as_ref()
+            .map(|id| id.get()),
+        Some(vip_level.id)
+    );
 
     let updated = repo
-        .get_customer_by_id(alice.id, 1)
+        .get_customer_by_id(alice.id.into(), 1)
         .expect("failed to fetch after assignment")
         .expect("expected Alice after assignment");
-    assert_eq!(updated.price_level_id, Some(vip_level.id));
+    assert_eq!(
+        updated.price_level_id.as_ref().map(|id| id.get()),
+        Some(vip_level.id)
+    );
 
-    repo.assign_price_level_to_customers(1, &[alice.id], None)
+    repo.assign_price_level_to_customers(1, &[alice.id.into()], None)
         .expect("failed to clear price level");
 
     let cleared = repo
-        .get_customer_by_id(alice.id, 1)
+        .get_customer_by_id(alice.id.into(), 1)
         .expect("failed to fetch after clearing")
         .expect("expected Alice after clearing");
     assert_eq!(cleared.price_level_id, None);
@@ -220,7 +243,7 @@ fn test_customer_repository_crud() {
     assert!(matches!(err, RepositoryError::NotFound));
 
     let err = repo
-        .assign_price_level_to_customers(2, &[carla.id], Some(vip_level.id))
+        .assign_price_level_to_customers(2, &[carla.id.into()], Some(vip_level.id))
         .expect_err("expected cross-hub price level to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 }

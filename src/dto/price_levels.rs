@@ -31,9 +31,9 @@ pub struct ClientPriceLevelAssignment {
 impl From<Customer> for ClientPriceLevelAssignment {
     fn from(customer: Customer) -> Self {
         Self {
-            email: customer.email,
-            phone: customer.phone,
-            price_level_id: customer.price_level_id,
+            email: customer.email.map(|email| email.into_inner()),
+            phone: customer.phone.as_str().to_string(),
+            price_level_id: customer.price_level_id.map(|id| id.get()),
         }
     }
 }

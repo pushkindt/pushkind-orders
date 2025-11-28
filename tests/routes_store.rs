@@ -361,12 +361,14 @@ async fn create_store_order_validates_payload() {
         &[NewProductPriceLevelRate::new(
             product.id,
             price_level.id,
-            500,
-        )],
-    )
-    .expect("attach price level");
+        500,
+    )],
+)
+.expect("attach price level");
     let customer = repo
-        .create_customer(&NewCustomer::new(1, "John", "+111"))
+        .create_customer(
+            &NewCustomer::try_new(1, "John", "+111").expect("valid customer payload"),
+        )
         .expect("create customer");
 
     let key = Key::generate();
@@ -435,7 +437,9 @@ async fn create_store_order_creates_order() {
     )
     .expect("attach price level");
     let customer = repo
-        .create_customer(&NewCustomer::new(1, "John", "+111"))
+        .create_customer(
+            &NewCustomer::try_new(1, "John", "+111").expect("valid customer payload"),
+        )
         .expect("create customer");
 
     let key = Key::generate();
@@ -483,7 +487,7 @@ async fn create_store_order_creates_order() {
 
     assert_eq!(resp.status(), StatusCode::CREATED);
     let order: StoreOrder = test::read_body_json(resp).await;
-    assert_eq!(order.customer_id, Some(customer.id));
+    assert_eq!(order.customer_id, Some(customer.id.into()));
     assert_eq!(order.total_cents, 1000);
     assert_eq!(order.products.len(), 1);
     assert_eq!(order.products[0].price_cents, 1000);
@@ -523,12 +527,14 @@ async fn list_store_orders_returns_orders_for_customer() {
     let test_db = common::TestDb::new("routes_store_orders_returns_data.db");
     let repo = DieselRepository::new(test_db.pool());
     let customer = repo
-        .create_customer(&NewCustomer::new(1, "Customer", "+111"))
+        .create_customer(
+            &NewCustomer::try_new(1, "Customer", "+111").expect("valid customer payload"),
+        )
         .expect("create customer");
 
     let product = OrderProduct::new("Coffee", 500, "USD", 1).with_product_id(1);
     let new_order = NewOrder::new(1, 500, "USD")
-        .with_customer_id(customer.id)
+        .with_customer_id(customer.id.into())
         .with_products(vec![product]);
     repo.create_order(&new_order).expect("create order");
 
@@ -575,7 +581,7 @@ async fn list_store_orders_returns_orders_for_customer() {
     assert_eq!(resp.status(), StatusCode::OK);
     let orders: Vec<StoreOrder> = test::read_body_json(resp).await;
     assert_eq!(orders.len(), 1);
-    assert_eq!(orders[0].customer_id, Some(customer.id));
+    assert_eq!(orders[0].customer_id, Some(customer.id.into()));
     assert_eq!(orders[0].total_cents, 500);
 }
 
@@ -584,7 +590,9 @@ async fn list_store_orders_returns_empty_results() {
     let test_db = common::TestDb::new("routes_store_orders_empty_results.db");
     let repo = DieselRepository::new(test_db.pool());
     let customer = repo
-        .create_customer(&NewCustomer::new(1, "Customer", "+111"))
+        .create_customer(
+            &NewCustomer::try_new(1, "Customer", "+111").expect("valid customer payload"),
+        )
         .expect("create customer");
 
     let key = Key::generate();

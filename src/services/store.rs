@@ -121,8 +121,12 @@ where
     {
         Some(customer) => customer,
         None => {
-            let new_customer =
-                NewCustomer::new(hub_id, request.phone.clone(), request.phone.clone());
+            let new_customer = NewCustomer::try_new(
+                hub_id,
+                request.phone.clone(),
+                request.phone.clone(),
+            )
+            .map_err(|_| ServiceError::Internal)?;
 
             repo.create_customer(&new_customer)
                 .map_err(ServiceError::from)?
@@ -167,7 +171,7 @@ where
         validate_store_order_lines(payloads).map_err(|err| ServiceError::Form(err.to_string()))?;
 
     let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
-    let customer_price_level_id = customer.price_level_id;
+    let customer_price_level_id = customer.price_level_id.map(|id| id.get());
 
     let mut currency: Option<String> = None;
     let mut total_cents: i32 = 0;
@@ -232,7 +236,7 @@ where
     let currency = currency.unwrap_or_default();
 
     let new_order = NewOrder::new(hub_id, total_cents, currency)
-        .with_customer_id(customer.id)
+        .with_customer_id(customer.id.into())
         .with_status(OrderStatus::Pending)
         .with_products(products);
 
@@ -249,7 +253,7 @@ pub fn list_store_orders<R>(
 where
     R: OrderReader + ?Sized,
 {
-    let mut query = OrderListQuery::new(hub_id).customer_id(customer.id);
+    let mut query = OrderListQuery::new(hub_id).customer_id(customer.id.into());
 
     if let Some(page) = page.filter(|page| *page > 0) {
         query = query.paginate(page, DEFAULT_ITEMS_PER_PAGE);
@@ -297,7 +301,8 @@ where
     R: ProductReader + PriceLevelReader + ?Sized,
 {
     let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
-    let customer_price_level_id = store_customer.and_then(|customer| customer.price_level_id);
+    let customer_price_level_id =
+        store_customer.and_then(|customer| customer.price_level_id.map(|id| id.get()));
 
     let products = repo
         .list_products(filters.into_query(hub_id))
@@ -335,7 +340,8 @@ where
     };
 
     let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
-    let customer_price_level_id = store_customer.and_then(|customer| customer.price_level_id);
+    let customer_price_level_id =
+        store_customer.and_then(|customer| customer.price_level_id.map(|id| id.get()));
 
     Ok(Some(StoreProduct::from_domain(
         product,
@@ -368,7 +374,10 @@ pub fn load_store_session_customer<R>(
 where
     R: CustomerReader + ?Sized,
 {
-    repo.get_customer_by_id(session_customer.id, session_customer.hub_id)
+    repo.get_customer_by_id(
+        session_customer.id.into(),
+        session_customer.hub_id.into(),
+    )
         .map_err(ServiceError::from)?
         .ok_or(ServiceError::Unauthorized)
 }
@@ -376,7 +385,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::{HubId, TagId, TagName};
+    use crate::domain::types::{CustomerId, CustomerName, HubId, PriceLevelId, TagId, TagName};
     use crate::domain::{
         category::Category,
         customer::{Customer, CustomerListQuery},
@@ -560,11 +569,11 @@ mod tests {
     fn create_store_order_creates_pending_order() {
         let mut repo = MockStoreOrderRepo::new();
         let customer = Customer {
-            id: 10,
-            hub_id: 1,
-            name: "Customer".to_string(),
+            id: CustomerId::new(10).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: CustomerName::new("Customer").unwrap(),
             email: None,
-            phone: "+111".to_string(),
+            phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
         };
 
@@ -633,11 +642,11 @@ mod tests {
     fn create_store_order_rejects_unknown_product() {
         let mut repo = MockStoreOrderRepo::new();
         let customer = Customer {
-            id: 10,
-            hub_id: 1,
-            name: "Customer".to_string(),
+            id: CustomerId::new(10).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: CustomerName::new("Customer").unwrap(),
             email: None,
-            phone: "+111".to_string(),
+            phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
         };
 
@@ -663,11 +672,11 @@ mod tests {
     fn create_store_order_rejects_missing_price() {
         let mut repo = MockStoreOrderRepo::new();
         let customer = Customer {
-            id: 10,
-            hub_id: 1,
-            name: "Customer".to_string(),
+            id: CustomerId::new(10).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: CustomerName::new("Customer").unwrap(),
             email: None,
-            phone: "+111".to_string(),
+            phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
         };
 
@@ -695,11 +704,11 @@ mod tests {
     fn create_store_order_rejects_mixed_currency() {
         let mut repo = MockStoreOrderRepo::new();
         let customer = Customer {
-            id: 10,
-            hub_id: 1,
-            name: "Customer".to_string(),
+            id: CustomerId::new(10).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: CustomerName::new("Customer").unwrap(),
             email: None,
-            phone: "+111".to_string(),
+            phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
         };
 
@@ -735,11 +744,11 @@ mod tests {
     fn create_store_order_rejects_invalid_quantities() {
         let repo = MockStoreOrderRepo::new();
         let customer = Customer {
-            id: 10,
-            hub_id: 1,
-            name: "Customer".to_string(),
+            id: CustomerId::new(10).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: CustomerName::new("Customer").unwrap(),
             email: None,
-            phone: "+111".to_string(),
+            phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
         };
 
@@ -805,14 +814,16 @@ mod tests {
         repo.order_reader
             .expect_list_orders()
             .withf(move |query| {
-                query.hub_id == match_customer.hub_id
-                    && query.customer_id == Some(match_customer.id)
+                query.hub_id == match_customer.hub_id.get()
+                    && query.customer_id == Some(match_customer.id.get())
                     && query.pagination.is_none()
             })
-            .return_once(move |_| Ok((1, vec![sample_order(1, 99, match_customer.id)])));
+            .return_once(move |_| {
+                Ok((1, vec![sample_order(1, 99, match_customer.id.get())]))
+            });
 
-        let orders =
-            list_store_orders(&repo, customer.hub_id, &customer, None).expect("expected orders");
+        let orders = list_store_orders(&repo, customer.hub_id.get(), &customer, None)
+            .expect("expected orders");
 
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].id, 1);
@@ -833,7 +844,7 @@ mod tests {
             })
             .return_once(|_| Ok((0, Vec::new())));
 
-        let orders = list_store_orders(&repo, customer.hub_id, &customer, Some(2))
+        let orders = list_store_orders(&repo, customer.hub_id.get(), &customer, Some(2))
             .expect("expected empty orders");
 
         assert!(orders.is_empty());
@@ -913,11 +924,11 @@ mod tests {
 
     fn sample_customer() -> Customer {
         Customer {
-            id: 1,
-            hub_id: 99,
-            name: "Sample".to_string(),
+            id: CustomerId::new(1).unwrap(),
+            hub_id: HubId::new(99).unwrap(),
+            name: CustomerName::new("Sample").unwrap(),
             email: None,
-            phone: "+15551234".to_string(),
+            phone: PhoneNumber::new("+15551234").unwrap(),
             price_level_id: None,
         }
     }
@@ -929,7 +940,9 @@ mod tests {
         let match_sample = expected.clone();
         let return_sample = expected.clone();
         repo.expect_get_customer_by_id()
-            .withf(move |id, hub_id| *id == match_sample.id && *hub_id == match_sample.hub_id)
+            .withf(move |id, hub_id| {
+                *id == match_sample.id.get() && *hub_id == match_sample.hub_id.get()
+            })
             .return_once(move |_, _| Ok(Some(return_sample)));
 
         let customer = load_store_session_customer(&repo, &expected).expect("expected customer");
@@ -1140,9 +1153,9 @@ mod tests {
         repo.customer_writer
             .expect_create_customer()
             .withf(|new_customer| {
-                new_customer.hub_id == 1
-                    && new_customer.phone == "+15551234"
-                    && new_customer.name == "+15551234"
+                new_customer.hub_id.get() == 1
+                    && new_customer.phone.as_str() == "+15551234"
+                    && new_customer.name.as_str() == "+15551234"
                     && new_customer.email.is_none()
             })
             .return_once(|_| Ok(sample_customer()));
@@ -1514,8 +1527,8 @@ mod tests {
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
 
         let mut customer = sample_customer();
-        customer.hub_id = 1;
-        customer.price_level_id = Some(11);
+        customer.hub_id = HubId::new(1).unwrap();
+        customer.price_level_id = Some(PriceLevelId::new(11).unwrap());
 
         let result = load_store_products(&repo, 1, StoreProductFilters::default(), Some(&customer))
             .expect("load products for authenticated customer");
@@ -1590,8 +1603,8 @@ mod tests {
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
 
         let mut customer = sample_customer();
-        customer.hub_id = 1;
-        customer.price_level_id = Some(11);
+        customer.hub_id = HubId::new(1).unwrap();
+        customer.price_level_id = Some(PriceLevelId::new(11).unwrap());
 
         let result = load_store_products(&repo, 1, StoreProductFilters::default(), Some(&customer))
             .expect("load products for authenticated customer");
@@ -1750,8 +1763,8 @@ mod tests {
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
 
         let mut customer = sample_customer();
-        customer.hub_id = 1;
-        customer.price_level_id = Some(11);
+        customer.hub_id = HubId::new(1).unwrap();
+        customer.price_level_id = Some(PriceLevelId::new(11).unwrap());
 
         let result = load_store_product(&repo, 1, 7, Some(&customer)).expect("load single product");
         let product = result.expect("product should be present");
@@ -1818,8 +1831,8 @@ mod tests {
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
 
         let mut customer = sample_customer();
-        customer.hub_id = 1;
-        customer.price_level_id = Some(11);
+        customer.hub_id = HubId::new(1).unwrap();
+        customer.price_level_id = Some(PriceLevelId::new(11).unwrap());
 
         let result = load_store_product(&repo, 1, 7, Some(&customer)).expect("load single product");
         let product = result.expect("product should be present");

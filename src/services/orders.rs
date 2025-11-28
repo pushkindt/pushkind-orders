@@ -44,6 +44,7 @@ mod tests {
         customer::Customer,
         order::{Order, OrderProduct, OrderStatus},
     };
+    use crate::domain::types::{CustomerId, CustomerName, HubId, PhoneNumber, UserEmail};
     use crate::repository::mock::{MockCustomerReader, MockOrderReader};
     use pushkind_common::repository::errors::RepositoryResult;
 
@@ -134,11 +135,11 @@ mod tests {
 
     fn sample_customer(id: i32, hub_id: i32) -> Customer {
         Customer {
-            id,
-            hub_id,
-            name: "Sample Customer".to_string(),
-            email: Some("customer@example.com".to_string()),
-            phone: "+10000000000".to_string(),
+            id: CustomerId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: CustomerName::new("Sample Customer").unwrap(),
+            email: Some(UserEmail::new("customer@example.com").unwrap()),
+            phone: PhoneNumber::new("+10000000000").unwrap(),
             price_level_id: None,
         }
     }
@@ -232,7 +233,7 @@ mod tests {
 
         assert_eq!(details.order.id, 4);
         let customer = details.customer.expect("expected customer details");
-        assert_eq!(customer.id, 11);
-        assert_eq!(customer.hub_id, expected_hub);
+        assert_eq!(customer.id.get(), 11);
+        assert_eq!(customer.hub_id.get(), expected_hub);
     }
 }

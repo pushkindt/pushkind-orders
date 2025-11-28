@@ -3,6 +3,7 @@ use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::customer::{CustomerListQuery, NewCustomer};
+use crate::domain::types::{HubId, PriceLevelId};
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
 use crate::dto::price_levels::{
     ClientPriceLevelAssignment, ClientPriceLevelAssignments, PriceLevelsPageData, PriceLevelsQuery,
@@ -63,8 +64,10 @@ where
         .find(|level| level.is_default)
         .map(|level| level.id);
 
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+
     let (_, customers) = repo
-        .list_customers(CustomerListQuery::new(user.hub_id))
+        .list_customers(CustomerListQuery::new(hub_id))
         .map_err(ServiceError::from)?;
 
     let assignments = customers
@@ -162,17 +165,22 @@ where
     {
         Some(existing) => existing,
         None => {
-            let mut new_customer = NewCustomer::new(
+            let mut new_customer = NewCustomer::try_new(
                 user.hub_id,
                 assignment.name.clone(),
                 assignment.phone.clone(),
-            );
+            )
+            .map_err(|_| ServiceError::Internal)?;
 
             if let Some(email) = assignment.email.as_ref() {
-                new_customer = new_customer.with_email(email.clone());
+                new_customer = new_customer
+                    .with_email(email.clone())
+                    .map_err(|_| ServiceError::Internal)?;
             }
 
             if let Some(price_level_id) = assignment.price_level_id {
+                let price_level_id =
+                    PriceLevelId::new(price_level_id).map_err(|_| ServiceError::Internal)?;
                 new_customer = new_customer.with_price_level_id(price_level_id);
             }
 
@@ -181,7 +189,11 @@ where
         }
     };
 
-    repo.assign_price_level_to_customers(user.hub_id, &[customer.id], assignment.price_level_id)
+    repo.assign_price_level_to_customers(
+        user.hub_id,
+        &[customer.id.into()],
+        assignment.price_level_id,
+    )
         .map_err(ServiceError::from)
 }
 
@@ -198,6 +210,9 @@ mod tests {
         MockCustomerReader, MockCustomerWriter, MockPriceLevelReader, MockPriceLevelWriter,
     };
     use crate::repository::{CustomerReader, CustomerWriter};
+    use crate::domain::types::{
+        CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, UserEmail,
+    };
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
     struct CombinedCustomerRepo {
@@ -276,12 +291,13 @@ mod tests {
 
     fn sample_customer(id: i32, hub_id: i32, price_level_id: Option<i32>) -> Customer {
         Customer {
-            id,
-            hub_id,
-            name: format!("Customer {id}"),
-            email: Some(format!("customer{id}@example.com")),
-            phone: format!("+100000{id}"),
-            price_level_id,
+            id: CustomerId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: CustomerName::new(&format!("Customer {id}")).unwrap(),
+            email: Some(UserEmail::new(&format!("customer{id}@example.com")).unwrap()),
+            phone: PhoneNumber::new(&format!("+100000{id}")).unwrap(),
+            price_level_id: price_level_id
+                .map(|value| PriceLevelId::new(value).unwrap()),
         }
     }
 
@@ -576,7 +592,7 @@ mod tests {
 
         repo.customer_reader
             .expect_list_customers()
-            .withf(move |query| query.hub_id == hub_id)
+            .withf(move |query| query.hub_id.get() == hub_id)
             .returning(move |_| {
                 Ok((
                     2,
@@ -667,14 +683,14 @@ mod tests {
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let hub_id = user.hub_id;
         let expected_customer = Customer {
-            id: 55,
-            hub_id,
-            name: "Client 55".to_string(),
-            email: Some("client55@example.com".to_string()),
-            phone: "+1999555".to_string(),
-            price_level_id: Some(12),
+            id: CustomerId::new(55).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: CustomerName::new("Client 55").unwrap(),
+            email: Some(UserEmail::new("client55@example.com").unwrap()),
+            phone: PhoneNumber::new("+1999555").unwrap(),
+            price_level_id: Some(PriceLevelId::new(12).unwrap()),
         };
-        let expected_customer_id = expected_customer.id;
+        let expected_customer_id: i32 = expected_customer.id.into();
 
         reader
             .expect_get_customer_by_phone()
@@ -718,16 +734,21 @@ mod tests {
             .expect_create_customer()
             .times(1)
             .withf(move |new_customer| {
-                new_customer.hub_id == hub_id
-                    && new_customer.email.as_deref() == Some("missing@example.com")
-                    && new_customer.name == "Missing User"
-                    && new_customer.phone == "+1999000"
-                    && new_customer.price_level_id == Some(1)
+                new_customer.hub_id.get() == hub_id
+                    && new_customer
+                        .email
+                        .as_ref()
+                        .map(|email| email.as_str())
+                        == Some("missing@example.com")
+                    && new_customer.name.as_str() == "Missing User"
+                    && new_customer.phone.as_str() == "+1999000"
+                    && new_customer.price_level_id
+                        == Some(PriceLevelId::new(1).unwrap())
             })
             .returning(move |new_customer| {
                 Ok(Customer {
-                    id: expected_customer_id,
-                    hub_id,
+                    id: CustomerId::new(expected_customer_id).unwrap(),
+                    hub_id: HubId::new(hub_id).unwrap(),
                     name: new_customer.name.clone(),
                     email: new_customer.email.clone(),
                     phone: new_customer.phone.clone(),

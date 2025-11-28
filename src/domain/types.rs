@@ -78,6 +78,8 @@ id_newtype!(HubId);
 id_newtype!(TagId);
 id_newtype!(ProductTagId);
 id_newtype!(ProductId);
+id_newtype!(CustomerId);
+id_newtype!(PriceLevelId);
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Lower-cased and validated email address.
@@ -282,6 +284,54 @@ impl TryFrom<&str> for TagName {
 
 impl From<TagName> for String {
     fn from(value: TagName) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Customer name wrapper enforcing non-empty values.
+pub struct CustomerName(String);
+
+impl CustomerName {
+    /// Constructs a customer name that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let name = NonEmptyString::new(value)?;
+        Ok(Self(name.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for CustomerName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for CustomerName {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for CustomerName {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<CustomerName> for String {
+    fn from(value: CustomerName) -> Self {
         value.0
     }
 }

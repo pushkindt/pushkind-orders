@@ -45,7 +45,7 @@ pub fn get_store_customer_for_hub(
     hub_id: i32,
 ) -> Result<Option<Customer>, StoreSessionError> {
     match get_store_customer(session)? {
-        Some(customer) if customer.hub_id == hub_id => Ok(Some(customer)),
+        Some(customer) if customer.hub_id.get() == hub_id => Ok(Some(customer)),
         Some(_) => {
             clear_store_customer(session)?;
             Ok(None)
