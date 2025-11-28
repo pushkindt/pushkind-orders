@@ -1,3 +1,5 @@
+//! Diesel model for category records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 

@@ -1,3 +1,5 @@
+//! Product tag associations for categorizing products with labels.
+
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 

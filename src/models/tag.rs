@@ -1,3 +1,5 @@
+//! Diesel model for tag records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 

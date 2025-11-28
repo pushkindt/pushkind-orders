@@ -1,3 +1,5 @@
+//! Diesel ORM models mapping database tables to Rust structs.
+
 pub mod category;
 pub mod config;
 pub mod customer;

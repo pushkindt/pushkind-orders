@@ -1,3 +1,5 @@
+//! Diesel model for price level records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 

@@ -1,3 +1,5 @@
+//! Tag domain models for product labeling and organization.
+
 use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};

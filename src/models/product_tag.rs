@@ -1,3 +1,5 @@
+//! Diesel model for product tag association records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 

@@ -1,3 +1,5 @@
+//! Diesel models for order and order product records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 

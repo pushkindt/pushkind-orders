@@ -1,3 +1,5 @@
+//! Mock repository implementations for testing.
+
 use mockall::mock;
 
 use super::{

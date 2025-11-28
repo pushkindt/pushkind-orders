@@ -1,3 +1,5 @@
+//! User repository implementation with Diesel.
+
 use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 

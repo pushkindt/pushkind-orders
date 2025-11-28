@@ -1,3 +1,5 @@
+//! Data transfer objects for rendering templates and API responses.
+
 pub mod categories;
 pub mod main;
 pub mod orders;

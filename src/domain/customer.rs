@@ -1,3 +1,5 @@
+//! Customer domain models and query builders.
+
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 

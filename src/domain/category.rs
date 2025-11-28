@@ -1,3 +1,5 @@
+//! Category domain models with hierarchical tree support.
+
 use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};

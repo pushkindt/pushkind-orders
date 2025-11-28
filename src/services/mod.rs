@@ -1,3 +1,5 @@
+//! Service layer orchestrating domain logic and repository operations.
+
 pub use pushkind_common::services::errors::{ServiceError, ServiceResult};
 
 pub mod categories;

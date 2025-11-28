@@ -1,3 +1,5 @@
+//! Product domain models with price levels, tags, and category associations.
+
 use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};

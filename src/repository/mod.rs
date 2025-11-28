@@ -1,3 +1,5 @@
+//! Repository traits and Diesel-backed implementation for data persistence.
+
 use pushkind_common::db::{DbConnection, DbPool};
 use pushkind_common::pagination::Pagination;
 use pushkind_common::repository::errors::RepositoryResult;

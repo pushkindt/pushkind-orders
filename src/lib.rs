@@ -1,3 +1,5 @@
+//! Pushkind orders service library providing HTTP server setup and application wiring.
+
 use std::sync::Arc;
 
 use actix_cors::Cors;

@@ -1,3 +1,5 @@
+//! Diesel model for product image records.
+
 use diesel::prelude::*;
 
 #[derive(Debug, Clone, Identifiable, Queryable, Associations, Selectable)]

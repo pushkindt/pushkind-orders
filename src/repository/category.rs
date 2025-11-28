@@ -1,3 +1,5 @@
+//! Category repository implementation with Diesel.
+
 use diesel::dsl::{exists, select};
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;

@@ -1,3 +1,5 @@
+//! Product price level rate associations linking products to pricing tiers.
+
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 

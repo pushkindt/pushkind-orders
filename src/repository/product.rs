@@ -1,3 +1,5 @@
+//! Product repository implementation with Diesel and FTS support.
+
 use std::collections::HashMap;
 
 use diesel::dsl::exists;

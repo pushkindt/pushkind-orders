@@ -1,3 +1,5 @@
+//! Actix Web route handlers for HTTP requests.
+
 pub mod api;
 pub mod categories;
 pub mod main;

@@ -1,3 +1,5 @@
+//! Domain layer containing type-safe models and business logic.
+
 pub mod category;
 pub mod customer;
 pub mod order;

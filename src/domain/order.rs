@@ -1,3 +1,5 @@
+//! Order domain models with product snapshots and status lifecycle.
+
 use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};

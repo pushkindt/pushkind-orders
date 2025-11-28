@@ -1,3 +1,5 @@
+//! Storefront OTP domain models for customer authentication.
+
 use chrono::NaiveDateTime;
 
 use crate::domain::types::{HubId, OtpCode, PhoneNumber, TypeConstraintError};

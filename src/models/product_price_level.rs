@@ -1,3 +1,5 @@
+//! Diesel model for product price level association records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 

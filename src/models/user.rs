@@ -1,3 +1,5 @@
+//! Diesel model for user records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 

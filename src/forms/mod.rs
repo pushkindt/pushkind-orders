@@ -1,3 +1,5 @@
+//! Form validation and request payload handling with serde and validator.
+
 use std::fmt::Display;
 use std::str::FromStr;
 

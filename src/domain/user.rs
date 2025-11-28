@@ -1,3 +1,5 @@
+//! User domain models for hub members.
+
 use chrono::NaiveDateTime;
 use pushkind_common::domain::auth::AuthenticatedUser;
 use serde::{Deserialize, Serialize};

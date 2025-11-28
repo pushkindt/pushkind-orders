@@ -1,3 +1,5 @@
+//! Customer repository implementation with Diesel.
+
 use diesel::dsl::{exists, select};
 use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};

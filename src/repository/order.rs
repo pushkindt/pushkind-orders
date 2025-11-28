@@ -1,3 +1,5 @@
+//! Order repository implementation with Diesel.
+
 use std::collections::HashMap;
 
 use diesel::prelude::*;

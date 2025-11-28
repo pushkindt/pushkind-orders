@@ -1,3 +1,5 @@
+//! Price level domain models for configurable pricing tiers.
+
 use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
