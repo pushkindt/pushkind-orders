@@ -8,6 +8,7 @@ use crate::domain::types::TypeConstraintError;
 use crate::models::store_otp::{NewStoreOtp as DbNewStoreOtp, StoreOtp as DbStoreOtp};
 use crate::repository::{DieselRepository, StoreOtpRepository};
 
+/// Convert a type constraint error into a repository error.
 fn map_type_error(
     err: TypeConstraintError,
 ) -> pushkind_common::repository::errors::RepositoryError {

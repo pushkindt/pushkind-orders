@@ -10,6 +10,7 @@ use crate::{
     repository::{DieselRepository, UserListQuery, UserReader, UserWriter},
 };
 
+/// Convert a type constraint error into a repository error.
 fn map_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid user data: {err}"))
 }

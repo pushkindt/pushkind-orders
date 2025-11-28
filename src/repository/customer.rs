@@ -11,6 +11,7 @@ use crate::{
     repository::{CustomerListQuery, CustomerReader, CustomerWriter, DieselRepository},
 };
 
+/// Convert a type constraint error into a repository error.
 fn map_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid customer data: {err}"))
 }
@@ -187,6 +188,7 @@ impl CustomerWriter for DieselRepository {
     }
 }
 
+/// Verify that a price level exists and belongs to the specified hub.
 fn ensure_price_level_with_hub(
     conn: &mut SqliteConnection,
     hub_id: i32,

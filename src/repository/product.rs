@@ -33,14 +33,17 @@ use crate::{
     repository::{DieselRepository, ProductReader, ProductWriter},
 };
 
+/// Convert a tag type constraint error into a repository error.
 fn map_tag_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid tag data: {err}"))
 }
 
+/// Convert a price level type constraint error into a repository error.
 fn map_price_level_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid product price level data: {err}"))
 }
 
+/// Convert a product type constraint error into a repository error.
 fn map_product_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid product data: {err}"))
 }
@@ -435,6 +438,7 @@ impl ProductWriter for DieselRepository {
     }
 }
 
+/// Load price level associations for multiple products.
 fn load_price_levels_for_products(
     conn: &mut SqliteConnection,
     product_ids: &[ProductId],
@@ -463,6 +467,7 @@ fn load_price_levels_for_products(
     Ok(map)
 }
 
+/// Load tag associations for multiple products.
 fn load_tags_for_products(
     conn: &mut SqliteConnection,
     product_ids: &[ProductId],
@@ -493,6 +498,7 @@ fn load_tags_for_products(
     Ok(map)
 }
 
+/// Load image URLs for multiple products.
 fn load_image_urls_for_products(
     conn: &mut SqliteConnection,
     product_ids: &[ProductId],

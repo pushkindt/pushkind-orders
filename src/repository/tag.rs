@@ -10,6 +10,7 @@ use crate::domain::types::TypeConstraintError;
 use crate::models::tag::{NewTag as DbNewTag, Tag as DbTag, UpdateTag as DbUpdateTag};
 use crate::repository::{DieselRepository, TagReader, TagWriter};
 
+/// Convert a type constraint error into a repository error.
 fn map_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid tag data: {err}"))
 }

@@ -16,6 +16,7 @@ use crate::{
     repository::{DieselRepository, PriceLevelReader, PriceLevelWriter},
 };
 
+/// Convert a type constraint error into a repository error.
 fn map_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid price level data: {err}"))
 }

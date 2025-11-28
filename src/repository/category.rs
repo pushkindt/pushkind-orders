@@ -15,6 +15,7 @@ use crate::models::category::{
 };
 use crate::repository::{CategoryReader, CategoryWriter, DieselRepository};
 
+/// Convert a type constraint error into a repository error.
 fn map_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid category data: {err}"))
 }
@@ -187,6 +188,7 @@ impl CategoryWriter for DieselRepository {
     }
 }
 
+/// Verify that a category exists and belongs to the specified hub.
 fn ensure_category_with_hub(
     conn: &mut SqliteConnection,
     hub_id: i32,
