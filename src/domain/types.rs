@@ -76,6 +76,8 @@ macro_rules! id_newtype {
 id_newtype!(UserId);
 id_newtype!(HubId);
 id_newtype!(TagId);
+id_newtype!(ProductTagId);
+id_newtype!(ProductId);
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Lower-cased and validated email address.

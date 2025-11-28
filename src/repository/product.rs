@@ -350,10 +350,13 @@ impl ProductWriter for DieselRepository {
                     let rows: Vec<DbNewProductTag> = unique_ids
                         .into_iter()
                         .map(|tag_id| {
-                            let domain = DomainNewProductTag::new(product_id, tag_id);
-                            DbNewProductTag::from(&domain)
+                            let domain = DomainNewProductTag::try_new(product_id, tag_id)
+                                .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                            Ok::<DbNewProductTag, diesel::result::Error>(DbNewProductTag::from(
+                                &domain,
+                            ))
                         })
-                        .collect();
+                        .collect::<Result<Vec<_>, _>>()?;
 
                     if !rows.is_empty() {
                         insert_into(product_tags::table)
