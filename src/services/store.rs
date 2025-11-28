@@ -194,7 +194,7 @@ where
         )
         .ok_or_else(|| ServiceError::Form("price unavailable".to_string()))?;
 
-        let product_currency = product.currency.clone();
+        let product_currency = product.currency.as_str().to_string();
         match &currency {
             Some(expected) if expected != &product_currency => {
                 return Err(ServiceError::Form(
@@ -219,14 +219,14 @@ where
             product_currency.clone(),
             item.quantity,
         )
-        .with_product_id(product.id);
+        .with_product_id(product.id.get());
 
         if let Some(sku) = &product.sku {
             order_product = order_product.with_sku(sku.clone());
         }
 
         if let Some(description) = &product.description {
-            order_product = order_product.with_description(description.clone());
+            order_product = order_product.with_description(description.as_str());
         }
 
         products.push(order_product);
@@ -300,7 +300,9 @@ pub fn load_store_products<R>(
 where
     R: ProductReader + PriceLevelReader + ?Sized,
 {
-    let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+
+    let default_price_level_id = resolve_default_price_level_id(repo, hub_id.get())?;
     let customer_price_level_id =
         store_customer.and_then(|customer| customer.price_level_id.map(|id| id.get()));
 
@@ -383,8 +385,9 @@ where
 mod tests {
     use super::*;
     use crate::domain::types::{
-        CategoryId, CategoryName, CustomerId, CustomerName, HubId, PriceCents, PriceLevelId,
-        PriceLevelName, ProductId, ProductPriceLevelRateId, TagId, TagName,
+        CategoryId, CategoryName, CurrencyCode, CustomerId, CustomerName, HubId, ImageUrl,
+        PriceCents, PriceLevelId, PriceLevelName, ProductDescription, ProductId, ProductName,
+        ProductPriceLevelRateId, ProductSku, ProductUnits, TagId, TagName,
     };
     use crate::domain::{
         category::Category,
@@ -505,14 +508,15 @@ mod tests {
         price_cents: i32,
         currency: &str,
     ) -> Product {
+        use crate::domain::types::*;
         Product {
-            id,
-            hub_id,
-            name: format!("Product {id}"),
-            sku: Some(format!("SKU{id}")),
-            description: Some(format!("Description {id}")),
+            id: ProductId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: ProductName::new(format!("Product {id}")).unwrap(),
+            sku: Some(ProductSku::new(format!("SKU{id}")).unwrap()),
+            description: Some(ProductDescription::new(format!("Description {id}")).unwrap()),
             units: None,
-            currency: currency.to_string(),
+            currency: CurrencyCode::new(currency).unwrap(),
             is_archived: false,
             category_id: None,
             price_levels: vec![ProductPriceLevelRate {
@@ -1364,15 +1368,15 @@ mod tests {
         let mut product_reader = MockProductReader::new();
         let products = vec![
             Product {
-                id: 1,
-                hub_id: 1,
-                name: "Coffee".to_string(),
-                sku: Some("SKU-1".to_string()),
-                description: Some("Fresh beans".to_string()),
-                units: Some("kg".to_string()),
-                currency: "USD".to_string(),
+                id: ProductId::new(1).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: ProductName::new("Coffee").unwrap(),
+                sku: Some(ProductSku::new("SKU-1").unwrap()),
+                description: Some(ProductDescription::new("Fresh beans").unwrap()),
+                units: Some(ProductUnits::new("kg").unwrap()),
+                currency: CurrencyCode::new("USD").unwrap(),
                 is_archived: false,
-                category_id: Some(1),
+                category_id: Some(CategoryId::new(1).unwrap()),
                 price_levels: vec![ProductPriceLevelRate {
                     id: ProductPriceLevelRateId::new(1).unwrap(),
                     product_id: ProductId::new(1).unwrap(),
@@ -1384,17 +1388,17 @@ mod tests {
                 tags: vec![tag(1, 1, "Organic")],
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
-                image_urls: vec!["https://example.com/coffee.png".to_string()],
+                image_urls: vec![ImageUrl::new("https://example.com/coffee.png").unwrap()],
                 amount: None,
             },
             Product {
-                id: 2,
-                hub_id: 1,
-                name: "Retired".to_string(),
+                id: ProductId::new(2).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: ProductName::new("Retired").unwrap(),
                 sku: None,
                 description: None,
                 units: None,
-                currency: "USD".to_string(),
+                currency: CurrencyCode::new("USD").unwrap(),
                 is_archived: true,
                 category_id: None,
                 price_levels: Vec::new(),
@@ -1410,7 +1414,7 @@ mod tests {
         product_reader
             .expect_list_products()
             .withf(|query| {
-                query.hub_id == 1
+                query.hub_id == HubId::new(1).unwrap()
                     && !query.include_archived
                     && query.only_without_category
                     && query.category_id.is_none()
@@ -1452,15 +1456,15 @@ mod tests {
     fn load_store_products_uses_customer_price_level_when_present() {
         let mut product_reader = MockProductReader::new();
         let products = vec![Product {
-            id: 1,
-            hub_id: 1,
-            name: "Coffee".to_string(),
-            sku: Some("SKU-1".to_string()),
-            description: Some("Fresh beans".to_string()),
-            units: Some("kg".to_string()),
-            currency: "USD".to_string(),
+            id: ProductId::new(1).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: ProductName::new("Coffee").unwrap(),
+            sku: Some(ProductSku::new("SKU-1").unwrap()),
+            description: Some(ProductDescription::new("Fresh beans").unwrap()),
+            units: Some(ProductUnits::new("kg").unwrap()),
+            currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
-            category_id: Some(1),
+            category_id: Some(CategoryId::new(1).unwrap()),
             price_levels: vec![
                 ProductPriceLevelRate {
                     id: ProductPriceLevelRateId::new(1).unwrap(),
@@ -1482,7 +1486,7 @@ mod tests {
             tags: vec![tag(1, 1, "Organic")],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
-            image_urls: vec!["https://example.com/coffee.png".to_string()],
+            image_urls: vec![ImageUrl::new("https://example.com/coffee.png").unwrap()],
             amount: None,
         }];
 
@@ -1490,7 +1494,7 @@ mod tests {
         product_reader
             .expect_list_products()
             .withf(|query| {
-                query.hub_id == 1
+                query.hub_id == HubId::new(1).unwrap()
                     && !query.include_archived
                     && query.only_without_category
                     && query.category_id.is_none()
@@ -1538,15 +1542,15 @@ mod tests {
     fn load_store_products_falls_back_to_default_when_customer_rate_absent() {
         let mut product_reader = MockProductReader::new();
         let products = vec![Product {
-            id: 1,
-            hub_id: 1,
-            name: "Coffee".to_string(),
-            sku: Some("SKU-1".to_string()),
-            description: Some("Fresh beans".to_string()),
-            units: Some("kg".to_string()),
-            currency: "USD".to_string(),
+            id: ProductId::new(1).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: ProductName::new("Coffee").unwrap(),
+            sku: Some(ProductSku::new("SKU-1").unwrap()),
+            description: Some(ProductDescription::new("Fresh beans").unwrap()),
+            units: Some(ProductUnits::new("kg").unwrap()),
+            currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
-            category_id: Some(1),
+            category_id: Some(CategoryId::new(1).unwrap()),
             price_levels: vec![ProductPriceLevelRate {
                 id: ProductPriceLevelRateId::new(1).unwrap(),
                 product_id: ProductId::new(1).unwrap(),
@@ -1566,7 +1570,7 @@ mod tests {
         product_reader
             .expect_list_products()
             .withf(|query| {
-                query.hub_id == 1
+                query.hub_id == HubId::new(1).unwrap()
                     && !query.include_archived
                     && query.only_without_category
                     && query.category_id.is_none()
@@ -1614,15 +1618,15 @@ mod tests {
     fn load_store_product_fetches_active_product() {
         let mut product_reader = MockProductReader::new();
         let product = Product {
-            id: 7,
-            hub_id: 1,
-            name: "Latte".to_string(),
-            sku: Some("SKU-LATTE".to_string()),
-            description: Some("Steamed milk with espresso".to_string()),
-            units: Some("cup".to_string()),
-            currency: "USD".to_string(),
+            id: ProductId::new(7).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: ProductName::new("Latte").unwrap(),
+            sku: Some(ProductSku::new("SKU-LATTE").unwrap()),
+            description: Some(ProductDescription::new("Steamed milk with espresso").unwrap()),
+            units: Some(ProductUnits::new("cup").unwrap()),
+            currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
-            category_id: Some(3),
+            category_id: Some(CategoryId::new(3).unwrap()),
             price_levels: vec![
                 ProductPriceLevelRate {
                     id: ProductPriceLevelRateId::new(1).unwrap(),
@@ -1644,7 +1648,7 @@ mod tests {
             tags: vec![tag(2, 1, "Barista's choice")],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
-            image_urls: vec!["https://example.com/latte.png".to_string()],
+            image_urls: vec![ImageUrl::new("https://example.com/latte.png").unwrap()],
             amount: None,
         };
 
@@ -1695,15 +1699,15 @@ mod tests {
     fn load_store_product_uses_customer_price_level() {
         let mut product_reader = MockProductReader::new();
         let product = Product {
-            id: 7,
-            hub_id: 1,
-            name: "Latte".to_string(),
-            sku: Some("SKU-LATTE".to_string()),
-            description: Some("Steamed milk with espresso".to_string()),
-            units: Some("cup".to_string()),
-            currency: "USD".to_string(),
+            id: ProductId::new(7).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: ProductName::new("Latte").unwrap(),
+            sku: Some(ProductSku::new("SKU-LATTE").unwrap()),
+            description: Some(ProductDescription::new("Steamed milk with espresso").unwrap()),
+            units: Some(ProductUnits::new("cup").unwrap()),
+            currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
-            category_id: Some(3),
+            category_id: Some(CategoryId::new(3).unwrap()),
             price_levels: vec![
                 ProductPriceLevelRate {
                     id: ProductPriceLevelRateId::new(1).unwrap(),
@@ -1725,7 +1729,7 @@ mod tests {
             tags: vec![tag(2, 1, "Barista's choice")],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
-            image_urls: vec!["https://example.com/latte.png".to_string()],
+            image_urls: vec![ImageUrl::new("https://example.com/latte.png").unwrap()],
             amount: None,
         };
 
@@ -1773,15 +1777,15 @@ mod tests {
     fn load_store_product_falls_back_to_default_when_customer_rate_absent() {
         let mut product_reader = MockProductReader::new();
         let product = Product {
-            id: 7,
-            hub_id: 1,
-            name: "Latte".to_string(),
-            sku: Some("SKU-LATTE".to_string()),
-            description: Some("Steamed milk with espresso".to_string()),
-            units: Some("cup".to_string()),
-            currency: "USD".to_string(),
+            id: ProductId::new(7).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: ProductName::new("Latte").unwrap(),
+            sku: Some(ProductSku::new("SKU-LATTE").unwrap()),
+            description: Some(ProductDescription::new("Steamed milk with espresso").unwrap()),
+            units: Some(ProductUnits::new("cup").unwrap()),
+            currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
-            category_id: Some(3),
+            category_id: Some(CategoryId::new(3).unwrap()),
             price_levels: vec![ProductPriceLevelRate {
                 id: ProductPriceLevelRateId::new(1).unwrap(),
                 product_id: ProductId::new(7).unwrap(),
@@ -1841,13 +1845,13 @@ mod tests {
     fn load_store_product_returns_none_for_missing_or_archived() {
         let mut product_reader = MockProductReader::new();
         let archived_product = Product {
-            id: 9,
-            hub_id: 1,
-            name: "Retired".to_string(),
+            id: ProductId::new(9).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: ProductName::new("Retired").unwrap(),
             sku: None,
             description: None,
             units: None,
-            currency: "USD".to_string(),
+            currency: CurrencyCode::new("USD").unwrap(),
             is_archived: true,
             category_id: None,
             price_levels: Vec::new(),
@@ -1881,13 +1885,13 @@ mod tests {
     fn load_store_products_defaults_to_uncategorized() {
         let mut product_reader = MockProductReader::new();
         let uncategorized = Product {
-            id: 1,
-            hub_id: 1,
-            name: "Andromeda".to_string(),
+            id: ProductId::new(1).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: ProductName::new("Andromeda").unwrap(),
             sku: None,
             description: None,
             units: None,
-            currency: "USD".to_string(),
+            currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: None,
             price_levels: Vec::new(),
@@ -1901,7 +1905,7 @@ mod tests {
         product_reader
             .expect_list_products()
             .withf(|query| {
-                query.hub_id == 1
+                query.hub_id == HubId::new(1).unwrap()
                     && query.category_id.is_none()
                     && query.only_without_category
                     && !query.include_archived
@@ -1930,8 +1934,8 @@ mod tests {
         product_reader
             .expect_list_products()
             .withf(|query| {
-                query.hub_id == 1
-                    && query.category_id == Some(3)
+                query.hub_id == HubId::new(1).unwrap()
+                    && query.category_id == Some(CategoryId::new(3).unwrap())
                     && !query.only_without_category
                     && query.search.as_deref() == Some("coffee")
                     && matches!(

@@ -47,7 +47,7 @@ fn create_product_stores_price_levels() {
     );
 
     let product = repo
-        .list_products(ProductListQuery::new(1))
+        .list_products(ProductListQuery::try_new(1).unwrap())
         .expect("list products")
         .1
         .pop()

@@ -4,6 +4,7 @@
 //! normalized/validated email) so that once a value reaches the domain layer it
 //! can be treated as trusted.
 
+use phonenumber::{Mode, parse};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
@@ -15,12 +16,21 @@ pub enum TypeConstraintError {
     /// Provided identifier is zero or negative.
     #[error("id must be greater than zero")]
     NonPositiveId,
+    /// Provided price is zero or negative.
+    #[error("price must be greater than zero")]
+    NonPositivePrice,
+    /// Provided amount is zero or negative.
+    #[error("amount must be greater than zero")]
+    NonPositiveAmount,
     /// Provided email failed format validation.
     #[error("invalid email address")]
     InvalidEmail,
     /// Provided string contained no non-whitespace characters.
     #[error("value cannot be empty")]
     EmptyString,
+    /// Provided value failed custom validation.
+    #[error("invalid value: {0}")]
+    InvalidValue(String),
     /// Phone number did not meet expected format.
     #[error("invalid phone number")]
     InvalidPhone,
@@ -93,7 +103,7 @@ impl PriceCents {
         if value > 0 {
             Ok(Self(value))
         } else {
-            Err(TypeConstraintError::NonPositiveId)
+            Err(TypeConstraintError::NonPositivePrice)
         }
     }
 
@@ -399,6 +409,80 @@ impl From<CategoryName> for String {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Product name wrapper enforcing non-empty values.
+pub struct ProductName(String);
+
+impl ProductName {
+    /// Constructs a product name that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let name = NonEmptyString::new(value)?;
+        Ok(Self(name.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for ProductName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for ProductName {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for ProductName {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<ProductName> for String {
+    fn from(value: ProductName) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for ProductName {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for ProductName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<&str> for ProductName {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<ProductName> for &str {
+    fn eq(&self, other: &ProductName) -> bool {
+        *self == other.as_str()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Price level name wrapper enforcing non-empty values.
 pub struct PriceLevelName(String);
 
@@ -447,6 +531,234 @@ impl From<PriceLevelName> for String {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Optional SKU wrapper enforcing non-empty values.
+pub struct ProductSku(String);
+
+impl ProductSku {
+    /// Constructs a SKU that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let sku = NonEmptyString::new(value)?;
+        Ok(Self(sku.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for ProductSku {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for ProductSku {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for ProductSku {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<ProductSku> for String {
+    fn from(value: ProductSku) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for ProductSku {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for ProductSku {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<&str> for ProductSku {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<ProductSku> for &str {
+    fn eq(&self, other: &ProductSku) -> bool {
+        *self == other.as_str()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Units wrapper enforcing non-empty values.
+pub struct ProductUnits(String);
+
+impl ProductUnits {
+    /// Constructs a unit string that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let units = NonEmptyString::new(value)?;
+        Ok(Self(units.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for ProductUnits {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for ProductUnits {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for ProductUnits {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<ProductUnits> for String {
+    fn from(value: ProductUnits) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for ProductUnits {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for ProductUnits {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<&str> for ProductUnits {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<ProductUnits> for &str {
+    fn eq(&self, other: &ProductUnits) -> bool {
+        *self == other.as_str()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// ISO 4217 currency code wrapper enforcing three uppercase ASCII letters.
+pub struct CurrencyCode(String);
+
+impl CurrencyCode {
+    /// Constructs a currency code that must be three uppercase ASCII letters.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let code = NonEmptyString::new(value)?;
+        let value = code.as_str();
+        if value.len() != 3 || !value.chars().all(|c| c.is_ascii_uppercase()) {
+            return Err(TypeConstraintError::InvalidValue(
+                "currency code must be three uppercase letters".to_string(),
+            ));
+        }
+        Ok(Self(value.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for CurrencyCode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for CurrencyCode {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for CurrencyCode {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<CurrencyCode> for String {
+    fn from(value: CurrencyCode) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for CurrencyCode {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for CurrencyCode {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<&str> for CurrencyCode {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<CurrencyCode> for &str {
+    fn eq(&self, other: &CurrencyCode) -> bool {
+        *self == other.as_str()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Optional descriptive text for categories.
 pub struct CategoryDescription(String);
 
@@ -479,6 +791,82 @@ impl TryFrom<&str> for CategoryDescription {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::new(value)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Optional descriptive text for products.
+pub struct ProductDescription(String);
+
+impl ProductDescription {
+    /// Constructs a description that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let description = NonEmptyString::new(value)?;
+        Ok(Self(description.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl TryFrom<String> for ProductDescription {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for ProductDescription {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
+/// Product amount; must be positive.
+pub struct ProductAmount(f32);
+
+impl ProductAmount {
+    /// Construct a new amount ensuring it is above zero.
+    pub fn new(value: f32) -> Result<Self, TypeConstraintError> {
+        if value > 0.0 {
+            Ok(Self(value))
+        } else {
+            Err(TypeConstraintError::NonPositiveAmount)
+        }
+    }
+
+    /// Return the raw integer amount.
+    pub const fn get(self) -> f32 {
+        self.0
+    }
+}
+
+impl Display for ProductAmount {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<f32> for ProductAmount {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<ProductAmount> for f32 {
+    fn from(value: ProductAmount) -> Self {
+        value.0
     }
 }
 
@@ -546,27 +934,25 @@ impl From<CustomerName> for String {
     }
 }
 
+/// Normalizes a phone number string to E.164 format.
+pub fn normalize_phone_to_e164(value: &str) -> Result<String, TypeConstraintError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(TypeConstraintError::EmptyString);
+    }
+    let parsed = parse(None, trimmed).map_err(|_| TypeConstraintError::InvalidPhone)?;
+    Ok(parsed.format().mode(Mode::E164).to_string())
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Normalized phone number wrapper (expected E.164).
 pub struct PhoneNumber(String);
 
 impl PhoneNumber {
-    /// Constructs a phone number ensuring it is non-empty and matches `+` followed by digits.
+    /// Constructs a phone number ensuring it is valid and normalizes to E.164 format.
     pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let trimmed = value.into().trim().to_string();
-        if trimmed.is_empty() {
-            return Err(TypeConstraintError::EmptyString);
-        }
-        let mut chars = trimmed.chars();
-        let valid = match chars.next() {
-            Some('+') => chars.all(|c| c.is_ascii_digit()),
-            Some(first) => first.is_ascii_digit() && chars.all(|c| c.is_ascii_digit()),
-            None => false,
-        };
-        if !valid {
-            return Err(TypeConstraintError::InvalidPhone);
-        }
-        Ok(Self(trimmed))
+        let normalized = normalize_phone_to_e164(&value.into())?;
+        Ok(Self(normalized))
     }
 
     pub fn as_str(&self) -> &str {

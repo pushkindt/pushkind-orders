@@ -78,7 +78,6 @@ impl ProductView {
             created_at: _,
             updated_at,
             amount,
-            ..
         } = product;
 
         let price_levels = price_levels
@@ -89,21 +88,21 @@ impl ProductView {
         let tags = tags.into_iter().map(ProductTagView::from_tag).collect();
 
         Self {
-            id,
-            hub_id,
-            name,
-            sku,
-            description,
-            units,
-            currency,
+            id: id.get(),
+            hub_id: hub_id.get(),
+            name: name.as_str().to_string(),
+            sku: sku.map(|sku| sku.as_str().to_string()),
+            description: description.map(|d| d.into_inner()),
+            units: units.map(|units| units.as_str().to_string()),
+            currency: currency.as_str().to_string(),
             is_archived,
-            category_id,
-            category_name: category_id.and_then(|id| category_lookup.get(&id).cloned()),
+            category_id: category_id.map(|id| id.get()),
+            category_name: category_id.and_then(|id| category_lookup.get(&id.get()).cloned()),
             updated_at,
             price_levels,
             tags,
-            image_urls,
-            amount,
+            image_urls: image_urls.into_iter().map(|url| url.into_inner()).collect(),
+            amount: amount.map(|a| a.get()),
         }
     }
 }

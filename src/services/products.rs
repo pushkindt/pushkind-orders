@@ -43,7 +43,8 @@ where
     } = query;
 
     let page = page.unwrap_or(1);
-    let mut list_query = ProductListQuery::new(user.hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let mut list_query = ProductListQuery::new(hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
 
     if let Some(search_term) = search.as_ref() {
         list_query = list_query.search(search_term);
@@ -54,7 +55,6 @@ where
     }
 
     let (total, items) = repo.list_products(list_query).map_err(ServiceError::from)?;
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
     let (_, price_levels) = repo
         .list_price_levels(PriceLevelListQuery::new(hub_id))
         .map_err(ServiceError::from)?;
@@ -69,7 +69,7 @@ where
     categories.retain(|category| !category.is_archived);
     categories.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
-    let tag_query = TagListQuery::try_new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let tag_query = TagListQuery::try_new(hub_id.get()).map_err(|_| ServiceError::Internal)?;
     let (_, mut tags) = repo.list_tags(tag_query).map_err(ServiceError::from)?;
     tags.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
@@ -231,15 +231,15 @@ where
     } = payload;
 
     if let Some(category) = category {
-        let category = create_category_chain(&category, product.hub_id, repo)?;
-        product.category_id = Some(category.id.get());
+        let category = create_category_chain(&category, product.hub_id.get(), repo)?;
+        product.category_id = Some(category.id);
     }
 
     let mut created = repo.create_product(&product).map_err(ServiceError::from)?;
 
-    if let Err(err) = repo.replace_product_images(created.id, hub_id, &image_urls) {
+    if let Err(err) = repo.replace_product_images(created.id.get(), hub_id, &image_urls) {
         log::error!("Failed to attach images to product {}: {err}", created.id);
-        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
+        if let Err(delete_err) = repo.delete_product(created.id.get(), hub_id) {
             log::error!(
                 "Failed to roll back product {} after image error: {delete_err}",
                 created.id
@@ -253,10 +253,10 @@ where
     }
 
     if !tag_ids.is_empty()
-        && let Err(err) = repo.replace_product_tags(created.id, hub_id, &tag_ids)
+        && let Err(err) = repo.replace_product_tags(created.id.get(), hub_id, &tag_ids)
     {
         log::error!("Failed to attach tags to product {}: {err}", created.id);
-        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
+        if let Err(delete_err) = repo.delete_product(created.id.get(), hub_id) {
             log::error!(
                 "Failed to roll back product {} after tag error: {delete_err}",
                 created.id
@@ -273,19 +273,19 @@ where
         .iter()
         .map(|rate| {
             NewProductPriceLevelRate::new(
-                ProductId::new(created.id).unwrap(),
+                created.id,
                 PriceLevelId::new(rate.price_level_id).unwrap(),
                 PriceCents::new(rate.price_cents).unwrap(),
             )
         })
         .collect();
 
-    if let Err(err) = repo.replace_product_price_levels(created.id, hub_id, &rates) {
+    if let Err(err) = repo.replace_product_price_levels(created.id.get(), hub_id, &rates) {
         log::error!(
             "Failed to attach price levels to product {}: {err}",
             created.id
         );
-        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
+        if let Err(delete_err) = repo.delete_product(created.id.get(), hub_id) {
             log::error!(
                 "Failed to roll back product {} after price level error: {delete_err}",
                 created.id
@@ -307,8 +307,9 @@ mod tests {
 
     use crate::domain::category::{NewCategory, UpdateCategory};
     use crate::domain::types::{
-        CategoryId, CategoryName, HubId, PriceCents, PriceLevelId, PriceLevelName, ProductId,
-        ProductPriceLevelRateId, TagId, TagName,
+        CategoryId, CategoryName, CurrencyCode, HubId, ImageUrl, PriceCents, PriceLevelId,
+        PriceLevelName, ProductDescription, ProductId, ProductName, ProductPriceLevelRateId,
+        ProductSku, ProductUnits, TagId, TagName,
     };
     use crate::domain::{
         category::Category, price_level::PriceLevel, product::Product,
@@ -340,13 +341,13 @@ mod tests {
         price_levels: Vec<ProductPriceLevelRate>,
     ) -> Product {
         Product {
-            id,
-            hub_id,
-            name: name.to_string(),
+            id: ProductId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: ProductName::new(name).unwrap(),
             sku: None,
             description: None,
             units: None,
-            currency: "USD".to_string(),
+            currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: None,
             price_levels,
@@ -419,7 +420,7 @@ mod tests {
             .expect_list_products()
             .times(1)
             .withf(move |qry| {
-                assert_eq!(qry.hub_id, expected_hub);
+                assert_eq!(qry.hub_id.get(), expected_hub);
                 assert_eq!(qry.search.as_deref(), Some("coffee"));
                 match &qry.pagination {
                     Some(pagination) => {
@@ -445,7 +446,7 @@ mod tests {
                     }],
                 );
                 product_a.tags = vec![product_tag_rows[0].clone()];
-                product_a.category_id = Some(31);
+                product_a.category_id = Some(CategoryId::new(31).unwrap());
 
                 let mut product_b = sample_product(
                     2,
@@ -462,7 +463,7 @@ mod tests {
                 );
 
                 product_b.tags = vec![product_tag_rows[1].clone()];
-                product_b.category_id = Some(33);
+                product_b.category_id = Some(CategoryId::new(33).unwrap());
 
                 Ok((27, vec![product_a, product_b]))
             });
@@ -571,7 +572,7 @@ mod tests {
             .expect_list_products()
             .times(1)
             .withf(move |qry| {
-                assert_eq!(qry.hub_id, expected_hub);
+                assert_eq!(qry.hub_id.get(), expected_hub);
                 assert!(qry.include_archived);
                 true
             })
@@ -654,10 +655,13 @@ mod tests {
             .expect_create_product()
             .times(1)
             .withf(move |new_product| {
-                assert_eq!(new_product.hub_id, hub_id);
-                assert_eq!(new_product.name, "Widget");
-                assert_eq!(new_product.currency, "USD");
-                assert_eq!(new_product.units.as_deref(), Some("Each"));
+                assert_eq!(new_product.hub_id.get(), hub_id);
+                assert_eq!(new_product.name.as_str(), "Widget");
+                assert_eq!(new_product.currency.as_str(), "USD");
+                assert_eq!(
+                    new_product.units.as_ref().map(|units| units.as_str()),
+                    Some("Each")
+                );
                 true
             })
             .returning(move |_| Ok(sample_product(101, hub_id, "Widget", Vec::new())));
@@ -668,11 +672,8 @@ mod tests {
             .withf(move |product_id, scope_hub, urls| {
                 assert_eq!((*product_id, *scope_hub), (101, hub_id));
                 assert_eq!(
-                    urls,
-                    &[
-                        "https://example.com/a.png".to_string(),
-                        "https://example.com/b.png".to_string()
-                    ]
+                    urls.iter().map(|url| url.as_str()).collect::<Vec<_>>(),
+                    &["https://example.com/a.png", "https://example.com/b.png"]
                 );
                 true
             })
@@ -721,11 +722,15 @@ mod tests {
         };
 
         let result = create_product(&repo, &user, form).expect("expected success");
-        assert_eq!(result.id, 101);
-        assert_eq!(result.hub_id, hub_id);
-        assert_eq!(result.name, "Widget");
+        assert_eq!(result.id.get(), 101);
+        assert_eq!(result.hub_id.get(), hub_id);
+        assert_eq!(result.name.as_str(), "Widget");
         assert_eq!(
-            result.image_urls,
+            result
+                .image_urls
+                .into_iter()
+                .map(|url| url.into_inner())
+                .collect::<Vec<_>>(),
             vec![
                 "https://example.com/a.png".to_string(),
                 "https://example.com/b.png".to_string()
@@ -879,7 +884,7 @@ mod tests {
                 let id = *counter;
                 Ok(sample_product(
                     id,
-                    new_product.hub_id,
+                    new_product.hub_id.get(),
                     new_product.name.as_str(),
                     Vec::new(),
                 ))
@@ -1048,13 +1053,13 @@ Banana,USD,7.50,
         let hub_id = user.hub_id;
 
         let mut base_product = sample_product(product_id, hub_id, "Espresso", Vec::new());
-        base_product.sku = Some("ESP-1".to_string());
-        base_product.description = Some("Strong".to_string());
-        base_product.units = Some("kg".to_string());
+        base_product.sku = Some(ProductSku::new("ESP-1").unwrap());
+        base_product.description = Some(ProductDescription::new("Strong").unwrap());
+        base_product.units = Some(ProductUnits::new("kg").unwrap());
         base_product.is_archived = false;
-        base_product.category_id = Some(5);
+        base_product.category_id = Some(CategoryId::new(5).unwrap());
         base_product.tags = vec![tag(40, hub_id, "Legacy")];
-        base_product.image_urls = vec!["https://example.com/legacy.png".to_string()];
+        base_product.image_urls = vec![ImageUrl::new("https://example.com/legacy.png").unwrap()];
         let price_level_rows = vec![
             price_level(31, hub_id, "Retail"),
             price_level(32, hub_id, "Wholesale"),
@@ -1066,15 +1071,16 @@ Banana,USD,7.50,
         let writer_product = base_product.clone();
         let final_product = {
             let mut product = writer_product.clone();
-            product.name = "Espresso Deluxe".to_string();
-            product.currency = "eur".to_string();
+            product.name = ProductName::new("Espresso Deluxe").unwrap();
+            product.currency = CurrencyCode::new("EUR").unwrap();
             product.sku = None;
             product.description = None;
-            product.units = Some("pack".to_string());
+            product.units = Some(ProductUnits::new("pack").unwrap());
             product.is_archived = true;
             product.category_id = None;
             product.tags = vec![tag(42, hub_id, "Featured"), tag(99, hub_id, "Top Seller")];
-            product.image_urls = vec!["https://cdn.example.com/espresso-deluxe.png".to_string()];
+            product.image_urls =
+                vec![ImageUrl::new("https://cdn.example.com/espresso-deluxe.png").unwrap()];
             product.updated_at = new_updated_at;
             product
         };
@@ -1101,7 +1107,10 @@ Banana,USD,7.50,
                 assert_eq!(updates.name.as_str(), "Espresso Deluxe");
                 assert_eq!(updates.currency.as_str(), "EUR");
                 assert!(updates.sku.is_none());
-                assert_eq!(updates.units.as_deref(), Some("pack"));
+                assert_eq!(
+                    updates.units.as_ref().map(|units| units.as_str()),
+                    Some("pack")
+                );
                 assert!(updates.is_archived);
                 true
             })
@@ -1161,7 +1170,7 @@ Banana,USD,7.50,
 
         let form = EditProductForm {
             product_id,
-            name: "  Espresso Deluxe  ".to_string(),
+            name: "Espresso Deluxe".to_string(),
             sku: Some("   ".to_string()),         // clears SKU
             description: Some("   ".to_string()), // clears description
             units: Some("  pack ".to_string()),
@@ -1186,10 +1195,13 @@ Banana,USD,7.50,
         let result =
             update_product(&repo, &user, product_id, form).expect("expected update to succeed");
 
-        assert_eq!(result.name, "Espresso Deluxe");
-        assert_eq!(result.currency, "EUR");
+        assert_eq!(result.name.as_str(), "Espresso Deluxe");
+        assert_eq!(result.currency.as_str(), "EUR");
         assert!(result.sku.is_none());
-        assert_eq!(result.units.as_deref(), Some("pack"));
+        assert_eq!(
+            result.units.as_ref().map(|units| units.as_str()),
+            Some("pack")
+        );
         assert!(result.is_archived);
         assert_eq!(result.tags, final_product.tags);
         assert_eq!(result.updated_at, new_updated_at);
@@ -1346,7 +1358,7 @@ Banana,USD,7.50,
             &self,
             product_id: i32,
             hub_id: i32,
-            image_urls: &[String],
+            image_urls: &[ImageUrl],
         ) -> RepositoryResult<()> {
             self.product_writer
                 .replace_product_images(product_id, hub_id, image_urls)

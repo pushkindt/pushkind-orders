@@ -18,7 +18,7 @@ use crate::{
     },
     domain::product_tag::NewProductTag as DomainNewProductTag,
     domain::tag::Tag as DomainTag,
-    domain::types::TypeConstraintError,
+    domain::types::{ImageUrl, ProductId, TypeConstraintError},
     models::product::{
         NewProduct as DbNewProduct, Product as DbProduct, UpdateProduct as DbUpdateProduct,
     },
@@ -39,6 +39,10 @@ fn map_price_level_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid product price level data: {err}"))
 }
 
+fn map_product_type_error(err: TypeConstraintError) -> RepositoryError {
+    RepositoryError::Unexpected(format!("Invalid product data: {err}"))
+}
+
 impl ProductReader for DieselRepository {
     fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainProduct>> {
         use crate::schema::products;
@@ -50,8 +54,12 @@ impl ProductReader for DieselRepository {
             .first::<DbProduct>(&mut conn)
             .optional()?;
 
-        if let Some(db_product) = product {
-            let mut domain: DomainProduct = db_product.into();
+        let product = product
+            .map(DomainProduct::try_from)
+            .transpose()
+            .map_err(map_product_type_error)?;
+
+        if let Some(mut domain) = product {
             let mut price_levels = load_price_levels_for_products(&mut conn, &[domain.id])?;
             domain.price_levels = price_levels.remove(&domain.id).unwrap_or_default();
             let mut tags = load_tags_for_products(&mut conn, &[domain.id])?;
@@ -74,7 +82,7 @@ impl ProductReader for DieselRepository {
 
         let query_builder = || {
             let mut items = products::table
-                .filter(products::hub_id.eq(query.hub_id))
+                .filter(products::hub_id.eq(query.hub_id.get()))
                 .into_boxed::<diesel::sqlite::Sqlite>();
             if !query.include_archived {
                 items = items.filter(products::is_archived.eq(false));
@@ -85,7 +93,7 @@ impl ProductReader for DieselRepository {
             }
 
             if let Some(category_id) = query.category_id {
-                items = items.filter(products::category_id.eq(Some(category_id)));
+                items = items.filter(products::category_id.eq(Some(category_id.get())));
             }
 
             if let Some(term) = query.search.as_ref()
@@ -103,7 +111,7 @@ impl ProductReader for DieselRepository {
             }
 
             if let Some(sku) = query.sku.as_ref() {
-                items = items.filter(products::sku.eq(sku));
+                items = items.filter(products::sku.eq(sku.as_str()));
             }
             items
         };
@@ -126,18 +134,21 @@ impl ProductReader for DieselRepository {
             return Ok((total, Vec::new()));
         }
 
-        let product_ids: Vec<i32> = db_products.iter().map(|product| product.id).collect();
+        let mut domain_products: Vec<DomainProduct> = db_products
+            .into_iter()
+            .map(DomainProduct::try_from)
+            .collect::<Result<_, _>>()
+            .map_err(map_product_type_error)?;
+
+        let product_ids: Vec<_> = domain_products.iter().map(|product| product.id).collect();
         let mut price_level_map = load_price_levels_for_products(&mut conn, &product_ids)?;
         let mut tag_map = load_tags_for_products(&mut conn, &product_ids)?;
         let mut image_map = load_image_urls_for_products(&mut conn, &product_ids)?;
 
-        let mut domain_products = Vec::with_capacity(db_products.len());
-        for db_product in db_products {
-            let mut domain: DomainProduct = db_product.into();
-            domain.price_levels = price_level_map.remove(&domain.id).unwrap_or_default();
-            domain.tags = tag_map.remove(&domain.id).unwrap_or_default();
-            domain.image_urls = image_map.remove(&domain.id).unwrap_or_default();
-            domain_products.push(domain);
+        for product in &mut domain_products {
+            product.price_levels = price_level_map.remove(&product.id).unwrap_or_default();
+            product.tags = tag_map.remove(&product.id).unwrap_or_default();
+            product.image_urls = image_map.remove(&product.id).unwrap_or_default();
         }
 
         Ok((total, domain_products))
@@ -156,8 +167,8 @@ impl ProductWriter for DieselRepository {
 
             let category_exists: bool = select(exists(
                 categories::table
-                    .filter(categories::id.eq(category_id))
-                    .filter(categories::hub_id.eq(new_product.hub_id)),
+                    .filter(categories::id.eq(category_id.get()))
+                    .filter(categories::hub_id.eq(new_product.hub_id.get())),
             ))
             .get_result(&mut conn)?;
 
@@ -172,7 +183,7 @@ impl ProductWriter for DieselRepository {
             .values(&db_new)
             .get_result::<DbProduct>(&mut conn)?;
 
-        let mut domain: DomainProduct = created.into();
+        let mut domain: DomainProduct = created.try_into().map_err(map_product_type_error)?;
         let mut price_levels = load_price_levels_for_products(&mut conn, &[domain.id])?;
         domain.price_levels = price_levels.remove(&domain.id).unwrap_or_default();
         let mut tags = load_tags_for_products(&mut conn, &[domain.id])?;
@@ -199,7 +210,7 @@ impl ProductWriter for DieselRepository {
 
             let category_exists: bool = select(exists(
                 categories::table
-                    .filter(categories::id.eq(category_id))
+                    .filter(categories::id.eq(category_id.get()))
                     .filter(categories::hub_id.eq(hub_id)),
             ))
             .get_result(&mut conn)?;
@@ -219,7 +230,7 @@ impl ProductWriter for DieselRepository {
             .set(&db_updates)
             .get_result::<DbProduct>(&mut conn)?;
 
-        let mut domain: DomainProduct = updated.into();
+        let mut domain: DomainProduct = updated.try_into().map_err(map_product_type_error)?;
         let mut price_levels = load_price_levels_for_products(&mut conn, &[domain.id])?;
         domain.price_levels = price_levels.remove(&domain.id).unwrap_or_default();
         let mut tags = load_tags_for_products(&mut conn, &[domain.id])?;
@@ -379,7 +390,7 @@ impl ProductWriter for DieselRepository {
         &self,
         product_id: i32,
         hub_id: i32,
-        image_urls: &[String],
+        image_urls: &[ImageUrl],
     ) -> RepositoryResult<()> {
         use crate::schema::product_images;
         use crate::schema::products;
@@ -424,22 +435,25 @@ impl ProductWriter for DieselRepository {
 
 fn load_price_levels_for_products(
     conn: &mut SqliteConnection,
-    product_ids: &[i32],
-) -> RepositoryResult<HashMap<i32, Vec<DomainProductPriceLevelRate>>> {
+    product_ids: &[ProductId],
+) -> RepositoryResult<HashMap<ProductId, Vec<DomainProductPriceLevelRate>>> {
     use crate::schema::product_price_levels;
 
     if product_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
+    let raw_ids: Vec<i32> = product_ids.iter().map(|id| id.get()).collect();
+
     let rows = product_price_levels::table
-        .filter(product_price_levels::product_id.eq_any(product_ids))
+        .filter(product_price_levels::product_id.eq_any(&raw_ids))
         .order(product_price_levels::created_at.asc())
         .load::<DbProductPriceLevel>(conn)?;
 
-    let mut map: HashMap<i32, Vec<DomainProductPriceLevelRate>> = HashMap::new();
+    let mut map: HashMap<ProductId, Vec<DomainProductPriceLevelRate>> = HashMap::new();
     for row in rows {
-        map.entry(row.product_id)
+        let product_id = ProductId::new(row.product_id).map_err(map_price_level_type_error)?;
+        map.entry(product_id)
             .or_default()
             .push(DomainProductPriceLevelRate::try_from(row).map_err(map_price_level_type_error)?);
     }
@@ -449,8 +463,8 @@ fn load_price_levels_for_products(
 
 fn load_tags_for_products(
     conn: &mut SqliteConnection,
-    product_ids: &[i32],
-) -> RepositoryResult<HashMap<i32, Vec<DomainTag>>> {
+    product_ids: &[ProductId],
+) -> RepositoryResult<HashMap<ProductId, Vec<DomainTag>>> {
     use crate::schema::product_tags;
     use crate::schema::tags;
 
@@ -458,15 +472,18 @@ fn load_tags_for_products(
         return Ok(HashMap::new());
     }
 
+    let raw_ids: Vec<i32> = product_ids.iter().map(|id| id.get()).collect();
+
     let rows = product_tags::table
         .inner_join(tags::table)
-        .filter(product_tags::product_id.eq_any(product_ids))
+        .filter(product_tags::product_id.eq_any(&raw_ids))
         .order(tags::name.asc())
         .load::<(DbProductTag, DbTag)>(conn)?;
 
-    let mut map: HashMap<i32, Vec<DomainTag>> = HashMap::new();
+    let mut map: HashMap<ProductId, Vec<DomainTag>> = HashMap::new();
     for (link, tag) in rows {
-        map.entry(link.product_id)
+        let product_id = ProductId::new(link.product_id).map_err(map_tag_type_error)?;
+        map.entry(product_id)
             .or_default()
             .push(DomainTag::try_from(tag).map_err(map_tag_type_error)?);
     }
@@ -476,22 +493,27 @@ fn load_tags_for_products(
 
 fn load_image_urls_for_products(
     conn: &mut SqliteConnection,
-    product_ids: &[i32],
-) -> RepositoryResult<HashMap<i32, Vec<String>>> {
+    product_ids: &[ProductId],
+) -> RepositoryResult<HashMap<ProductId, Vec<ImageUrl>>> {
     use crate::schema::product_images;
 
     if product_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
+    let raw_ids: Vec<i32> = product_ids.iter().map(|id| id.get()).collect();
+
     let rows = product_images::table
-        .filter(product_images::product_id.eq_any(product_ids))
+        .filter(product_images::product_id.eq_any(&raw_ids))
         .order(product_images::id.asc())
         .load::<DbProductImage>(conn)?;
 
-    let mut map: HashMap<i32, Vec<String>> = HashMap::new();
+    let mut map: HashMap<ProductId, Vec<ImageUrl>> = HashMap::new();
     for row in rows {
-        map.entry(row.product_id).or_default().push(row.image_url);
+        let product_id = ProductId::new(row.product_id).map_err(map_tag_type_error)?;
+        map.entry(product_id)
+            .or_default()
+            .push(ImageUrl::new(row.image_url).map_err(map_product_type_error)?);
     }
 
     Ok(map)

@@ -8,7 +8,10 @@ use pushkind_orders::domain::{
     price_level::{NewPriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
-    types::{CategoryName, HubId, PriceCents, PriceLevelName, ProductId},
+    types::{
+        CategoryId, CategoryName, CurrencyCode, HubId, PriceCents, PriceLevelName,
+        ProductDescription, ProductName, ProductSku,
+    },
     user::{NewUser, UpdateUser},
 };
 use pushkind_orders::models::category::NewCategory as DbNewCategory;
@@ -258,11 +261,12 @@ fn test_product_repository_crud() {
         .get_result(&mut conn)
         .expect("create category");
 
-    let apple_new = NewProduct::new(1, "Apple", "USD")
-        .with_sku("APL-1")
-        .with_description("Fresh apple")
-        .with_category_id(category_id);
-    let banana_new = NewProduct::new(1, "Banana", "USD");
+    let apple_new = NewProduct::try_new(1, "Apple", "USD")
+        .unwrap()
+        .with_sku(ProductSku::new("APL-1").unwrap())
+        .with_description(ProductDescription::new("Fresh apple").unwrap())
+        .with_category_id(CategoryId::new(category_id).unwrap());
+    let banana_new = NewProduct::try_new(1, "Banana", "USD").unwrap();
 
     let apple = repo
         .create_product(&apple_new)
@@ -273,30 +277,34 @@ fn test_product_repository_crud() {
 
     assert_eq!(apple.name, "Apple");
     assert_eq!(apple.sku.as_deref(), Some("APL-1"));
-    assert_eq!(apple.category_id, Some(category_id));
+    assert_eq!(apple.category_id.map(|id| id.get()), Some(category_id));
     assert!(apple.price_levels.is_empty());
     assert!(banana.price_levels.is_empty());
 
     let err = repo
-        .create_product(&NewProduct::new(1, "Ghost", "USD").with_category_id(category_id + 999))
+        .create_product(
+            &NewProduct::try_new(1, "Ghost", "USD")
+                .unwrap()
+                .with_category_id(CategoryId::new(category_id + 999).unwrap()),
+        )
         .expect_err("expected missing category");
     assert!(matches!(err, RepositoryError::NotFound));
 
     let fetched = repo
-        .get_product_by_id(apple.id, 1)
+        .get_product_by_id(apple.id.get(), 1)
         .expect("failed to fetch by id")
         .expect("expected apple product");
     assert_eq!(fetched.id, apple.id);
     assert!(fetched.price_levels.is_empty());
 
     assert!(
-        repo.get_product_by_id(apple.id, 2)
+        repo.get_product_by_id(apple.id.get(), 2)
             .expect("failed to fetch cross-hub")
             .is_none()
     );
 
     let (total_all, products_all) = repo
-        .list_products(ProductListQuery::new(1))
+        .list_products(ProductListQuery::try_new(1).unwrap())
         .expect("failed to list products");
     assert_eq!(total_all, 2);
     assert_eq!(products_all.len(), 2);
@@ -307,68 +315,73 @@ fn test_product_repository_crud() {
     );
 
     let (total_search, products_search) = repo
-        .list_products(ProductListQuery::new(1).search("apple"))
+        .list_products(ProductListQuery::try_new(1).unwrap().search("apple"))
         .expect("failed to search products");
     assert_eq!(total_search, 1);
     assert_eq!(products_search[0].id, apple.id);
     assert!(products_search[0].price_levels.is_empty());
 
     let (total_sku, products_sku) = repo
-        .list_products(ProductListQuery::new(1).sku("APL-1"))
+        .list_products(
+            ProductListQuery::try_new(1)
+                .unwrap()
+                .sku(ProductSku::new("APL-1").unwrap()),
+        )
         .expect("failed to list by sku");
     assert_eq!(total_sku, 1);
     assert_eq!(products_sku[0].id, apple.id);
 
-    let updates = UpdateProduct {
-        is_archived: true,
-        name: "Apple Premium".to_string(),
-        ..Default::default()
-    };
+    let updates = UpdateProduct::new(
+        ProductName::new("Apple Premium").unwrap(),
+        CurrencyCode::new("USD").unwrap(),
+        true,
+    );
 
     let updated = repo
-        .update_product(apple.id, 1, &updates)
+        .update_product(apple.id.get(), 1, &updates)
         .expect("failed to update product");
     assert!(updated.is_archived);
     assert_eq!(updated.name, "Apple Premium");
     assert!(updated.price_levels.is_empty());
 
-    let updates = UpdateProduct {
-        name: "Apple".to_string(),
-        ..Default::default()
-    };
+    let updates = UpdateProduct::new(
+        ProductName::new("Apple").unwrap(),
+        CurrencyCode::new("USD").unwrap(),
+        false,
+    );
 
     let err = repo
-        .update_product(apple.id, 2, &updates)
+        .update_product(apple.id.get(), 2, &updates)
         .expect_err("expected cross-hub update failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
     let (total_visible, products_visible) = repo
-        .list_products(ProductListQuery::new(1))
+        .list_products(ProductListQuery::try_new(1).unwrap())
         .expect("failed to list non-archived");
     assert_eq!(total_visible, 1);
     assert_eq!(products_visible[0].id, banana.id);
 
     let (total_with_archived, products_with_archived) = repo
-        .list_products(ProductListQuery::new(1).include_archived())
+        .list_products(ProductListQuery::try_new(1).unwrap().include_archived())
         .expect("failed to list including archived");
     assert_eq!(total_with_archived, 2);
     assert_eq!(products_with_archived.len(), 2);
 
     let err = repo
-        .delete_product(apple.id, 2)
+        .delete_product(apple.id.get(), 2)
         .expect_err("expected cross-hub delete failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
-    repo.delete_product(apple.id, 1)
+    repo.delete_product(apple.id.get(), 1)
         .expect("failed to delete product");
     assert!(
-        repo.get_product_by_id(apple.id, 1)
+        repo.get_product_by_id(apple.id.get(), 1)
             .expect("failed to fetch after delete")
             .is_none()
     );
 
     let (total_final, products_final) = repo
-        .list_products(ProductListQuery::new(1).include_archived())
+        .list_products(ProductListQuery::try_new(1).unwrap().include_archived())
         .expect("failed final list");
     assert_eq!(total_final, 1);
     assert_eq!(products_final[0].id, banana.id);
@@ -387,27 +400,23 @@ fn test_replace_product_price_levels() {
         .expect("failed to create price level");
 
     let product = repo
-        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("failed to create product");
 
     let rates = vec![
+        NewProductPriceLevelRate::new(product.id, retail_level.id, PriceCents::new(1250).unwrap()),
         NewProductPriceLevelRate::new(
-            ProductId::new(product.id).unwrap(),
-            retail_level.id,
-            PriceCents::new(1250).unwrap(),
-        ),
-        NewProductPriceLevelRate::new(
-            ProductId::new(product.id).unwrap(),
+            product.id,
             wholesale_level.id,
             PriceCents::new(990).unwrap(),
         ),
     ];
 
-    repo.replace_product_price_levels(product.id, 1, &rates)
+    repo.replace_product_price_levels(product.id.get(), 1, &rates)
         .expect("failed to replace product price levels");
 
     let mut fetched = repo
-        .get_product_by_id(product.id, 1)
+        .get_product_by_id(product.id.get(), 1)
         .expect("failed to fetch product")
         .expect("product should exist");
 
@@ -422,7 +431,7 @@ fn test_replace_product_price_levels() {
     assert_eq!(fetched.price_levels[1].price_cents.get(), 990);
 
     let err = repo
-        .replace_product_price_levels(product.id, 2, &rates)
+        .replace_product_price_levels(product.id.get(), 2, &rates)
         .expect_err("expected cross-hub update to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 }
@@ -573,7 +582,7 @@ fn deleting_price_level_removes_product_rates() {
     let repo = DieselRepository::new(test_db.pool());
 
     let product = repo
-        .create_product(&NewProduct::new(1, "Cascade Product", "USD"))
+        .create_product(&NewProduct::try_new(1, "Cascade Product", "USD").unwrap())
         .expect("failed to create product");
     let price_level = repo
         .create_price_level(&NewPriceLevel::try_new(1, "Cascade Level", false).unwrap())
@@ -586,7 +595,7 @@ fn deleting_price_level_removes_product_rates() {
             .expect("failed to acquire connection for insert");
 
         let new_rate = DbNewProductPriceLevel {
-            product_id: product.id,
+            product_id: product.id.get(),
             price_level_id: price_level.id.get(),
             price_cents: 1950,
         };
@@ -613,7 +622,7 @@ fn deleting_price_level_removes_product_rates() {
             .get()
             .expect("failed to acquire connection for verification");
         let remaining: i64 = product_rates::product_price_levels
-            .filter(product_rates::product_id.eq(product.id))
+            .filter(product_rates::product_id.eq(product.id.get()))
             .count()
             .get_result(&mut conn)
             .expect("failed to count remaining rates");
@@ -621,7 +630,7 @@ fn deleting_price_level_removes_product_rates() {
     }
 
     let updated_product = repo
-        .get_product_by_id(product.id, 1)
+        .get_product_by_id(product.id.get(), 1)
         .expect("failed to fetch product after cascade")
         .expect("product should still exist");
     assert!(

@@ -4,8 +4,8 @@ use validator::{Validate, ValidationErrors};
 
 use crate::{
     domain::price_level::{NewPriceLevel, UpdatePriceLevel},
-    domain::types::{HubId, PriceLevelName},
-    forms::{PhoneNormalizationError, normalize_phone_to_e164, sanitize_text},
+    domain::types::{HubId, PriceLevelName, TypeConstraintError, normalize_phone_to_e164},
+    forms::sanitize_text,
 };
 
 /// Maximum length allowed for a price level name.
@@ -87,8 +87,9 @@ impl AssignClientPriceLevelPayload {
         });
 
         let normalized_phone = normalize_phone_to_e164(&self.phone).map_err(|err| match err {
-            PhoneNormalizationError::Empty => PriceLevelFormError::MissingPhone,
-            PhoneNormalizationError::Invalid => PriceLevelFormError::IncorrectPhone,
+            TypeConstraintError::EmptyString => PriceLevelFormError::MissingPhone,
+            TypeConstraintError::InvalidPhone => PriceLevelFormError::IncorrectPhone,
+            _ => PriceLevelFormError::IncorrectPhone,
         })?;
 
         Ok(AssignClientPriceLevelInput {

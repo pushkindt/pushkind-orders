@@ -14,6 +14,7 @@ use crate::domain::{
     product_price_level::NewProductPriceLevelRate,
     store_otp::{NewStoreOtp, StoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
+    types::ImageUrl,
     user::{NewUser, UpdateUser, User},
 };
 use pushkind_common::repository::errors::RepositoryResult;
@@ -36,7 +37,7 @@ mock! {
         fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()>;
         fn replace_product_price_levels(&self, product_id: i32, hub_id: i32, rates: &[NewProductPriceLevelRate]) -> RepositoryResult<()>;
         fn replace_product_tags(&self, product_id: i32, hub_id: i32, tag_ids: &[i32]) -> RepositoryResult<()>;
-        fn replace_product_images(&self, product_id: i32, hub_id: i32, image_urls: &[String]) -> RepositoryResult<()>;
+        fn replace_product_images(&self, product_id: i32, hub_id: i32, image_urls: &[ImageUrl]) -> RepositoryResult<()>;
     }
 }
 

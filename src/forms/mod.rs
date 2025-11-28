@@ -1,7 +1,6 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
-use phonenumber::{Mode, parse};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer};
 
@@ -19,18 +18,6 @@ fn sanitize_text(text: &str) -> Option<String> {
     } else {
         Some(text.to_string())
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PhoneNormalizationError {
-    Empty,
-    Invalid,
-}
-
-pub fn normalize_phone_to_e164(value: &str) -> Result<String, PhoneNormalizationError> {
-    let sanitized = sanitize_text(value).ok_or(PhoneNormalizationError::Empty)?;
-    let parsed = parse(None, &sanitized).map_err(|_| PhoneNormalizationError::Invalid)?;
-    Ok(parsed.format().mode(Mode::E164).to_string())
 }
 
 pub fn empty_id_as_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -66,18 +53,5 @@ mod tests {
         assert_eq!(sanitize_text("   test   "), Some("test".to_string()));
         assert!(sanitize_text("").is_none());
         assert!(sanitize_text("    ").is_none());
-    }
-
-    #[test]
-    fn normalize_phone_helper_formats_numbers() {
-        let normalized =
-            normalize_phone_to_e164("  +1 (555) 123-4567  ").expect("expected normalized phone");
-        assert_eq!(normalized, "+15551234567");
-    }
-
-    #[test]
-    fn normalize_phone_helper_rejects_invalid() {
-        let result = normalize_phone_to_e164("not-a-phone");
-        assert!(matches!(result, Err(PhoneNormalizationError::Invalid)));
     }
 }

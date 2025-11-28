@@ -10,6 +10,7 @@ use crate::domain::{
     product::{Product, ProductListQuery},
     product_price_level::ProductPriceLevelRate,
     tag::Tag,
+    types::{CategoryId, HubId},
 };
 
 /// Minimal representation of a category exposed to the storefront.
@@ -167,18 +168,18 @@ impl StoreProduct {
         );
 
         Self {
-            id,
-            category_id,
-            name,
-            sku,
-            description,
-            units,
-            currency,
+            id: id.get(),
+            category_id: category_id.map(|id| id.get()),
+            name: name.as_str().to_string(),
+            sku: sku.map(|sku| sku.as_str().to_string()),
+            description: description.map(|d| d.into_inner()),
+            units: units.map(|units| units.as_str().to_string()),
+            currency: currency.as_str().to_string(),
             price_cents,
             tags: tags.into_iter().map(StoreTag::from).collect(),
-            image_urls,
+            image_urls: image_urls.into_iter().map(|url| url.into_inner()).collect(),
             updated_at,
-            amount,
+            amount: amount.map(|a| a.get()),
         }
     }
 }
@@ -201,10 +202,10 @@ pub struct StoreProductFilters {
 }
 
 impl StoreProductFilters {
-    pub fn into_query(self, hub_id: i32) -> ProductListQuery {
+    pub fn into_query(self, hub_id: HubId) -> ProductListQuery {
         let mut query = ProductListQuery::new(hub_id);
 
-        query = match self.category_id {
+        query = match self.category_id.and_then(|id| CategoryId::new(id).ok()) {
             Some(category_id) => query.with_category_id(category_id),
             None => query.only_without_category(),
         };

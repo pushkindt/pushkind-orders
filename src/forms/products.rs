@@ -10,6 +10,10 @@ use crate::{
     domain::{
         price_level::PriceLevel,
         product::{NewProduct, UpdateProduct},
+        types::{
+            CategoryId, CurrencyCode, HubId, ImageUrl, ProductAmount, ProductDescription,
+            ProductName, ProductSku, ProductUnits,
+        },
     },
     forms::{empty_id_as_none, sanitize_text},
 };
@@ -30,12 +34,14 @@ const UNITS_MAX_LEN_VALIDATOR: u64 = UNITS_MAX_LEN as u64;
 const CURRENCY_CODE_LEN: usize = 3;
 const CURRENCY_CODE_LEN_VALIDATOR: u64 = CURRENCY_CODE_LEN as u64;
 
-fn sanitize_image_urls(input: Option<String>) -> Vec<String> {
+fn sanitize_image_urls(input: Option<String>) -> Vec<ImageUrl> {
     let mut urls = Vec::new();
     if let Some(raw) = input {
         for line in raw.lines() {
-            if let Some(url) = sanitize_text(line) {
-                urls.push(url);
+            if let Some(url) = sanitize_text(line)
+                && let Ok(image_url) = ImageUrl::new(url)
+            {
+                urls.push(image_url);
             }
         }
     }
@@ -54,9 +60,14 @@ pub enum ProductFormError {
     /// The provided name is empty after sanitization.
     #[error("product name cannot be empty")]
     EmptyName,
+    /// The provided description is empty after sanitization.
+    #[error("product description cannot be empty")]
+    EmptyDescription,
     /// The provided currency code is invalid.
     #[error("invalid currency code")]
     InvalidCurrency,
+    #[error("invalid amount")]
+    InvalidAmount,
     /// The uploaded CSV is missing required columns.
     #[error("upload is missing the required `name` or `currency` headers")]
     MissingRequiredHeaders,
@@ -169,6 +180,7 @@ impl AddProductForm {
         } = self;
 
         let sanitized_name = sanitize_text(&name).ok_or(ProductFormError::EmptyName)?;
+        let name = ProductName::new(sanitized_name).map_err(|_| ProductFormError::EmptyName)?;
 
         let sanitized_sku = sku.as_deref().and_then(sanitize_text);
 
@@ -178,25 +190,41 @@ impl AddProductForm {
             .ok_or(ProductFormError::InvalidCurrency)?
             .to_ascii_uppercase();
 
-        let mut new_product = NewProduct::new(hub_id, sanitized_name, currency);
+        let currency =
+            CurrencyCode::new(currency).map_err(|_| ProductFormError::InvalidCurrency)?;
+
+        let hub_id = HubId::new(hub_id).map_err(|_| ProductFormError::InvalidCategoryId {
+            value: hub_id.to_string(),
+        })?;
+
+        let mut new_product = NewProduct::new(hub_id, name, currency);
 
         if let Some(sku) = sanitized_sku {
+            let sku = ProductSku::new(sku).map_err(|_| ProductFormError::InvalidCurrency)?;
             new_product = new_product.with_sku(sku);
         }
 
         if let Some(description) = description {
-            new_product = new_product.with_description(ammonia::clean(&description));
+            let description = ProductDescription::new(ammonia::clean(&description))
+                .map_err(|_| ProductFormError::EmptyDescription)?;
+            new_product = new_product.with_description(description);
         }
 
         if let Some(units) = sanitized_units {
+            let units = ProductUnits::new(units).map_err(|_| ProductFormError::InvalidCurrency)?;
             new_product = new_product.with_units(units);
         }
 
         if let Some(category_id) = category_id {
+            let category_id =
+                CategoryId::new(category_id).map_err(|_| ProductFormError::InvalidCategoryId {
+                    value: category_id.to_string(),
+                })?;
             new_product = new_product.with_category_id(category_id);
         }
 
         if let Some(amount) = amount {
+            let amount = ProductAmount::new(amount).map_err(|_| ProductFormError::InvalidAmount)?;
             new_product = new_product.with_amount(amount);
         }
 
@@ -264,7 +292,7 @@ pub struct NewProductUpload {
     /// Optional price level amounts supplied for the product.
     pub price_levels: Vec<NewProductUploadPriceLevel>,
     /// Sanitized image URLs supplied for the product form.
-    pub image_urls: Vec<String>,
+    pub image_urls: Vec<ImageUrl>,
     /// Sanitized tag identifiers submitted with the product form.
     pub tag_ids: Vec<i32>,
     /// Optional category path for the product.
@@ -356,21 +384,35 @@ impl UploadProductsForm {
                 .and_then(|idx| record.get(idx))
                 .and_then(sanitize_text);
 
-            let mut product = NewProduct::new(hub_id, sanitized_name, currency);
+            let hub_id = HubId::new(hub_id).map_err(|_| ProductFormError::InvalidCategoryId {
+                value: hub_id.to_string(),
+            })?;
+            let name = ProductName::new(sanitized_name).map_err(|_| ProductFormError::EmptyName)?;
+            let currency =
+                CurrencyCode::new(currency).map_err(|_| ProductFormError::InvalidCurrency)?;
+
+            let mut product = NewProduct::new(hub_id, name, currency);
 
             if let Some(sku) = sku {
+                let sku = ProductSku::new(sku).map_err(|_| ProductFormError::InvalidCurrency)?;
                 product = product.with_sku(sku);
             }
 
             if let Some(description) = description {
-                product = product.with_description(ammonia::clean(&description));
+                let description = ProductDescription::new(ammonia::clean(&description))
+                    .map_err(|_| ProductFormError::EmptyDescription)?;
+                product = product.with_description(description);
             }
 
             if let Some(units) = units {
+                let units =
+                    ProductUnits::new(units).map_err(|_| ProductFormError::InvalidCurrency)?;
                 product = product.with_units(units);
             }
 
             if let Some(amount) = amount {
+                let amount =
+                    ProductAmount::new(amount).map_err(|_| ProductFormError::InvalidAmount)?;
                 product = product.with_amount(amount);
             }
 
@@ -429,7 +471,7 @@ pub struct EditProductForm {
     #[validate(length(max = UNITS_MAX_LEN_VALIDATOR))]
     pub units: Option<String>,
     /// Optional currency update.
-    #[validate(length(max = CURRENCY_CODE_LEN_VALIDATOR))]
+    #[validate(length(equal = CURRENCY_CODE_LEN_VALIDATOR))]
     pub currency: String,
     /// Optional newline-separated image URLs.
     #[serde(default)]
@@ -469,7 +511,7 @@ pub struct EditProductUpdate {
     /// Sanitized list of tag identifiers to assign.
     pub tag_ids: Vec<i32>,
     /// Sanitized image URLs submitted with the update.
-    pub image_urls: Vec<String>,
+    pub image_urls: Vec<ImageUrl>,
     /// Sanitized price level assignments submitted with the update.
     pub price_levels: Vec<NewProductUploadPriceLevel>,
 }
@@ -498,34 +540,52 @@ impl EditProductForm {
         } = self;
 
         let sanitized_name = sanitize_text(&name).ok_or(ProductFormError::EmptyName)?;
+        let name = ProductName::new(sanitized_name).map_err(|_| ProductFormError::EmptyName)?;
 
         let currency = sanitize_text(&currency)
             .ok_or(ProductFormError::InvalidCurrency)?
             .to_ascii_uppercase();
 
-        let mut updates = UpdateProduct::new(sanitized_name, currency, is_archived);
+        let currency =
+            CurrencyCode::new(currency).map_err(|_| ProductFormError::InvalidCurrency)?;
+
+        let mut updates = UpdateProduct::new(name, currency, is_archived);
 
         if let Some(sku) = sku
             && let Some(sanitized) = sanitize_text(&sku)
         {
-            updates = updates.with_sku(sanitized);
+            let sku = ProductSku::new(sanitized).map_err(|_| ProductFormError::InvalidCurrency)?;
+            updates = updates.with_sku(sku);
         }
 
-        if let Some(description) = description {
-            updates = updates.with_description(ammonia::clean(&description));
+        if let Some(description) = description
+            && let Some(sanitized) = sanitize_text(&ammonia::clean(&description))
+        {
+            let description = ProductDescription::new(sanitized)
+                .map_err(|_| ProductFormError::EmptyDescription)?;
+            updates = updates.with_description(description);
         }
 
         if let Some(units) = units
             && let Some(sanitized) = sanitize_text(&units)
         {
-            updates = updates.with_units(sanitized);
+            let units =
+                ProductUnits::new(sanitized).map_err(|_| ProductFormError::InvalidCurrency)?;
+            updates = updates.with_units(units);
         }
 
-        if let Some(category_raw) = category_id {
-            updates = updates.with_category_id(category_raw);
+        if let Some(category_raw) = category_id
+            && category_raw > 0
+        {
+            let category_id =
+                CategoryId::new(category_raw).map_err(|_| ProductFormError::InvalidCategoryId {
+                    value: category_raw.to_string(),
+                })?;
+            updates = updates.with_category_id(category_id);
         }
 
         if let Some(amount) = amount {
+            let amount = ProductAmount::new(amount).map_err(|_| ProductFormError::InvalidAmount)?;
             updates = updates.with_amount(amount);
         }
 
@@ -720,22 +780,32 @@ mod tests {
             .into_new_product_with_prices(42, &price_levels)
             .expect("expected success");
 
-        assert_eq!(payload.product.hub_id, 42);
-        assert_eq!(payload.product.name, "Deluxe  Product");
-        assert_eq!(payload.product.sku.as_deref(), Some("sku-001"));
+        assert_eq!(payload.product.hub_id.get(), 42);
+        assert_eq!(payload.product.name.as_str(), "Deluxe  Product");
         assert_eq!(
-            payload.product.description.as_deref(),
-            Some(" First line.\n\n Second line.  ")
+            payload.product.sku.as_ref().map(|sku| sku.as_str()),
+            Some("sku-001")
         );
-        assert_eq!(payload.product.units.as_deref(), Some("Box"));
-        assert_eq!(payload.product.currency, "USD");
-        assert_eq!(payload.product.category_id, Some(7));
+        assert_eq!(
+            payload.product.description.as_ref().map(|d| d.as_str()),
+            Some("First line.\n\n Second line.")
+        );
+        assert_eq!(
+            payload.product.units.as_ref().map(|units| units.as_str()),
+            Some("Box")
+        );
+        assert_eq!(payload.product.currency.as_str(), "USD");
+        assert_eq!(payload.product.category_id.map(|id| id.get()), Some(7));
         assert_eq!(payload.price_levels.len(), 1);
         assert_eq!(payload.price_levels[0].price_level_id, 1);
         assert_eq!(payload.price_levels[0].price_cents, 1234);
         assert_eq!(payload.tag_ids, vec![5, 7]);
         assert_eq!(
-            payload.image_urls,
+            payload
+                .image_urls
+                .into_iter()
+                .map(|url| url.into_inner())
+                .collect::<Vec<_>>(),
             vec![
                 "https://example.com/one.png".to_string(),
                 "https://example.com/two.png".to_string()
@@ -858,10 +928,16 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(products.len(), 2);
 
         let first = &products[0];
-        assert_eq!(first.product.name, "Apple");
-        assert_eq!(first.product.sku.as_deref(), Some("APL-1"));
-        assert_eq!(first.product.units.as_deref(), Some("Each"));
-        assert_eq!(first.product.currency, "USD");
+        assert_eq!(first.product.name.as_str(), "Apple");
+        assert_eq!(
+            first.product.sku.as_ref().map(|sku| sku.as_str()),
+            Some("APL-1")
+        );
+        assert_eq!(
+            first.product.units.as_ref().map(|units| units.as_str()),
+            Some("Each")
+        );
+        assert_eq!(first.product.currency.as_str(), "USD");
         assert_eq!(first.price_levels.len(), 2);
         assert_eq!(first.price_levels[0].price_level_id, 1);
         assert_eq!(first.price_levels[0].price_cents, 1234);
@@ -869,10 +945,10 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(first.price_levels[1].price_cents, 999);
 
         let second = &products[1];
-        assert_eq!(second.product.name, "Banana");
+        assert_eq!(second.product.name.as_str(), "Banana");
         assert!(second.product.sku.is_none());
         assert!(second.product.units.is_none());
-        assert_eq!(second.product.currency, "USD");
+        assert_eq!(second.product.currency.as_str(), "USD");
         assert_eq!(second.price_levels.len(), 1);
         assert_eq!(second.price_levels[0].price_level_id, 1);
         assert_eq!(second.price_levels[0].price_cents, 850);
@@ -997,16 +1073,22 @@ Banana,usd,,Ripe banana,,8.50,
         assert_eq!(updates.name.as_str(), "Premium  Widget");
         assert!(updates.sku.is_none());
         assert_eq!(
-            updates.description.as_deref(),
-            Some(" Updated description. \n\n ")
+            updates.description.as_ref().map(|d| d.as_str()),
+            Some("Updated description.")
         );
-        assert_eq!(updates.units.as_deref(), Some("ea"));
+        assert_eq!(
+            updates.units.as_ref().map(|units| units.as_str()),
+            Some("ea")
+        );
         assert_eq!(updates.currency.as_str(), "EUR");
         assert!(updates.is_archived);
-        assert_eq!(updates.category_id, Some(12));
+        assert_eq!(updates.category_id.map(|id| id.get()), Some(12));
         assert_eq!(tag_ids, vec![5, 7]);
         assert_eq!(
-            image_urls,
+            image_urls
+                .into_iter()
+                .map(|url| url.into_inner())
+                .collect::<Vec<_>>(),
             vec![
                 "https://example.com/alpha.jpg".to_string(),
                 "https://example.com/beta.jpg".to_string()

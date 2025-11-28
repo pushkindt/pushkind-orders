@@ -15,7 +15,7 @@ use pushkind_orders::domain::{
     product::NewProduct,
     product_price_level::NewProductPriceLevelRate,
     tag::NewTag,
-    types::{CategoryName, HubId, PriceCents, ProductId},
+    types::{CategoryName, HubId, PriceCents},
 };
 use pushkind_orders::repository::{
     CategoryWriter, CustomerWriter, DieselRepository, OrderWriter, PriceLevelWriter, ProductWriter,
@@ -54,9 +54,9 @@ async fn store_endpoints_return_data() {
         .expect("create tag");
 
     let product = repo
-        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
-    repo.replace_product_tags(product.id, 1, &[tag.id.get()])
+    repo.replace_product_tags(product.id.get(), 1, &[tag.id.get()])
         .expect("attach tag");
 
     let app_repo = repo.clone();
@@ -88,7 +88,7 @@ async fn store_endpoints_return_data() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let product_response: StoreProduct = test::read_body_json(resp).await;
-    assert_eq!(product_response.id, product.id);
+    assert_eq!(product_response.id, product.id.get());
     assert_eq!(product_response.name, "Coffee");
 
     let req = test::TestRequest::get()
@@ -129,14 +129,16 @@ async fn store_products_respect_query_parameters() {
         .expect("create snacks category");
 
     repo.create_product(
-        &NewProduct::new(1, "Coffee Beans", "USD").with_category_id(beverages.id.into()),
+        &NewProduct::try_new(1, "Coffee Beans", "USD")
+            .unwrap()
+            .with_category_id(beverages.id),
     )
     .expect("create coffee product");
-    repo.create_product(&NewProduct::new(1, "Special Tea", "USD"))
+    repo.create_product(&NewProduct::try_new(1, "Special Tea", "USD").unwrap())
         .expect("create tea product");
 
     for index in 0..21 {
-        repo.create_product(&NewProduct::new(1, format!("Extra Item {index}"), "USD"))
+        repo.create_product(&NewProduct::try_new(1, format!("Extra Item {index}"), "USD").unwrap())
             .expect("create extra product");
     }
 
@@ -329,13 +331,13 @@ async fn create_store_order_requires_authentication() {
         .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
         .expect("create price level");
     let product = repo
-        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
     repo.replace_product_price_levels(
-        product.id,
+        product.id.get(),
         1,
         &[NewProductPriceLevelRate::new(
-            ProductId::new(product.id).unwrap(),
+            product.id,
             price_level.id,
             PriceCents::new(500).unwrap(),
         )],
@@ -377,13 +379,13 @@ async fn create_store_order_validates_payload() {
         .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
         .expect("create price level");
     let product = repo
-        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
     repo.replace_product_price_levels(
-        product.id,
+        product.id.get(),
         1,
         &[NewProductPriceLevelRate::new(
-            ProductId::new(product.id).unwrap(),
+            product.id,
             price_level.id,
             PriceCents::new(500).unwrap(),
         )],
@@ -446,13 +448,13 @@ async fn create_store_order_creates_order() {
         .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
         .expect("create price level");
     let product = repo
-        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
     repo.replace_product_price_levels(
-        product.id,
+        product.id.get(),
         1,
         &[NewProductPriceLevelRate::new(
-            ProductId::new(product.id).unwrap(),
+            product.id,
             price_level.id,
             PriceCents::new(500).unwrap(),
         )],

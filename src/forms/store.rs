@@ -2,7 +2,7 @@ use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use crate::forms::{PhoneNormalizationError, normalize_phone_to_e164};
+use crate::domain::types::{TypeConstraintError, normalize_phone_to_e164};
 
 /// Maximum length allowed for a phone number provided by storefront clients.
 const PHONE_MAX_LEN: usize = 64;
@@ -42,8 +42,9 @@ impl StoreOtpRequestPayload {
         self.validate()?;
 
         let phone = normalize_phone_to_e164(&self.phone).map_err(|err| match err {
-            PhoneNormalizationError::Empty => StoreFormError::EmptyPhone,
-            PhoneNormalizationError::Invalid => StoreFormError::InvalidPhone,
+            TypeConstraintError::EmptyString => StoreFormError::EmptyPhone,
+            TypeConstraintError::InvalidPhone => StoreFormError::InvalidPhone,
+            _ => StoreFormError::InvalidPhone,
         })?;
 
         Ok(StoreOtpRequestInput { phone })
@@ -70,8 +71,9 @@ impl StoreOtpVerifyPayload {
     /// Validate and normalize the payload, ensuring the OTP contains six digits.
     pub fn into_request(self) -> StoreFormResult<StoreOtpVerifyInput> {
         let phone = normalize_phone_to_e164(&self.phone).map_err(|err| match err {
-            PhoneNormalizationError::Empty => StoreFormError::EmptyPhone,
-            PhoneNormalizationError::Invalid => StoreFormError::InvalidPhone,
+            TypeConstraintError::EmptyString => StoreFormError::EmptyPhone,
+            TypeConstraintError::InvalidPhone => StoreFormError::InvalidPhone,
+            _ => StoreFormError::InvalidPhone,
         })?;
         let otp = self.otp.trim();
 

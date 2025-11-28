@@ -12,6 +12,7 @@ use crate::domain::{
     product_price_level::NewProductPriceLevelRate,
     store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
+    types::ImageUrl,
     user::{NewUser, UpdateUser, User},
 };
 
@@ -104,7 +105,7 @@ pub trait ProductWriter {
         &self,
         product_id: i32,
         hub_id: i32,
-        image_urls: &[String],
+        image_urls: &[ImageUrl],
     ) -> RepositoryResult<()>;
 }
 
