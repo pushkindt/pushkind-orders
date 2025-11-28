@@ -257,14 +257,14 @@ pub struct StoreOrder {
 impl From<Order> for StoreOrder {
     fn from(value: Order) -> Self {
         Self {
-            id: value.id,
-            hub_id: value.hub_id,
-            customer_id: value.customer_id,
-            reference: value.reference,
+            id: value.id.get(),
+            hub_id: value.hub_id.get(),
+            customer_id: value.customer_id.map(|id| id.get()),
+            reference: value.reference.map(|r| r.into_inner()),
             status: value.status,
-            notes: value.notes,
-            total_cents: value.total_cents,
-            currency: value.currency,
+            notes: value.notes.map(|n| n.into_inner()),
+            total_cents: value.total_cents.get(),
+            currency: value.currency.into_inner(),
             products: value
                 .products
                 .into_iter()
@@ -299,13 +299,13 @@ pub struct StoreOrderProduct {
 impl From<OrderProduct> for StoreOrderProduct {
     fn from(value: OrderProduct) -> Self {
         Self {
-            product_id: value.product_id,
-            name: value.name,
-            sku: value.sku,
-            description: value.description,
-            price_cents: value.price_cents,
-            currency: value.currency,
-            quantity: value.quantity,
+            product_id: value.product_id.map(|id| id.get()),
+            name: value.name.into_inner(),
+            sku: value.sku.map(|s| s.into_inner()),
+            description: value.description.map(|d| d.into_inner()),
+            price_cents: value.price_cents.get(),
+            currency: value.currency.into_inner(),
+            quantity: value.quantity.get(),
         }
     }
 }

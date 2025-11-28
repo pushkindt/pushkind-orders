@@ -2,6 +2,11 @@ use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
+use crate::domain::types::{
+    CurrencyCode, CustomerId, HubId, OrderId, OrderNotes, OrderReference, PriceCents,
+    ProductDescription, ProductId, ProductName, ProductQuantity, ProductSku, TypeConstraintError,
+};
+
 /// Possible lifecycle states for an order managed by a hub.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OrderStatus {
@@ -53,21 +58,21 @@ impl From<OrderStatus> for String {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Order {
     /// Unique identifier of the order.
-    pub id: i32,
+    pub id: OrderId,
     /// Owning hub identifier.
-    pub hub_id: i32,
+    pub hub_id: HubId,
     /// Optional reference to the customer placing the order.
-    pub customer_id: Option<i32>,
+    pub customer_id: Option<CustomerId>,
     /// External human-friendly reference for the order.
-    pub reference: Option<String>,
+    pub reference: Option<OrderReference>,
     /// Current lifecycle status of the order.
     pub status: OrderStatus,
     /// Optional notes supplied by the operator.
-    pub notes: Option<String>,
+    pub notes: Option<OrderNotes>,
     /// Total amount represented in the smallest currency unit (for example cents).
-    pub total_cents: i32,
+    pub total_cents: PriceCents,
     /// ISO 4217 currency code used for the order total.
-    pub currency: String,
+    pub currency: CurrencyCode,
     /// Product snapshots captured when the order was created.
     pub products: Vec<OrderProduct>,
     /// Timestamp for when the order record was created.
@@ -80,17 +85,17 @@ pub struct Order {
 #[derive(Debug, Clone)]
 pub struct NewOrder {
     /// Owning hub identifier.
-    pub hub_id: i32,
+    pub hub_id: HubId,
     /// Optional reference to the customer placing the order.
-    pub customer_id: Option<i32>,
+    pub customer_id: Option<CustomerId>,
     /// External human-friendly reference for the order.
-    pub reference: Option<String>,
+    pub reference: Option<OrderReference>,
     /// Optional notes supplied by the operator.
-    pub notes: Option<String>,
+    pub notes: Option<OrderNotes>,
     /// Total amount represented in the smallest currency unit (for example cents).
-    pub total_cents: i32,
+    pub total_cents: PriceCents,
     /// ISO 4217 currency code used for the order total.
-    pub currency: String,
+    pub currency: CurrencyCode,
     /// Product snapshots captured when the order was created.
     pub products: Vec<OrderProduct>,
     /// Current lifecycle status of the order.
@@ -101,89 +106,117 @@ pub struct NewOrder {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OrderProduct {
     /// Identifier of the original product, if it still exists.
-    pub product_id: Option<i32>,
+    pub product_id: Option<ProductId>,
     /// Human-readable name captured at the time of ordering.
-    pub name: String,
+    pub name: ProductName,
     /// Stock keeping unit captured at the time of ordering.
-    pub sku: Option<String>,
+    pub sku: Option<ProductSku>,
     /// Description captured at the time of ordering.
-    pub description: Option<String>,
+    pub description: Option<ProductDescription>,
     /// Price represented in the smallest currency unit for the ordered quantity.
-    pub price_cents: i32,
+    pub price_cents: PriceCents,
     /// ISO 4217 currency captured at the time of ordering.
-    pub currency: String,
+    pub currency: CurrencyCode,
     /// Quantity of the product ordered.
-    pub quantity: i32,
+    pub quantity: ProductQuantity,
 }
 
 impl OrderProduct {
     /// Create a new ordered product snapshot using the supplied fields.
     pub fn new(
-        name: impl Into<String>,
-        price_cents: i32,
-        currency: impl Into<String>,
-        quantity: i32,
+        name: ProductName,
+        price_cents: PriceCents,
+        currency: CurrencyCode,
+        quantity: ProductQuantity,
     ) -> Self {
         Self {
             product_id: None,
-            name: name.into(),
+            name,
             sku: None,
             description: None,
             price_cents,
-            currency: currency.into(),
+            currency,
             quantity,
         }
     }
 
+    /// Attempt to create a new ordered product snapshot from raw inputs.
+    pub fn try_new(
+        name: impl Into<String>,
+        price_cents: i32,
+        currency: impl Into<String>,
+        quantity: i32,
+    ) -> Result<Self, TypeConstraintError> {
+        Ok(Self::new(
+            ProductName::new(name)?,
+            PriceCents::new(price_cents)?,
+            CurrencyCode::new(currency)?,
+            ProductQuantity::new(quantity)?,
+        ))
+    }
+
     /// Associate the snapshot with the current product identifier.
-    pub fn with_product_id(mut self, product_id: i32) -> Self {
+    pub fn with_product_id(mut self, product_id: ProductId) -> Self {
         self.product_id = Some(product_id);
         self
     }
 
     /// Capture the SKU value alongside the snapshot.
-    pub fn with_sku(mut self, sku: impl Into<String>) -> Self {
-        self.sku = Some(sku.into());
+    pub fn with_sku(mut self, sku: ProductSku) -> Self {
+        self.sku = Some(sku);
         self
     }
 
     /// Capture the description value alongside the snapshot.
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
+    pub fn with_description(mut self, description: ProductDescription) -> Self {
+        self.description = Some(description);
         self
     }
 }
 
 impl NewOrder {
     /// Build a new order payload with the supplied details and no initial products.
-    pub fn new(hub_id: i32, total_cents: i32, currency: impl Into<String>) -> Self {
+    pub fn new(hub_id: HubId, total_cents: PriceCents, currency: CurrencyCode) -> Self {
         Self {
             hub_id,
             customer_id: None,
             reference: None,
             notes: None,
             total_cents,
-            currency: currency.into(),
+            currency,
             status: OrderStatus::default(),
             products: Vec::new(),
         }
     }
 
+    /// Attempt to build a new order from raw inputs.
+    pub fn try_new(
+        hub_id: i32,
+        total_cents: i32,
+        currency: impl Into<String>,
+    ) -> Result<Self, TypeConstraintError> {
+        Ok(Self::new(
+            HubId::new(hub_id)?,
+            PriceCents::new(total_cents)?,
+            CurrencyCode::new(currency)?,
+        ))
+    }
+
     /// Attach a customer identifier to the order payload.
-    pub fn with_customer_id(mut self, customer_id: i32) -> Self {
+    pub fn with_customer_id(mut self, customer_id: CustomerId) -> Self {
         self.customer_id = Some(customer_id);
         self
     }
 
     /// Attach an external reference identifier to the order payload.
-    pub fn with_reference(mut self, reference: impl Into<String>) -> Self {
-        self.reference = Some(reference.into());
+    pub fn with_reference(mut self, reference: OrderReference) -> Self {
+        self.reference = Some(reference);
         self
     }
 
     /// Attach operator notes to the order payload.
-    pub fn with_notes(mut self, notes: impl Into<String>) -> Self {
-        self.notes = Some(notes.into());
+    pub fn with_notes(mut self, notes: OrderNotes) -> Self {
+        self.notes = Some(notes);
         self
     }
 
@@ -206,15 +239,15 @@ pub struct UpdateOrder {
     /// Status update.
     pub status: OrderStatus,
     /// Optional notes update.
-    pub notes: Option<String>,
+    pub notes: Option<OrderNotes>,
     /// Total amount update.
-    pub total_cents: i32,
+    pub total_cents: PriceCents,
     /// Currency update.
-    pub currency: String,
+    pub currency: CurrencyCode,
     /// Optional customer reference update.
-    pub customer_id: Option<i32>,
+    pub customer_id: Option<CustomerId>,
     /// Optional external reference update.
-    pub reference: Option<String>,
+    pub reference: Option<OrderReference>,
     /// Optional product list update.
     pub products: Option<Vec<OrderProduct>>,
     /// Timestamp captured when the patch was created.
@@ -225,11 +258,11 @@ pub struct UpdateOrder {
 #[derive(Debug, Clone)]
 pub struct OrderListQuery {
     /// Owning hub identifier.
-    pub hub_id: i32,
+    pub hub_id: HubId,
     /// Optional status filter.
     pub status: Option<OrderStatus>,
     /// Optional customer identifier filter.
-    pub customer_id: Option<i32>,
+    pub customer_id: Option<CustomerId>,
     /// Optional search term that matches the reference or notes.
     pub search: Option<String>,
     /// Optional pagination options applied to the query.
@@ -238,7 +271,7 @@ pub struct OrderListQuery {
 
 impl OrderListQuery {
     /// Construct a query that targets all orders belonging to `hub_id`.
-    pub fn new(hub_id: i32) -> Self {
+    pub fn new(hub_id: HubId) -> Self {
         Self {
             hub_id,
             status: None,
@@ -248,6 +281,11 @@ impl OrderListQuery {
         }
     }
 
+    /// Attempt to build from raw hub identifier.
+    pub fn try_new(hub_id: i32) -> Result<Self, TypeConstraintError> {
+        Ok(Self::new(HubId::new(hub_id)?))
+    }
+
     /// Filter the results by the provided status.
     pub fn status(mut self, status: OrderStatus) -> Self {
         self.status = Some(status);
@@ -255,7 +293,7 @@ impl OrderListQuery {
     }
 
     /// Filter the results by customer identifier.
-    pub fn customer_id(mut self, customer_id: i32) -> Self {
+    pub fn customer_id(mut self, customer_id: CustomerId) -> Self {
         self.customer_id = Some(customer_id);
         self
     }

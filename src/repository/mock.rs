@@ -14,7 +14,7 @@ use crate::domain::{
     product_price_level::NewProductPriceLevelRate,
     store_otp::{NewStoreOtp, StoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
-    types::ImageUrl,
+    types::{HubId, ImageUrl, OrderId},
     user::{NewUser, UpdateUser, User},
 };
 use pushkind_common::repository::errors::RepositoryResult;
@@ -84,7 +84,7 @@ mock! {
     pub OrderReader {}
 
     impl OrderReader for OrderReader {
-        fn get_order_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Order>>;
+        fn get_order_by_id(&self, id: OrderId, hub_id: HubId) -> RepositoryResult<Option<Order>>;
         fn list_orders(&self, query: OrderListQuery) -> RepositoryResult<(usize, Vec<Order>)>;
     }
 }
@@ -94,8 +94,8 @@ mock! {
 
     impl OrderWriter for OrderWriter {
         fn create_order(&self, new_order: &NewOrder) -> RepositoryResult<Order>;
-        fn update_order(&self, order_id: i32, hub_id: i32, updates: &UpdateOrder) -> RepositoryResult<Order>;
-        fn delete_order(&self, order_id: i32, hub_id: i32) -> RepositoryResult<()>;
+        fn update_order(&self, order_id: OrderId, hub_id: HubId, updates: &UpdateOrder) -> RepositoryResult<Order>;
+        fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()>;
     }
 }
 

@@ -4,6 +4,7 @@ use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::order::OrderListQuery;
+use crate::domain::types::HubId;
 use crate::dto::main::{IndexPageData, IndexQuery};
 use crate::repository::OrderReader;
 use crate::services::{ServiceError, ServiceResult};
@@ -22,7 +23,8 @@ where
     }
 
     let page = query.page.unwrap_or(1);
-    let mut list_query = OrderListQuery::new(user.hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let mut list_query = OrderListQuery::new(hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
 
     if let Some(value) = query.search.as_ref() {
         list_query = list_query.search(value);
@@ -47,6 +49,7 @@ mod tests {
 
     use crate::SERVICE_ACCESS_ROLE;
     use crate::domain::order::{Order, OrderStatus};
+    use crate::domain::types::{CurrencyCode, HubId, OrderId, OrderReference, PriceCents};
     use crate::dto::main::IndexQuery;
     use crate::repository::mock::MockOrderReader;
 
@@ -59,14 +62,14 @@ mod tests {
 
     fn sample_order(id: i32, hub_id: i32, reference: &str) -> Order {
         Order {
-            id,
-            hub_id,
+            id: OrderId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
             customer_id: None,
-            reference: Some(reference.to_string()),
+            reference: Some(OrderReference::new(reference).unwrap()),
             status: OrderStatus::Pending,
             notes: None,
-            total_cents: 1000,
-            currency: "RUB".to_string(),
+            total_cents: PriceCents::new(1000).unwrap(),
+            currency: CurrencyCode::new("RUB").unwrap(),
             products: Vec::new(),
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
@@ -108,7 +111,7 @@ mod tests {
         repo.expect_list_orders()
             .times(1)
             .withf(move |query| {
-                assert_eq!(query.hub_id, expected_hub);
+                assert_eq!(query.hub_id.get(), expected_hub);
                 assert_eq!(query.search.as_deref(), Some("alp"));
                 match &query.pagination {
                     Some(pagination) => {

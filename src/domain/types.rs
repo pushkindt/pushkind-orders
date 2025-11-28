@@ -92,6 +92,7 @@ id_newtype!(CustomerId);
 id_newtype!(CategoryId);
 id_newtype!(ProductPriceLevelRateId);
 id_newtype!(PriceLevelId);
+id_newtype!(OrderId);
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Price stored in the smallest currency unit; must be positive.
@@ -1040,6 +1041,144 @@ impl TryFrom<&str> for OtpCode {
 
 impl From<OtpCode> for String {
     fn from(value: OtpCode) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Product quantity; must be positive.
+pub struct ProductQuantity(i32);
+
+impl ProductQuantity {
+    /// Construct a new quantity ensuring it is above zero.
+    pub fn new(value: i32) -> Result<Self, TypeConstraintError> {
+        if value > 0 {
+            Ok(Self(value))
+        } else {
+            Err(TypeConstraintError::InvalidValue(
+                "quantity must be greater than zero".to_string(),
+            ))
+        }
+    }
+
+    /// Return the raw integer quantity.
+    pub const fn get(self) -> i32 {
+        self.0
+    }
+}
+
+impl Display for ProductQuantity {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<i32> for ProductQuantity {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<ProductQuantity> for i32 {
+    fn from(value: ProductQuantity) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Optional order reference wrapper.
+pub struct OrderReference(String);
+
+impl OrderReference {
+    /// Constructs an order reference that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let reference = NonEmptyString::new(value)?;
+        Ok(Self(reference.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for OrderReference {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for OrderReference {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for OrderReference {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<OrderReference> for String {
+    fn from(value: OrderReference) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Optional order notes wrapper.
+pub struct OrderNotes(String);
+
+impl OrderNotes {
+    /// Constructs order notes that are trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let notes = NonEmptyString::new(value)?;
+        Ok(Self(notes.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for OrderNotes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for OrderNotes {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for OrderNotes {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<OrderNotes> for String {
+    fn from(value: OrderNotes) -> Self {
         value.0
     }
 }

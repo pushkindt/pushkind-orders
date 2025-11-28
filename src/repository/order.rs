@@ -8,6 +8,7 @@ use crate::{
         NewOrder as DomainNewOrder, Order as DomainOrder, OrderListQuery,
         UpdateOrder as DomainUpdateOrder,
     },
+    domain::types::{HubId, OrderId},
     models::order::{
         NewOrder as DbNewOrder, NewOrderProduct as DbNewOrderProduct, Order as DbOrder,
         OrderProduct as DbOrderProduct, UpdateOrder as DbUpdateOrder,
@@ -16,13 +17,13 @@ use crate::{
 };
 
 impl OrderReader for DieselRepository {
-    fn get_order_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainOrder>> {
+    fn get_order_by_id(&self, id: OrderId, hub_id: HubId) -> RepositoryResult<Option<DomainOrder>> {
         use crate::schema::{order_products, orders};
 
         let mut conn = self.conn()?;
         let order = orders::table
-            .filter(orders::id.eq(id))
-            .filter(orders::hub_id.eq(hub_id))
+            .filter(orders::id.eq(id.get()))
+            .filter(orders::hub_id.eq(hub_id.get()))
             .first::<DbOrder>(&mut conn)
             .optional()?;
 
@@ -57,7 +58,7 @@ impl OrderReader for DieselRepository {
         let search_pattern = search.as_ref().map(|term| format!("%{}%", term));
 
         let mut count_query = orders::table
-            .filter(orders::hub_id.eq(hub_id))
+            .filter(orders::hub_id.eq(hub_id.get()))
             .into_boxed::<diesel::sqlite::Sqlite>();
 
         if let Some(ref status_value) = status_filter {
@@ -65,7 +66,7 @@ impl OrderReader for DieselRepository {
         }
 
         if let Some(customer) = customer_id {
-            count_query = count_query.filter(orders::customer_id.eq(Some(customer)));
+            count_query = count_query.filter(orders::customer_id.eq(Some(customer.get())));
         }
 
         if let Some(ref pattern) = search_pattern {
@@ -79,7 +80,7 @@ impl OrderReader for DieselRepository {
         let total = count_query.count().get_result::<i64>(&mut conn)? as usize;
 
         let mut items = orders::table
-            .filter(orders::hub_id.eq(hub_id))
+            .filter(orders::hub_id.eq(hub_id.get()))
             .into_boxed::<diesel::sqlite::Sqlite>();
 
         if let Some(ref status_value) = status_filter {
@@ -87,7 +88,7 @@ impl OrderReader for DieselRepository {
         }
 
         if let Some(customer) = customer_id {
-            items = items.filter(orders::customer_id.eq(Some(customer)));
+            items = items.filter(orders::customer_id.eq(Some(customer.get())));
         }
 
         if let Some(ref pattern) = search_pattern {
@@ -180,8 +181,8 @@ impl OrderWriter for DieselRepository {
 
     fn update_order(
         &self,
-        order_id: i32,
-        hub_id: i32,
+        order_id: OrderId,
+        hub_id: HubId,
         updates: &DomainUpdateOrder,
     ) -> RepositoryResult<DomainOrder> {
         use crate::schema::{order_products, orders};
@@ -190,23 +191,26 @@ impl OrderWriter for DieselRepository {
 
         conn.transaction::<DomainOrder, RepositoryError, _>(|conn| {
             let db_updates = DbUpdateOrder::from(updates);
+            let order_id_raw = order_id.get();
 
             let target = orders::table
-                .filter(orders::id.eq(order_id))
-                .filter(orders::hub_id.eq(hub_id));
+                .filter(orders::id.eq(order_id_raw))
+                .filter(orders::hub_id.eq(hub_id.get()));
 
             let updated = diesel::update(target)
                 .set(&db_updates)
                 .get_result::<DbOrder>(conn)?;
 
             if let Some(products) = updates.products.as_ref() {
-                diesel::delete(order_products::table.filter(order_products::order_id.eq(order_id)))
-                    .execute(conn)?;
+                diesel::delete(
+                    order_products::table.filter(order_products::order_id.eq(order_id_raw)),
+                )
+                .execute(conn)?;
 
                 if !products.is_empty() {
                     let payload: Vec<DbNewOrderProduct> = products
                         .iter()
-                        .map(|product| DbNewOrderProduct::from_domain(order_id, product))
+                        .map(|product| DbNewOrderProduct::from_domain(order_id_raw, product))
                         .collect();
 
                     diesel::insert_into(order_products::table)
@@ -216,7 +220,7 @@ impl OrderWriter for DieselRepository {
             }
 
             let products = order_products::table
-                .filter(order_products::order_id.eq(order_id))
+                .filter(order_products::order_id.eq(order_id_raw))
                 .order(order_products::id.asc())
                 .load::<DbOrderProduct>(conn)?;
 
@@ -224,14 +228,14 @@ impl OrderWriter for DieselRepository {
         })
     }
 
-    fn delete_order(&self, order_id: i32, hub_id: i32) -> RepositoryResult<()> {
+    fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {
         use crate::schema::orders;
 
         let mut conn = self.conn()?;
 
         let target = orders::table
-            .filter(orders::id.eq(order_id))
-            .filter(orders::hub_id.eq(hub_id));
+            .filter(orders::id.eq(order_id.get()))
+            .filter(orders::hub_id.eq(hub_id.get()));
 
         let deleted = diesel::delete(target).execute(&mut conn)?;
         if deleted == 0 {

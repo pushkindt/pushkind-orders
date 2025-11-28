@@ -9,8 +9,8 @@ use pushkind_orders::domain::{
     product::{NewProduct, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
     types::{
-        CategoryId, CategoryName, CurrencyCode, HubId, PriceCents, PriceLevelName,
-        ProductDescription, ProductName, ProductSku,
+        CategoryId, CategoryName, CurrencyCode, HubId, OrderNotes, OrderReference, PriceCents,
+        PriceLevelName, ProductDescription, ProductName, ProductSku,
     },
     user::{NewUser, UpdateUser},
 };
@@ -644,64 +644,74 @@ fn test_order_repository_crud() {
     let test_db = common::TestDb::new("test_order_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    let product_snapshot = OrderProduct::new("Apple", 150, "USD", 2)
-        .with_sku("APL-1")
-        .with_description("Fresh apple");
+    let product_snapshot = OrderProduct::try_new("Apple", 150, "USD", 2)
+        .unwrap()
+        .with_sku(ProductSku::new("APL-1").unwrap())
+        .with_description(ProductDescription::new("Fresh apple").unwrap());
 
-    let new_order = NewOrder::new(1, 300, "USD")
-        .with_reference("REF-001")
-        .with_notes("Handle with care")
+    let new_order = NewOrder::try_new(1, 300, "USD")
+        .unwrap()
+        .with_reference(OrderReference::new("REF-001").unwrap())
+        .with_notes(OrderNotes::new("Handle with care").unwrap())
         .with_status(OrderStatus::Pending)
         .with_products(vec![product_snapshot.clone()]);
 
     let order = repo
         .create_order(&new_order)
         .expect("failed to create order");
-    assert_eq!(order.hub_id, 1);
+    assert_eq!(order.hub_id.get(), 1);
     assert_eq!(order.status, OrderStatus::Pending);
     assert_eq!(order.products.len(), 1);
-    assert_eq!(order.products[0].name, "Apple");
+    assert_eq!(order.products[0].name.as_str(), "Apple");
 
     let fetched = repo
-        .get_order_by_id(order.id, 1)
+        .get_order_by_id(order.id, HubId::new(1).unwrap())
         .expect("failed to fetch order")
         .expect("order should exist");
     assert_eq!(fetched.id, order.id);
     assert_eq!(fetched.products.len(), 1);
 
     assert!(
-        repo.get_order_by_id(order.id, 2)
+        repo.get_order_by_id(order.id, HubId::new(2).unwrap())
             .expect("failed scoped fetch")
             .is_none()
     );
 
     let (total_all, orders_all) = repo
-        .list_orders(OrderListQuery::new(1))
+        .list_orders(OrderListQuery::try_new(1).unwrap())
         .expect("failed to list orders");
     assert_eq!(total_all, 1);
     assert_eq!(orders_all.len(), 1);
 
     let (total_status, orders_status) = repo
-        .list_orders(OrderListQuery::new(1).status(OrderStatus::Pending))
+        .list_orders(
+            OrderListQuery::try_new(1)
+                .unwrap()
+                .status(OrderStatus::Pending),
+        )
         .expect("failed to filter by status");
     assert_eq!(total_status, 1);
     assert_eq!(orders_status[0].id, order.id);
 
     let (total_search, orders_search) = repo
-        .list_orders(OrderListQuery::new(1).search("REF-001"))
+        .list_orders(OrderListQuery::try_new(1).unwrap().search("REF-001"))
         .expect("failed to search orders");
     assert_eq!(total_search, 1);
     assert_eq!(orders_search[0].id, order.id);
 
     let (total_none, _) = repo
-        .list_orders(OrderListQuery::new(1).search("missing"))
+        .list_orders(OrderListQuery::try_new(1).unwrap().search("missing"))
         .expect("failed to search missing");
     assert_eq!(total_none, 0);
 
-    let product_updates = vec![product_snapshot.clone().with_description("Sliced apple")];
+    let product_updates = vec![
+        product_snapshot
+            .clone()
+            .with_description(ProductDescription::new("Sliced apple").unwrap()),
+    ];
     let updates = UpdateOrder {
         status: OrderStatus::Processing,
-        notes: Some("Pack immediately".to_string()),
+        notes: Some(OrderNotes::new("Pack immediately").unwrap()),
         total_cents: order.total_cents,
         currency: order.currency.clone(),
         customer_id: None,
@@ -711,12 +721,12 @@ fn test_order_repository_crud() {
     };
 
     let updated = repo
-        .update_order(order.id, 1, &updates)
+        .update_order(order.id, HubId::new(1).unwrap(), &updates)
         .expect("failed to update order");
     assert_eq!(updated.status, OrderStatus::Processing);
     assert_eq!(updated.products.len(), 1);
     assert_eq!(
-        updated.products[0].description.as_deref(),
+        updated.products[0].description.as_ref().map(|d| d.as_str()),
         Some("Sliced apple")
     );
 
@@ -724,31 +734,31 @@ fn test_order_repository_crud() {
     cross_hub_updates.status = OrderStatus::Completed;
 
     let err = repo
-        .update_order(order.id, 2, &cross_hub_updates)
+        .update_order(order.id, HubId::new(2).unwrap(), &cross_hub_updates)
         .expect_err("expected cross-hub update to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 
     let (total_after_update, orders_after_update) = repo
-        .list_orders(OrderListQuery::new(1).paginate(1, 10))
+        .list_orders(OrderListQuery::try_new(1).unwrap().paginate(1, 10))
         .expect("failed to paginate");
     assert_eq!(total_after_update, 1);
     assert_eq!(orders_after_update[0].status, OrderStatus::Processing);
 
     let err = repo
-        .delete_order(order.id, 2)
+        .delete_order(order.id, HubId::new(2).unwrap())
         .expect_err("expected cross-hub delete to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 
-    repo.delete_order(order.id, 1)
+    repo.delete_order(order.id, HubId::new(1).unwrap())
         .expect("failed to delete order");
     assert!(
-        repo.get_order_by_id(order.id, 1)
+        repo.get_order_by_id(order.id, HubId::new(1).unwrap())
             .expect("failed to fetch after delete")
             .is_none()
     );
 
     let (total_final, orders_final) = repo
-        .list_orders(OrderListQuery::new(1))
+        .list_orders(OrderListQuery::try_new(1).unwrap())
         .expect("failed to list after delete");
     assert_eq!(total_final, 0);
     assert!(orders_final.is_empty());

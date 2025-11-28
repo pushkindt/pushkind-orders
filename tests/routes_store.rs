@@ -15,7 +15,7 @@ use pushkind_orders::domain::{
     product::NewProduct,
     product_price_level::NewProductPriceLevelRate,
     tag::NewTag,
-    types::{CategoryName, HubId, PriceCents},
+    types::{CategoryName, HubId, PriceCents, ProductId},
 };
 use pushkind_orders::repository::{
     CategoryWriter, CustomerWriter, DieselRepository, OrderWriter, PriceLevelWriter, ProductWriter,
@@ -554,9 +554,12 @@ async fn list_store_orders_returns_orders_for_customer() {
         )
         .expect("create customer");
 
-    let product = OrderProduct::new("Coffee", 500, "USD", 1).with_product_id(1);
-    let new_order = NewOrder::new(1, 500, "USD")
-        .with_customer_id(customer.id.into())
+    let product = OrderProduct::try_new("Coffee", 500, "USD", 1)
+        .unwrap()
+        .with_product_id(ProductId::new(1).unwrap());
+    let new_order = NewOrder::try_new(1, 500, "USD")
+        .unwrap()
+        .with_customer_id(customer.id)
         .with_products(vec![product]);
     repo.create_order(&new_order).expect("create order");
 

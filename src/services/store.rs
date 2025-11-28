@@ -213,20 +213,21 @@ where
             .checked_add(line_total)
             .ok_or_else(|| ServiceError::Form("invalid order total".to_string()))?;
 
-        let mut order_product = OrderProduct::new(
-            product.name.clone(),
+        let mut order_product = OrderProduct::try_new(
+            product.name.as_str(),
             line_total,
             product_currency.clone(),
             item.quantity,
         )
-        .with_product_id(product.id.get());
+        .map_err(|_| ServiceError::Internal)?
+        .with_product_id(product.id);
 
         if let Some(sku) = &product.sku {
             order_product = order_product.with_sku(sku.clone());
         }
 
         if let Some(description) = &product.description {
-            order_product = order_product.with_description(description.as_str());
+            order_product = order_product.with_description(description.clone());
         }
 
         products.push(order_product);
@@ -234,8 +235,9 @@ where
 
     let currency = currency.unwrap_or_default();
 
-    let new_order = NewOrder::new(hub_id, total_cents, currency)
-        .with_customer_id(customer.id.into())
+    let new_order = NewOrder::try_new(hub_id, total_cents, currency)
+        .map_err(|_| ServiceError::Internal)?
+        .with_customer_id(customer.id)
         .with_status(OrderStatus::Pending)
         .with_products(products);
 
@@ -252,7 +254,8 @@ pub fn list_store_orders<R>(
 where
     R: OrderReader + ?Sized,
 {
-    let mut query = OrderListQuery::new(hub_id).customer_id(customer.id.into());
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let mut query = OrderListQuery::new(hub_id).customer_id(customer.id);
 
     if let Some(page) = page.filter(|page| *page > 0) {
         query = query.paginate(page, DEFAULT_ITEMS_PER_PAGE);
@@ -385,7 +388,7 @@ where
 mod tests {
     use super::*;
     use crate::domain::types::{
-        CategoryId, CategoryName, CurrencyCode, CustomerId, CustomerName, HubId, ImageUrl,
+        CategoryId, CategoryName, CurrencyCode, CustomerId, CustomerName, HubId, ImageUrl, OrderId,
         PriceCents, PriceLevelId, PriceLevelName, ProductDescription, ProductId, ProductName,
         ProductPriceLevelRateId, ProductSku, ProductUnits, TagId, TagName,
     };
@@ -471,14 +474,14 @@ mod tests {
 
         fn update_order(
             &self,
-            order_id: i32,
-            hub_id: i32,
+            order_id: OrderId,
+            hub_id: HubId,
             updates: &UpdateOrder,
         ) -> RepositoryResult<Order> {
             self.order_writer.update_order(order_id, hub_id, updates)
         }
 
-        fn delete_order(&self, order_id: i32, hub_id: i32) -> RepositoryResult<()> {
+        fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {
             self.order_writer.delete_order(order_id, hub_id)
         }
     }
@@ -600,19 +603,20 @@ mod tests {
             .expect_create_order()
             .times(1)
             .withf(|new_order| {
-                assert_eq!(new_order.hub_id, 1);
-                assert_eq!(new_order.customer_id, Some(10));
-                assert_eq!(new_order.total_cents, 1300);
-                assert_eq!(new_order.currency, "USD");
+                assert_eq!(new_order.hub_id.get(), 1);
+                assert_eq!(new_order.customer_id.map(|id| id.get()), Some(10));
+                assert_eq!(new_order.total_cents.get(), 1300);
+                assert_eq!(new_order.currency.as_str(), "USD");
                 assert_eq!(new_order.status, DomainOrderStatus::Pending);
                 assert_eq!(new_order.products.len(), 2);
-                assert_eq!(new_order.products[0].product_id, Some(1));
-                assert_eq!(new_order.products[0].price_cents, 1000);
+                assert_eq!(new_order.products[0].product_id.map(|id| id.get()), Some(1));
+                assert_eq!(new_order.products[0].price_cents.get(), 1000);
                 true
             })
             .returning(|new_order| {
+                use crate::domain::types::OrderId;
                 Ok(DomainOrder {
-                    id: 99,
+                    id: OrderId::new(99).unwrap(),
                     hub_id: new_order.hub_id,
                     customer_id: new_order.customer_id,
                     reference: None,
@@ -779,7 +783,7 @@ mod tests {
     }
 
     impl OrderReader for MockListStoreOrdersRepo {
-        fn get_order_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Order>> {
+        fn get_order_by_id(&self, id: OrderId, hub_id: HubId) -> RepositoryResult<Option<Order>> {
             self.order_reader.get_order_by_id(id, hub_id)
         }
 
@@ -790,20 +794,15 @@ mod tests {
 
     fn sample_order(id: i32, hub_id: i32, customer_id: i32) -> Order {
         Order {
-            id,
-            hub_id,
-            customer_id: Some(customer_id),
+            id: OrderId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            customer_id: Some(CustomerId::new(customer_id).unwrap()),
             reference: None,
             status: DomainOrderStatus::Pending,
             notes: None,
-            total_cents: 500,
-            currency: "USD".to_string(),
-            products: vec![OrderProduct::new(
-                "Item".to_string(),
-                500,
-                "USD".to_string(),
-                1,
-            )],
+            total_cents: PriceCents::new(500).unwrap(),
+            currency: CurrencyCode::new("USD").unwrap(),
+            products: vec![OrderProduct::try_new("Item", 500, "USD", 1).unwrap()],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
         }
@@ -818,11 +817,20 @@ mod tests {
         repo.order_reader
             .expect_list_orders()
             .withf(move |query| {
-                query.hub_id == match_customer.hub_id.get()
-                    && query.customer_id == Some(match_customer.id.get())
+                query.hub_id == match_customer.hub_id
+                    && query.customer_id == Some(match_customer.id)
                     && query.pagination.is_none()
             })
-            .return_once(move |_| Ok((1, vec![sample_order(1, 99, match_customer.id.get())])));
+            .return_once(move |_| {
+                Ok((
+                    1,
+                    vec![sample_order(
+                        1,
+                        match_customer.hub_id.get(),
+                        match_customer.id.get(),
+                    )],
+                ))
+            });
 
         let orders = list_store_orders(&repo, customer.hub_id.get(), &customer, None)
             .expect("expected orders");
