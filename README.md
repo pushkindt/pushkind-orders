@@ -147,6 +147,8 @@ isolate services from the database when writing new tests.
 
 - **Domain-driven**: keep business rules in the domain and service layers and
   translate to/from external representations at the boundaries.
+- **Boundary sanitation**: perform validation and normalization (like email
+  lowercasing) in forms/services so domain structs stay pure data.
 - **Explicit errors**: use `thiserror` to define granular error types and convert
   them into `ServiceError`/`RepositoryError` variants instead of relying on
   `anyhow`.

@@ -26,25 +26,26 @@ fn test_user_repository_crud() {
     let test_db = common::TestDb::new("test_user_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    let alice_new = NewUser::new(1, "Alice".to_string(), "alice@example.com".to_string());
-    let bob_new = NewUser::new(1, "Bob".to_string(), "bob@example.com".to_string());
+    let alice_new =
+        NewUser::try_new(1, "Alice".to_string(), "alice@example.com".to_string()).unwrap();
+    let bob_new = NewUser::try_new(1, "Bob".to_string(), "bob@example.com".to_string()).unwrap();
 
     let alice = repo
         .create_user(&alice_new)
         .expect("failed to create Alice");
     let bob = repo.create_user(&bob_new).expect("failed to create Bob");
 
-    assert_eq!(alice.name, "Alice");
-    assert_eq!(alice.email, "alice@example.com");
+    assert_eq!(alice.name.as_str(), "Alice");
+    assert_eq!(alice.email.as_str(), "alice@example.com");
 
     let fetched = repo
-        .get_user_by_id(alice.id, 1)
+        .get_user_by_id(alice.id.get(), 1)
         .expect("failed to fetch user")
         .expect("expected Alice to exist");
     assert_eq!(fetched.id, alice.id);
 
     assert!(
-        repo.get_user_by_id(alice.id, 2)
+        repo.get_user_by_id(alice.id.get(), 2)
             .expect("failed to fetch scoped user")
             .is_none()
     );
@@ -73,30 +74,27 @@ fn test_user_repository_crud() {
     assert_eq!(total_filtered, 1);
     assert_eq!(users_filtered[0].id, bob.id);
 
-    let updates = UpdateUser {
-        name: "Alicia".to_string(),
-        updated_at: chrono::Utc::now().naive_utc(),
-    };
+    let updates = UpdateUser::try_new("Alicia".to_string()).expect("failed to build update");
 
     let updated = repo
-        .update_user(alice.id, 1, &updates)
+        .update_user(alice.id.get(), 1, &updates)
         .expect("failed to update user");
-    assert_eq!(updated.name, "Alicia");
+    assert_eq!(updated.name.as_str(), "Alicia");
 
     let err = repo
-        .update_user(alice.id, 2, &updates)
+        .update_user(alice.id.get(), 2, &updates)
         .expect_err("expected cross-hub update to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 
     let err = repo
-        .delete_user(alice.id, 2)
+        .delete_user(alice.id.get(), 2)
         .expect_err("expected cross-hub delete to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 
-    repo.delete_user(alice.id, 1)
+    repo.delete_user(alice.id.get(), 1)
         .expect("failed to delete user");
     assert!(
-        repo.get_user_by_id(alice.id, 1)
+        repo.get_user_by_id(alice.id.get(), 1)
             .expect("failed to fetch after delete")
             .is_none()
     );
