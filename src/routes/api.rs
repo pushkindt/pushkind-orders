@@ -1,9 +1,9 @@
 use actix_web::{HttpResponse, Responder, get, put, web};
 use pushkind_common::domain::auth::AuthenticatedUser;
 
+use crate::dto::main::IndexQuery;
 use crate::forms::price_levels::AssignClientPriceLevelPayload;
 use crate::repository::DieselRepository;
-use crate::services::main::IndexQuery;
 use crate::services::price_levels::{
     assign_price_level_to_client, load_client_price_level_assignments,
 };

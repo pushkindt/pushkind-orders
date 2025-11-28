@@ -2,7 +2,7 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::order::OrderDetails;
+use crate::dto::orders::OrderDetails;
 use crate::repository::{CustomerReader, OrderReader};
 use crate::services::{ServiceError, ServiceResult};
 

@@ -6,13 +6,14 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
+use crate::dto::products::ProductsQuery;
 use crate::forms::products::{AddProductForm, EditProductForm, UploadProductsForm};
 use crate::repository::DieselRepository;
 use crate::services::{ServiceError, products};
 
 #[get("/products")]
 pub async fn show_products(
-    params: web::Query<products::ProductsQuery>,
+    params: web::Query<ProductsQuery>,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
     flash_messages: IncomingFlashMessages,

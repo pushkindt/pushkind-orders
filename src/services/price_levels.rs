@@ -1,52 +1,17 @@
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::check_role;
-use serde::{Deserialize, Serialize};
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::customer::{CustomerListQuery, NewCustomer};
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
+use crate::dto::price_levels::{
+    ClientPriceLevelAssignment, ClientPriceLevelAssignments, PriceLevelsPageData, PriceLevelsQuery,
+};
 use crate::forms::price_levels::{
     AddPriceLevelForm, AssignClientPriceLevelPayload, EditPriceLevelForm,
 };
 use crate::repository::{CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter};
 use crate::services::{ServiceError, ServiceResult};
-
-/// Query parameters accepted by the price levels index page.
-#[derive(Debug, Default, Deserialize)]
-pub struct PriceLevelsQuery {
-    /// Optional search string entered by the user.
-    pub search: Option<String>,
-}
-
-/// Data required to render the price levels index template.
-pub struct PriceLevelsPageData {
-    /// Paginated list of price levels to show in the table.
-    pub price_levels: Vec<PriceLevel>,
-    /// Search query echoed back to the template when present.
-    pub search: Option<String>,
-}
-
-/// Saved price level assignment for a specific customer.
-#[derive(Debug, Serialize, PartialEq, Eq)]
-pub struct ClientPriceLevelAssignment {
-    /// Normalized email address used to identify the customer.
-    pub email: Option<String>,
-    /// Phone number stored for the customer.
-    pub phone: String,
-    /// Selected price level identifier, if any.
-    pub price_level_id: Option<i32>,
-}
-
-/// Aggregated client assignments together with the hub default.
-#[derive(Debug, Serialize, PartialEq, Eq)]
-pub struct ClientPriceLevelAssignments {
-    /// Owning hub identifier for the assignments.
-    pub hub_id: i32,
-    /// Default price level identifier configured for the hub.
-    pub default_price_level_id: Option<i32>,
-    /// Saved assignments for customers belonging to the hub.
-    pub assignments: Vec<ClientPriceLevelAssignment>,
-}
 
 /// Loads the price levels list for the index page.
 pub fn load_price_levels<R>(
@@ -104,11 +69,7 @@ where
 
     let assignments = customers
         .into_iter()
-        .map(|customer| ClientPriceLevelAssignment {
-            email: customer.email,
-            phone: customer.phone,
-            price_level_id: customer.price_level_id,
-        })
+        .map(ClientPriceLevelAssignment::from)
         .collect();
 
     Ok(ClientPriceLevelAssignments {
@@ -231,6 +192,7 @@ mod tests {
 
     use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer};
     use crate::domain::price_level::PriceLevel;
+    use crate::dto::price_levels::{ClientPriceLevelAssignment, PriceLevelsQuery};
     use crate::forms::price_levels::{AddPriceLevelForm, AssignClientPriceLevelPayload};
     use crate::repository::mock::{
         MockCustomerReader, MockCustomerWriter, MockPriceLevelReader, MockPriceLevelWriter,

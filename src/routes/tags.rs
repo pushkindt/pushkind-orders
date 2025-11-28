@@ -5,10 +5,11 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
+use crate::dto::tags::TagQuery;
 use crate::forms::tags::{AddTagForm, EditTagForm};
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
-use crate::services::tags::{TagQuery, create_tag, load_tags, modify_tag, remove_tag};
+use crate::services::tags::{create_tag, load_tags, modify_tag, remove_tag};
 
 #[get("/tags")]
 pub async fn show_tags(

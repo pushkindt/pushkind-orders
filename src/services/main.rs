@@ -1,29 +1,12 @@
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::check_role;
-use serde::Deserialize;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::order::{Order, OrderListQuery};
+use crate::domain::order::OrderListQuery;
+use crate::dto::main::{IndexPageData, IndexQuery};
 use crate::repository::OrderReader;
 use crate::services::{ServiceError, ServiceResult};
-
-/// Query parameters accepted by the index page service.
-#[derive(Debug, Default, Deserialize)]
-pub struct IndexQuery {
-    /// Optional search string entered by the user.
-    pub search: Option<String>,
-    /// Page number requested by the user interface.
-    pub page: Option<usize>,
-}
-
-/// Data required to render the main index template.
-pub struct IndexPageData {
-    /// Paginated list of orders to show in the table.
-    pub orders: Paginated<Order>,
-    /// Search query echoed back to the template when present.
-    pub search: Option<String>,
-}
 
 /// Loads the orders list for the main index page.
 pub fn load_index_page<R>(
@@ -64,6 +47,7 @@ mod tests {
 
     use crate::SERVICE_ACCESS_ROLE;
     use crate::domain::order::{Order, OrderStatus};
+    use crate::dto::main::IndexQuery;
     use crate::repository::mock::MockOrderReader;
 
     fn fixed_datetime() -> NaiveDateTime {

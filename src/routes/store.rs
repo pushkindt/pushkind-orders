@@ -7,15 +7,15 @@ use pushkind_common::zmq::ZmqSender;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::dto::store::{StoreCategoryFilters, StoreOrder, StoreProductFilters};
 use crate::forms::store::{StoreOrderLinePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload};
 use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
 use crate::routes::store_session::{get_store_customer_for_hub, set_store_customer};
 use crate::services::ServiceError;
 use crate::services::store::{
-    StoreCategoryFilters, StoreOrder, StoreProductFilters, create_store_order, list_store_orders,
-    load_store_categories, load_store_product, load_store_products, load_store_tags,
-    request_store_otp, verify_store_otp,
+    create_store_order, list_store_orders, load_store_categories, load_store_product,
+    load_store_products, load_store_tags, request_store_otp, verify_store_otp,
 };
 
 #[derive(Debug, Deserialize)]

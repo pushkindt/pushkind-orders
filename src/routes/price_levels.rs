@@ -5,12 +5,13 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
+use crate::dto::price_levels::PriceLevelsQuery;
 use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm};
 use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::price_levels::{
-    PriceLevelsQuery, create_price_level, load_price_levels, remove_price_level, update_price_level,
+    create_price_level, load_price_levels, remove_price_level, update_price_level,
 };
 
 #[get("/price-levels")]

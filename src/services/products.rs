@@ -3,16 +3,16 @@ use std::collections::HashMap;
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::check_role;
-use serde::{Deserialize, Serialize};
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::{
-    category::{Category, CategoryTreeQuery},
+    category::CategoryTreeQuery,
     price_level::{PriceLevel, PriceLevelListQuery},
     product::{Product, ProductListQuery},
-    product_price_level::{NewProductPriceLevelRate, ProductPriceLevelRate},
-    tag::{Tag, TagListQuery},
+    product_price_level::NewProductPriceLevelRate,
+    tag::TagListQuery,
 };
+use crate::dto::products::{ProductView, ProductsPageData, ProductsQuery};
 use crate::forms::products::{
     AddProductForm, EditProductForm, EditProductUpdate, NewProductUpload, UploadProductsForm,
 };
@@ -21,34 +21,6 @@ use crate::repository::{
 };
 use crate::services::categories::create_category_chain;
 use crate::services::{ServiceError, ServiceResult};
-
-/// Query parameters accepted by the products index page.
-#[derive(Debug, Default, Deserialize)]
-pub struct ProductsQuery {
-    /// Optional search string entered by the user.
-    pub search: Option<String>,
-    /// Page requested by the UI (1-based).
-    pub page: Option<usize>,
-    /// Whether archived items should be included in the response.
-    #[serde(default)]
-    pub show_archived: bool,
-}
-
-/// Data required to render the products index template.
-pub struct ProductsPageData {
-    /// Paginated list of products displayed in the table.
-    pub products: Paginated<ProductView>,
-    /// Search query echoed back to the view when present.
-    pub search: Option<String>,
-    /// All price levels used to render the modal form.
-    pub price_levels: Vec<PriceLevel>,
-    /// All available categories for the add product form.
-    pub categories: Vec<Category>,
-    /// All available tags for the edit product modal.
-    pub tags: Vec<Tag>,
-    /// Whether archived items were requested.
-    pub show_archived: bool,
-}
 
 /// Loads the products overview page.
 pub fn load_products_page<R>(
@@ -314,120 +286,6 @@ where
     Ok(created)
 }
 
-/// View model exposed to the products index template.
-#[derive(Debug, Serialize)]
-pub struct ProductView {
-    pub id: i32,
-    pub hub_id: i32,
-    pub name: String,
-    pub sku: Option<String>,
-    pub description: Option<String>,
-    pub units: Option<String>,
-    pub currency: String,
-    pub is_archived: bool,
-    pub category_id: Option<i32>,
-    pub category_name: Option<String>,
-    pub updated_at: chrono::NaiveDateTime,
-    pub price_levels: Vec<ProductPriceLevelView>,
-    pub tags: Vec<ProductTagView>,
-    pub image_urls: Vec<String>,
-    pub amount: Option<f32>,
-}
-
-impl ProductView {
-    fn from_product(
-        product: crate::domain::product::Product,
-        level_lookup: &HashMap<i32, &PriceLevel>,
-        category_lookup: &HashMap<i32, String>,
-    ) -> Self {
-        let crate::domain::product::Product {
-            id,
-            hub_id,
-            name,
-            sku,
-            description,
-            units,
-            currency,
-            is_archived,
-            category_id,
-            price_levels,
-            tags,
-            image_urls,
-            created_at: _,
-            updated_at,
-            amount,
-            ..
-        } = product;
-
-        let price_levels = price_levels
-            .into_iter()
-            .flat_map(|rate| ProductPriceLevelView::from_rate(rate, level_lookup))
-            .collect();
-
-        let tags = tags.into_iter().map(ProductTagView::from_tag).collect();
-
-        Self {
-            id,
-            hub_id,
-            name,
-            sku,
-            description,
-            units,
-            currency,
-            is_archived,
-            category_id,
-            category_name: category_id.and_then(|id| category_lookup.get(&id).cloned()),
-            updated_at,
-            price_levels,
-            tags,
-            image_urls,
-            amount,
-        }
-    }
-}
-
-/// View model for a product price level entry.
-#[derive(Debug, Serialize)]
-pub struct ProductPriceLevelView {
-    pub price_level_id: i32,
-    pub price_level_name: String,
-    pub price_cents: i32,
-    pub price_formatted: String,
-}
-
-/// View model for a product tag entry.
-#[derive(Debug, Serialize)]
-pub struct ProductTagView {
-    pub id: i32,
-    pub name: String,
-}
-
-impl ProductTagView {
-    fn from_tag(tag: Tag) -> Self {
-        Self {
-            id: tag.id,
-            name: tag.name,
-        }
-    }
-}
-
-impl ProductPriceLevelView {
-    fn from_rate(
-        rate: ProductPriceLevelRate,
-        level_lookup: &HashMap<i32, &PriceLevel>,
-    ) -> Option<Self> {
-        let level = level_lookup.get(&rate.price_level_id)?;
-        let price_formatted = format!("{:.2}", rate.price_cents as f64 / 100.0);
-
-        Some(Self {
-            price_level_id: rate.price_level_id,
-            price_level_name: level.name.clone(),
-            price_cents: rate.price_cents,
-            price_formatted,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,8 +297,9 @@ mod tests {
     use crate::domain::category::{NewCategory, UpdateCategory};
     use crate::domain::{
         category::Category, price_level::PriceLevel, product::Product,
-        product_price_level::ProductPriceLevelRate,
+        product_price_level::ProductPriceLevelRate, tag::Tag,
     };
+    use crate::dto::products::ProductsQuery;
     use crate::forms::products::{
         AddProductForm, AddProductPriceLevelForm, EditProductForm, EditProductPriceLevelForm,
         UploadProductsForm,

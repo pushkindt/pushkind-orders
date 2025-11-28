@@ -5,15 +5,10 @@ use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::category::{Category, CategoryTreeNode, CategoryTreeQuery, NewCategory};
+use crate::dto::categories::CategoryTreeData;
 use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
 use crate::repository::{CategoryReader, CategoryWriter};
 use crate::services::{ServiceError, ServiceResult};
-
-/// Data required to render the categories index template.
-pub struct CategoryTreeData {
-    /// Hierarchical representation of the categories.
-    pub tree: Vec<CategoryTreeNode>,
-}
 
 /// Loads the categories overview page.
 pub fn load_categories<R>(repo: &R, user: &AuthenticatedUser) -> ServiceResult<CategoryTreeData>

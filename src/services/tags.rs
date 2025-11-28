@@ -1,30 +1,13 @@
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::check_role;
-use serde::Deserialize;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::tag::{Tag, TagListQuery};
+use crate::dto::tags::{TagQuery, TagsPageData};
 use crate::forms::tags::{AddTagForm, EditTagForm};
 use crate::repository::{TagReader, TagWriter};
 use crate::services::{ServiceError, ServiceResult};
-
-/// Query parameters accepted by the tags index page.
-#[derive(Debug, Default, Deserialize)]
-pub struct TagQuery {
-    /// Optional case-insensitive search applied to tag names.
-    pub search: Option<String>,
-    /// Page number requested by the UI (1-based).
-    pub page: Option<usize>,
-}
-
-/// Data required to render the tags index template.
-pub struct TagsPageData {
-    /// Paginated list of tags displayed in the table.
-    pub tags: Paginated<Tag>,
-    /// Search query echoed back to the template when present.
-    pub search: Option<String>,
-}
 
 /// Fetches paginated tags for the authenticated user's hub.
 pub fn load_tags<R>(
@@ -110,6 +93,7 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
     use serde_json::Value;
 
+    use crate::dto::tags::TagQuery;
     use crate::repository::mock::{MockTagReader, MockTagWriter};
 
     fn fixed_datetime() -> NaiveDateTime {

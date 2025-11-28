@@ -5,8 +5,8 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
+use crate::dto::main::IndexQuery;
 use crate::repository::DieselRepository;
-use crate::services::main::IndexQuery;
 use crate::services::{ServiceError, main as main_service};
 
 #[get("/")]
