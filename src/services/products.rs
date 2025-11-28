@@ -11,7 +11,7 @@ use crate::domain::{
     product::{Product, ProductListQuery},
     product_price_level::NewProductPriceLevelRate,
     tag::TagListQuery,
-    types::HubId,
+    types::{HubId, PriceCents, PriceLevelId, ProductId},
 };
 use crate::dto::products::{ProductView, ProductsPageData, ProductsQuery};
 use crate::forms::products::{
@@ -182,7 +182,11 @@ where
     let price_level_rates: Vec<NewProductPriceLevelRate> = price_levels
         .into_iter()
         .map(|rate| {
-            NewProductPriceLevelRate::new(product_id, rate.price_level_id, rate.price_cents)
+            NewProductPriceLevelRate::new(
+                ProductId::new(product_id).unwrap(),
+                PriceLevelId::new(rate.price_level_id).unwrap(),
+                PriceCents::new(rate.price_cents).unwrap(),
+            )
         })
         .collect();
 
@@ -266,7 +270,11 @@ where
     let rates: Vec<NewProductPriceLevelRate> = price_levels
         .iter()
         .map(|rate| {
-            NewProductPriceLevelRate::new(created.id, rate.price_level_id, rate.price_cents)
+            NewProductPriceLevelRate::new(
+                ProductId::new(created.id).unwrap(),
+                PriceLevelId::new(rate.price_level_id).unwrap(),
+                PriceCents::new(rate.price_cents).unwrap(),
+            )
         })
         .collect();
 
@@ -296,7 +304,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::domain::category::{NewCategory, UpdateCategory};
-    use crate::domain::types::{CategoryId, CategoryName, HubId, TagId, TagName};
+    use crate::domain::types::{
+        CategoryId, CategoryName, HubId, PriceCents, PriceLevelId, ProductId,
+        ProductPriceLevelRateId, TagId, TagName,
+    };
     use crate::domain::{
         category::Category, price_level::PriceLevel, product::Product,
         product_price_level::ProductPriceLevelRate, tag::Tag,
@@ -423,10 +434,10 @@ mod tests {
                     expected_hub,
                     "Coffee A",
                     vec![ProductPriceLevelRate {
-                        id: 1,
-                        product_id: 1,
-                        price_level_id: 10,
-                        price_cents: 1299,
+                        id: ProductPriceLevelRateId::new(1).unwrap(),
+                        product_id: ProductId::new(1).unwrap(),
+                        price_level_id: PriceLevelId::new(10).unwrap(),
+                        price_cents: PriceCents::new(1299).unwrap(),
                         created_at: datetime(),
                         updated_at: datetime(),
                     }],
@@ -439,10 +450,10 @@ mod tests {
                     expected_hub,
                     "Coffee B",
                     vec![ProductPriceLevelRate {
-                        id: 2,
-                        product_id: 2,
-                        price_level_id: 11,
-                        price_cents: 1599,
+                        id: ProductPriceLevelRateId::new(2).unwrap(),
+                        product_id: ProductId::new(2).unwrap(),
+                        price_level_id: PriceLevelId::new(11).unwrap(),
+                        price_cents: PriceCents::new(1599).unwrap(),
                         created_at: datetime(),
                         updated_at: datetime(),
                     }],
@@ -683,8 +694,8 @@ mod tests {
                 assert_eq!(*product_id, 101);
                 assert_eq!(*scope_hub, expected_hub);
                 assert_eq!(rates.len(), 1);
-                assert_eq!(rates[0].price_level_id, 10);
-                assert_eq!(rates[0].price_cents, 1234);
+                assert_eq!(rates[0].price_level_id.get(), 10);
+                assert_eq!(rates[0].price_cents.get(), 1234);
                 true
             })
             .returning(|_, _, _| Ok(()));
@@ -909,17 +920,17 @@ mod tests {
                         assert_eq!(product_id, 1);
                         assert_eq!(scope_hub, hub_id);
                         assert_eq!(rates.len(), 2);
-                        assert_eq!(rates[0].price_level_id, 1);
-                        assert_eq!(rates[0].price_cents, 1234);
-                        assert_eq!(rates[1].price_level_id, 2);
-                        assert_eq!(rates[1].price_cents, 990);
+                        assert_eq!(rates[0].price_level_id.get(), 1);
+                        assert_eq!(rates[0].price_cents.get(), 1234);
+                        assert_eq!(rates[1].price_level_id.get(), 2);
+                        assert_eq!(rates[1].price_cents.get(), 990);
                     }
                     1 => {
                         assert_eq!(product_id, 2);
                         assert_eq!(scope_hub, hub_id);
                         assert_eq!(rates.len(), 1);
-                        assert_eq!(rates[0].price_level_id, 1);
-                        assert_eq!(rates[0].price_cents, 750);
+                        assert_eq!(rates[0].price_level_id.get(), 1);
+                        assert_eq!(rates[0].price_cents.get(), 750);
                     }
                     _ => panic!("unexpected additional rate call"),
                 }
@@ -1116,10 +1127,10 @@ Banana,USD,7.50,
             .withf(move |id, hub, rates| {
                 assert_eq!((*id, *hub), (product_id, hub_id));
                 assert_eq!(rates.len(), 2);
-                assert_eq!(rates[0].price_level_id, 31);
-                assert_eq!(rates[0].price_cents, 4250);
-                assert_eq!(rates[1].price_level_id, 32);
-                assert_eq!(rates[1].price_cents, 3500);
+                assert_eq!(rates[0].price_level_id.get(), 31);
+                assert_eq!(rates[0].price_cents.get(), 4250);
+                assert_eq!(rates[1].price_level_id.get(), 32);
+                assert_eq!(rates[1].price_cents.get(), 3500);
                 true
             })
             .returning(|_, _, _| Ok(()));

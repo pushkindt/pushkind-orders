@@ -35,6 +35,10 @@ fn map_tag_type_error(err: TypeConstraintError) -> RepositoryError {
     RepositoryError::Unexpected(format!("Invalid tag data: {err}"))
 }
 
+fn map_price_level_type_error(err: TypeConstraintError) -> RepositoryError {
+    RepositoryError::Unexpected(format!("Invalid product price level data: {err}"))
+}
+
 impl ProductReader for DieselRepository {
     fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainProduct>> {
         use crate::schema::products;
@@ -276,7 +280,7 @@ impl ProductWriter for DieselRepository {
 
             if !rates.is_empty() {
                 let price_level_ids: std::collections::BTreeSet<i32> =
-                    rates.iter().map(|rate| rate.price_level_id).collect();
+                    rates.iter().map(|rate| rate.price_level_id.get()).collect();
                 let expected_count = price_level_ids.len() as i64;
 
                 if expected_count > 0 {
@@ -435,7 +439,9 @@ fn load_price_levels_for_products(
 
     let mut map: HashMap<i32, Vec<DomainProductPriceLevelRate>> = HashMap::new();
     for row in rows {
-        map.entry(row.product_id).or_default().push(row.into());
+        map.entry(row.product_id)
+            .or_default()
+            .push(DomainProductPriceLevelRate::try_from(row).map_err(map_price_level_type_error)?);
     }
 
     Ok(map)

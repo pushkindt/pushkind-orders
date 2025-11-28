@@ -15,7 +15,7 @@ use pushkind_orders::domain::{
     product::NewProduct,
     product_price_level::NewProductPriceLevelRate,
     tag::NewTag,
-    types::{CategoryName, HubId},
+    types::{CategoryName, HubId, PriceCents, PriceLevelId, ProductId},
 };
 use pushkind_orders::repository::{
     CategoryWriter, CustomerWriter, DieselRepository, OrderWriter, PriceLevelWriter, ProductWriter,
@@ -335,9 +335,9 @@ async fn create_store_order_requires_authentication() {
         product.id,
         1,
         &[NewProductPriceLevelRate::new(
-            product.id,
-            price_level.id,
-            500,
+            ProductId::new(product.id).unwrap(),
+            PriceLevelId::new(price_level.id).unwrap(),
+            PriceCents::new(500).unwrap(),
         )],
     )
     .expect("attach price level");
@@ -383,9 +383,9 @@ async fn create_store_order_validates_payload() {
         product.id,
         1,
         &[NewProductPriceLevelRate::new(
-            product.id,
-            price_level.id,
-            500,
+            ProductId::new(product.id).unwrap(),
+            PriceLevelId::new(price_level.id).unwrap(),
+            PriceCents::new(500).unwrap(),
         )],
     )
     .expect("attach price level");
@@ -452,9 +452,9 @@ async fn create_store_order_creates_order() {
         product.id,
         1,
         &[NewProductPriceLevelRate::new(
-            product.id,
-            price_level.id,
-            500,
+            ProductId::new(product.id).unwrap(),
+            PriceLevelId::new(price_level.id).unwrap(),
+            PriceCents::new(500).unwrap(),
         )],
     )
     .expect("attach price level");

@@ -54,8 +54,8 @@ fn create_product_stores_price_levels() {
         .expect("product should exist");
 
     assert_eq!(product.price_levels.len(), 1);
-    assert_eq!(product.price_levels[0].price_level_id, 1);
-    assert_eq!(product.price_levels[0].price_cents, 1250);
+    assert_eq!(product.price_levels[0].price_level_id.get(), 1);
+    assert_eq!(product.price_levels[0].price_cents.get(), 1250);
 }
 
 #[test]

@@ -122,13 +122,13 @@ impl ProductPriceLevelView {
         rate: ProductPriceLevelRate,
         level_lookup: &HashMap<i32, &PriceLevel>,
     ) -> Option<Self> {
-        let level = level_lookup.get(&rate.price_level_id)?;
-        let price_formatted = format!("{:.2}", rate.price_cents as f64 / 100.0);
+        let level = level_lookup.get(&rate.price_level_id.get())?;
+        let price_formatted = format!("{:.2}", rate.price_cents.get() as f64 / 100.0);
 
         Some(Self {
-            price_level_id: rate.price_level_id,
+            price_level_id: rate.price_level_id.get(),
             price_level_name: level.name.clone(),
-            price_cents: rate.price_cents,
+            price_cents: rate.price_cents.get(),
             price_formatted,
         })
     }

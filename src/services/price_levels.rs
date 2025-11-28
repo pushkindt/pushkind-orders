@@ -293,9 +293,9 @@ mod tests {
         Customer {
             id: CustomerId::new(id).unwrap(),
             hub_id: HubId::new(hub_id).unwrap(),
-            name: CustomerName::new(&format!("Customer {id}")).unwrap(),
-            email: Some(UserEmail::new(&format!("customer{id}@example.com")).unwrap()),
-            phone: PhoneNumber::new(&format!("+100000{id}")).unwrap(),
+            name: CustomerName::new(format!("Customer {id}")).unwrap(),
+            email: Some(UserEmail::new(format!("customer{id}@example.com")).unwrap()),
+            phone: PhoneNumber::new(format!("+100000{id}")).unwrap(),
             price_level_id: price_level_id.map(|value| PriceLevelId::new(value).unwrap()),
         }
     }

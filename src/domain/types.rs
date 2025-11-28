@@ -81,6 +81,47 @@ id_newtype!(ProductId);
 id_newtype!(CustomerId);
 id_newtype!(PriceLevelId);
 id_newtype!(CategoryId);
+id_newtype!(ProductPriceLevelRateId);
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Price stored in the smallest currency unit; must be positive.
+pub struct PriceCents(i32);
+
+impl PriceCents {
+    /// Construct a new price ensuring it is above zero.
+    pub fn new(value: i32) -> Result<Self, TypeConstraintError> {
+        if value > 0 {
+            Ok(Self(value))
+        } else {
+            Err(TypeConstraintError::NonPositiveId)
+        }
+    }
+
+    /// Return the raw integer amount.
+    pub const fn get(self) -> i32 {
+        self.0
+    }
+}
+
+impl Display for PriceCents {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<i32> for PriceCents {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<PriceCents> for i32 {
+    fn from(value: PriceCents) -> Self {
+        value.0
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Lower-cased and validated email address.

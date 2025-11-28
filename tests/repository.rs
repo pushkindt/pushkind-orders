@@ -8,7 +8,7 @@ use pushkind_orders::domain::{
     price_level::{NewPriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
-    types::{CategoryName, HubId, PriceLevelId},
+    types::{CategoryName, HubId, PriceCents, PriceLevelId, ProductId},
     user::{NewUser, UpdateUser},
 };
 use pushkind_orders::models::category::NewCategory as DbNewCategory;
@@ -397,8 +397,16 @@ fn test_replace_product_price_levels() {
         .expect("failed to create product");
 
     let rates = vec![
-        NewProductPriceLevelRate::new(product.id, retail_level.id, 1250),
-        NewProductPriceLevelRate::new(product.id, wholesale_level.id, 990),
+        NewProductPriceLevelRate::new(
+            ProductId::new(product.id).unwrap(),
+            PriceLevelId::new(retail_level.id).unwrap(),
+            PriceCents::new(1250).unwrap(),
+        ),
+        NewProductPriceLevelRate::new(
+            ProductId::new(product.id).unwrap(),
+            PriceLevelId::new(wholesale_level.id).unwrap(),
+            PriceCents::new(990).unwrap(),
+        ),
     ];
 
     repo.replace_product_price_levels(product.id, 1, &rates)
@@ -409,13 +417,21 @@ fn test_replace_product_price_levels() {
         .expect("failed to fetch product")
         .expect("product should exist");
 
-    fetched.price_levels.sort_by_key(|rate| rate.price_level_id);
+    fetched
+        .price_levels
+        .sort_by_key(|rate| rate.price_level_id.get());
 
     assert_eq!(fetched.price_levels.len(), 2);
-    assert_eq!(fetched.price_levels[0].price_level_id, retail_level.id);
-    assert_eq!(fetched.price_levels[0].price_cents, 1250);
-    assert_eq!(fetched.price_levels[1].price_level_id, wholesale_level.id);
-    assert_eq!(fetched.price_levels[1].price_cents, 990);
+    assert_eq!(
+        fetched.price_levels[0].price_level_id.get(),
+        retail_level.id
+    );
+    assert_eq!(fetched.price_levels[0].price_cents.get(), 1250);
+    assert_eq!(
+        fetched.price_levels[1].price_level_id.get(),
+        wholesale_level.id
+    );
+    assert_eq!(fetched.price_levels[1].price_cents.get(), 990);
 
     let err = repo
         .replace_product_price_levels(product.id, 2, &rates)

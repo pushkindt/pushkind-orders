@@ -121,17 +121,17 @@ impl StoreProduct {
         if let Some(level_id) = customer_price_level_id
             && let Some(rate) = price_levels
                 .iter()
-                .find(|rate| rate.price_level_id == level_id)
+                .find(|rate| rate.price_level_id.get() == level_id)
         {
-            return Some(rate.price_cents);
+            return Some(rate.price_cents.get());
         }
 
         if let Some(level_id) = default_price_level_id
             && let Some(rate) = price_levels
                 .iter()
-                .find(|rate| rate.price_level_id == level_id)
+                .find(|rate| rate.price_level_id.get() == level_id)
         {
-            return Some(rate.price_cents);
+            return Some(rate.price_cents.get());
         }
 
         None
