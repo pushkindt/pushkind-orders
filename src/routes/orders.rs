@@ -9,6 +9,9 @@ use crate::repository::DieselRepository;
 use crate::services::{ServiceError, orders as order_service};
 
 #[get("/order/{order_id}")]
+/// Render the order details page for a specific order.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn show_order(
     path: web::Path<i32>,
     user: AuthenticatedUser,

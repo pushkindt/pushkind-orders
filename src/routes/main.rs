@@ -10,6 +10,9 @@ use crate::repository::DieselRepository;
 use crate::services::{ServiceError, main as main_service};
 
 #[get("/")]
+/// Render the main orders dashboard with pagination, search, and filters.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn show_index(
     params: web::Query<IndexQuery>,
     user: AuthenticatedUser,

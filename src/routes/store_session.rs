@@ -60,6 +60,9 @@ struct HubPath {
 }
 
 #[get("/{hub_id}/auth/session")]
+/// Validate and return the authenticated customer from the store session.
+///
+/// Returns `401 Unauthorized` if no valid session exists for the specified hub.
 pub async fn get_store_session(
     path: web::Path<HubPath>,
     repo: web::Data<DieselRepository>,

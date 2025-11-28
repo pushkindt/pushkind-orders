@@ -30,6 +30,9 @@ pub async fn api_v1_orders(
 }
 
 #[get("/v1/client-price-levels")]
+/// Return a JSON list of client price level assignments.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn api_v1_client_price_levels(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -45,6 +48,9 @@ pub async fn api_v1_client_price_levels(
 }
 
 #[put("/v1/client-price-levels")]
+/// Assign a price level to a client.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn api_v1_update_client_price_level(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,

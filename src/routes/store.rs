@@ -60,6 +60,9 @@ struct StoreOrdersQuery {
 }
 
 #[get("/{hub_id}/products")]
+/// Return a JSON list of storefront products with optional filters and pagination.
+///
+/// Applies customer-specific pricing if a valid store session exists.
 pub async fn list_store_products(
     path: web::Path<HubPath>,
     params: Option<web::Query<StoreProductsQuery>>,
@@ -91,6 +94,9 @@ pub async fn list_store_products(
 }
 
 #[get("/{hub_id}/products/{product_id}")]
+/// Return a single storefront product by ID.
+///
+/// Applies customer-specific pricing if a valid store session exists.
 pub async fn get_store_product(
     path: web::Path<StoreProductPath>,
     repo: web::Data<DieselRepository>,
@@ -125,6 +131,7 @@ pub async fn get_store_product(
 }
 
 #[get("/{hub_id}/categories")]
+/// Return a JSON list of storefront categories with optional parent filter.
 pub async fn list_store_categories(
     path: web::Path<HubPath>,
     params: Option<web::Query<StoreCategoriesQuery>>,
@@ -149,6 +156,7 @@ pub async fn list_store_categories(
 }
 
 #[get("/{hub_id}/tags")]
+/// Return a JSON list of storefront tags.
 pub async fn list_store_tags(
     path: web::Path<HubPath>,
     repo: web::Data<DieselRepository>,
@@ -167,6 +175,9 @@ pub async fn list_store_tags(
 }
 
 #[post("/{hub_id}/auth/otp")]
+/// Request a one-time password for storefront authentication.
+///
+/// Sends an SMS with the OTP code to the provided phone number.
 pub async fn request_store_auth_otp(
     path: web::Path<HubPath>,
     payload: web::Json<StoreOtpRequestPayload>,
@@ -202,6 +213,9 @@ pub async fn request_store_auth_otp(
 }
 
 #[post("/{hub_id}/auth/otp/verify")]
+/// Verify a one-time password and establish a store session.
+///
+/// On success, persists the authenticated customer in the session.
 pub async fn verify_store_auth_otp(
     path: web::Path<HubPath>,
     payload: web::Json<StoreOtpVerifyPayload>,
@@ -240,6 +254,9 @@ pub async fn verify_store_auth_otp(
 }
 
 #[post("/{hub_id}/orders")]
+/// Create a new storefront order.
+///
+/// Requires a valid store session. Returns `401 Unauthorized` if not authenticated.
 pub async fn create_store_order_handler(
     path: web::Path<HubPath>,
     payload: web::Json<Vec<StoreOrderLinePayload>>,
@@ -279,6 +296,9 @@ pub async fn create_store_order_handler(
 }
 
 #[get("/{hub_id}/orders")]
+/// Return a JSON list of orders for the authenticated storefront customer.
+///
+/// Requires a valid store session. Returns `401 Unauthorized` if not authenticated.
 pub async fn list_store_orders_handler(
     path: web::Path<HubPath>,
     params: Option<web::Query<StoreOrdersQuery>>,

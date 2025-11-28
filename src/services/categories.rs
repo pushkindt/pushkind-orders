@@ -93,6 +93,7 @@ where
         .map_err(ServiceError::from)
 }
 
+/// Builds a hierarchical tree structure from a flat list of categories.
 fn build_category_tree(categories: &[Category]) -> Vec<CategoryTreeNode> {
     let mut children_by_parent: HashMap<Option<CategoryId>, Vec<&Category>> = HashMap::new();
 

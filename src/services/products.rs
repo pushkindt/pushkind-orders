@@ -205,6 +205,7 @@ where
         .map_err(ServiceError::from)
 }
 
+/// Fetches all price levels for a hub.
 fn fetch_all_price_levels<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<PriceLevel>>
 where
     R: PriceLevelReader + ?Sized,
@@ -214,6 +215,7 @@ where
     Ok(price_levels)
 }
 
+/// Persists a new product with associated price levels, images, tags, and category.
 fn persist_new_product<R>(
     repo: &R,
     hub_id: i32,

@@ -12,6 +12,9 @@ use crate::services::ServiceError;
 use crate::services::tags::{create_tag, load_tags, modify_tag, remove_tag};
 
 #[get("/tags")]
+/// Render the tags management page with search and pagination.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn show_tags(
     params: web::Query<TagQuery>,
     user: AuthenticatedUser,
@@ -45,6 +48,9 @@ pub async fn show_tags(
 }
 
 #[post("/tags/add")]
+/// Create a new product tag.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn add_tag(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -76,6 +82,9 @@ pub async fn add_tag(
 }
 
 #[post("/tags/edit")]
+/// Update an existing product tag.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn edit_tag(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -107,6 +116,9 @@ pub async fn edit_tag(
 }
 
 #[post("/tags/{tag_id}/delete")]
+/// Delete a product tag by ID.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn delete_tag(
     path: web::Path<i32>,
     user: AuthenticatedUser,

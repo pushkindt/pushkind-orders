@@ -141,6 +141,7 @@ where
         customer,
     })
 }
+/// Resolves the default price level ID for a hub.
 fn resolve_default_price_level_id<R>(repo: &R, hub_id: i32) -> ServiceResult<Option<i32>>
 where
     R: PriceLevelReader + ?Sized,
