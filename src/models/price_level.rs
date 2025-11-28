@@ -9,6 +9,7 @@ use crate::domain::price_level::{
 };
 use crate::domain::types::{HubId, PriceLevelId, PriceLevelName, TypeConstraintError};
 
+/// Database representation of a price level record.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::price_levels)]
 pub struct PriceLevel {
@@ -20,6 +21,7 @@ pub struct PriceLevel {
     pub is_default: bool,
 }
 
+/// Payload for inserting a new price level record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::price_levels)]
 pub struct NewPriceLevel<'a> {
@@ -28,6 +30,7 @@ pub struct NewPriceLevel<'a> {
     pub is_default: bool,
 }
 
+/// Payload for updating an existing price level record.
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::price_levels)]
 #[diesel(treat_none_as_null = true)]

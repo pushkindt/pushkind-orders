@@ -10,6 +10,7 @@ use crate::domain::{
     },
 };
 
+/// Database representation of a customer record.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable, Associations)]
 #[diesel(
     table_name = crate::schema::customers,
@@ -26,6 +27,7 @@ pub struct Customer {
     pub email: Option<String>,
 }
 
+/// Payload for inserting a new customer record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::customers)]
 pub struct NewCustomer<'a> {

@@ -10,6 +10,7 @@ use crate::domain::product_price_level::{
 };
 use crate::domain::types::{PriceLevelId, ProductId, ProductPriceLevelRateId, TypeConstraintError};
 
+/// Database representation of a product price level association record.
 #[derive(Debug, Clone, Identifiable, Queryable, Associations, Selectable)]
 #[diesel(
     table_name = crate::schema::product_price_levels,
@@ -25,6 +26,7 @@ pub struct ProductPriceLevel {
     pub updated_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new product price level association record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::product_price_levels)]
 pub struct NewProductPriceLevel {
@@ -33,6 +35,7 @@ pub struct NewProductPriceLevel {
     pub price_cents: i32,
 }
 
+/// Payload for updating an existing product price level association record.
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::product_price_levels)]
 #[diesel(treat_none_as_null = true)]

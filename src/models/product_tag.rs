@@ -8,6 +8,7 @@ use crate::domain::{
     types::{ProductId, ProductTagId, TagId, TypeConstraintError},
 };
 
+/// Database representation of a product tag association record.
 #[derive(Debug, Clone, Identifiable, Queryable, Associations, Selectable)]
 #[diesel(
     table_name = crate::schema::product_tags,
@@ -22,6 +23,7 @@ pub struct ProductTag {
     pub updated_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new product tag association record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::product_tags)]
 pub struct NewProductTag {

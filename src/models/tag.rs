@@ -8,6 +8,7 @@ use crate::domain::{
     types::{HubId, TagId, TagName, TypeConstraintError},
 };
 
+/// Database representation of a tag record.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::tags)]
 pub struct Tag {
@@ -18,6 +19,7 @@ pub struct Tag {
     pub updated_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new tag record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::tags)]
 pub struct NewTag<'a> {
@@ -25,6 +27,7 @@ pub struct NewTag<'a> {
     pub name: &'a str,
 }
 
+/// Payload for updating an existing tag record.
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::tags)]
 pub struct UpdateTag<'a> {

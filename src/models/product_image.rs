@@ -2,6 +2,7 @@
 
 use diesel::prelude::*;
 
+/// Database representation of a product image record.
 #[derive(Debug, Clone, Identifiable, Queryable, Associations, Selectable)]
 #[diesel(
     table_name = crate::schema::product_images,
@@ -13,6 +14,7 @@ pub struct ProductImage {
     pub image_url: String,
 }
 
+/// Payload for inserting a new product image record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::product_images)]
 pub struct NewProductImage<'a> {

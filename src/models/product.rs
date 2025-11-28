@@ -14,6 +14,7 @@ use crate::domain::{
     },
 };
 
+/// Database representation of a product record.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::products)]
 pub struct Product {
@@ -31,6 +32,7 @@ pub struct Product {
     pub amount: Option<f32>,
 }
 
+/// Payload for inserting a new product record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::products)]
 pub struct NewProduct<'a> {
@@ -44,6 +46,7 @@ pub struct NewProduct<'a> {
     pub amount: Option<f32>,
 }
 
+/// Payload for updating an existing product record.
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::products)]
 #[diesel(treat_none_as_null = true)]

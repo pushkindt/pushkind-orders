@@ -11,6 +11,7 @@ use crate::domain::types::{
     CategoryDescription, CategoryId, CategoryName, HubId, ImageUrl, TypeConstraintError,
 };
 
+/// Database representation of a category record.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::categories)]
 pub struct Category {
@@ -25,6 +26,7 @@ pub struct Category {
     pub image_url: Option<String>,
 }
 
+/// Payload for inserting a new category record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::categories)]
 pub struct NewCategory<'a> {
@@ -35,6 +37,7 @@ pub struct NewCategory<'a> {
     pub image_url: Option<&'a str>,
 }
 
+/// Payload for updating an existing category record.
 #[derive(Default, AsChangeset)]
 #[diesel(table_name = crate::schema::categories, treat_none_as_null = true)]
 pub struct UpdateCategory<'a> {

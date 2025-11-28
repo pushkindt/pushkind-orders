@@ -8,6 +8,7 @@ use crate::domain::{
     user::{NewUser as DomainNewUser, UpdateUser as DomainUpdateUser, User as DomainUser},
 };
 
+/// Database representation of a user record.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::users)]
 pub struct User {
@@ -19,6 +20,7 @@ pub struct User {
     pub updated_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new user record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::users)]
 pub struct NewUser<'a> {
@@ -27,6 +29,7 @@ pub struct NewUser<'a> {
     pub email: &'a str,
 }
 
+/// Payload for updating an existing user record.
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::users)]
 pub struct UpdateUser<'a> {

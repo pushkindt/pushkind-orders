@@ -12,6 +12,7 @@ use crate::domain::types::{
     ProductDescription, ProductId, ProductName, ProductQuantity, ProductSku,
 };
 
+/// Database representation of an order record.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable, Associations)]
 #[diesel(
     table_name = crate::schema::orders,
@@ -30,6 +31,7 @@ pub struct Order {
     pub updated_at: NaiveDateTime,
 }
 
+/// Database representation of a product snapshot within an order.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable, Associations)]
 #[diesel(table_name = crate::schema::order_products)]
 #[diesel(belongs_to(Order, foreign_key = order_id))]
@@ -47,6 +49,7 @@ pub struct OrderProduct {
     pub updated_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new order record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::orders)]
 pub struct NewOrder<'a> {
@@ -59,6 +62,7 @@ pub struct NewOrder<'a> {
     pub currency: &'a str,
 }
 
+/// Payload for inserting a new order product record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::order_products)]
 pub struct NewOrderProduct<'a> {
@@ -72,6 +76,7 @@ pub struct NewOrderProduct<'a> {
     pub quantity: i32,
 }
 
+/// Payload for updating an existing order record.
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::orders)]
 #[diesel(treat_none_as_null = true)]

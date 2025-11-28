@@ -8,6 +8,7 @@ use crate::domain::{
     types::{HubId, OtpCode, PhoneNumber, TypeConstraintError},
 };
 
+/// Database representation of a storefront OTP record.
 #[derive(Debug, Clone, Queryable, Identifiable, Selectable)]
 #[diesel(primary_key(hub_id, phone))]
 #[diesel(table_name = crate::schema::store_otps)]
@@ -19,6 +20,7 @@ pub struct StoreOtp {
     pub last_sent_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new storefront OTP record.
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::store_otps)]
 pub struct NewStoreOtp {
