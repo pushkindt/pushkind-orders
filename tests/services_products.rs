@@ -12,7 +12,7 @@ fn create_product_stores_price_levels() {
     let test_db = common::TestDb::new("service_create_product_stores_price_levels.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    repo.create_price_level(&NewPriceLevel::new(1, "Retail", false))
+    repo.create_price_level(&NewPriceLevel::try_new(1, "Retail", false).unwrap())
         .expect("create price level");
 
     let user = AuthenticatedUser {

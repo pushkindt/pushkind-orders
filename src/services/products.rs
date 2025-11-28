@@ -56,7 +56,7 @@ where
     let (total, items) = repo.list_products(list_query).map_err(ServiceError::from)?;
     let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
     let (_, price_levels) = repo
-        .list_price_levels(PriceLevelListQuery::new(user.hub_id))
+        .list_price_levels(PriceLevelListQuery::new(hub_id))
         .map_err(ServiceError::from)?;
 
     let (_, mut categories) = repo
@@ -73,8 +73,10 @@ where
     let (_, mut tags) = repo.list_tags(tag_query).map_err(ServiceError::from)?;
     tags.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
-    let level_lookup: HashMap<i32, &PriceLevel> =
-        price_levels.iter().map(|level| (level.id, level)).collect();
+    let level_lookup: HashMap<i32, &PriceLevel> = price_levels
+        .iter()
+        .map(|level| (level.id.get(), level))
+        .collect();
 
     let view_items: Vec<ProductView> = items
         .into_iter()
@@ -207,7 +209,7 @@ fn fetch_all_price_levels<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<PriceLe
 where
     R: PriceLevelReader + ?Sized,
 {
-    let query = PriceLevelListQuery::new(hub_id);
+    let query = PriceLevelListQuery::new(HubId::new(hub_id).map_err(|_| ServiceError::Internal)?);
     let (_, price_levels) = repo.list_price_levels(query).map_err(ServiceError::from)?;
     Ok(price_levels)
 }
@@ -305,7 +307,7 @@ mod tests {
 
     use crate::domain::category::{NewCategory, UpdateCategory};
     use crate::domain::types::{
-        CategoryId, CategoryName, HubId, PriceCents, PriceLevelId, ProductId,
+        CategoryId, CategoryName, HubId, PriceCents, PriceLevelId, PriceLevelName, ProductId,
         ProductPriceLevelRateId, TagId, TagName,
     };
     use crate::domain::{
@@ -1370,9 +1372,9 @@ Banana,USD,7.50,
 
     fn price_level(id: i32, hub_id: i32, name: &str) -> PriceLevel {
         PriceLevel {
-            id,
-            hub_id,
-            name: name.to_string(),
+            id: PriceLevelId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: PriceLevelName::new(name).unwrap(),
             created_at: datetime(),
             updated_at: datetime(),
             is_default: false,

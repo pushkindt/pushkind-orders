@@ -4,6 +4,7 @@ use validator::{Validate, ValidationErrors};
 
 use crate::{
     domain::price_level::{NewPriceLevel, UpdatePriceLevel},
+    domain::types::{HubId, PriceLevelName},
     forms::{PhoneNormalizationError, normalize_phone_to_e164, sanitize_text},
 };
 
@@ -113,10 +114,13 @@ impl AddPriceLevelForm {
     pub fn into_new_price_level(self, hub_id: i32) -> PriceLevelFormResult<NewPriceLevel> {
         self.validate()?;
 
-        match sanitize_text(&self.name) {
-            Some(name) => Ok(NewPriceLevel::new(hub_id, name, self.default)),
-            None => Err(PriceLevelFormError::EmptyName),
-        }
+        let hub_id = HubId::new(hub_id)
+            .map_err(|_| PriceLevelFormError::Validation(ValidationErrors::new()))?;
+
+        let name = sanitize_text(&self.name).ok_or(PriceLevelFormError::EmptyName)?;
+        let name = PriceLevelName::new(name).map_err(|_| PriceLevelFormError::EmptyName)?;
+
+        Ok(NewPriceLevel::new(hub_id, name, self.default))
     }
 }
 
@@ -136,10 +140,10 @@ impl EditPriceLevelForm {
     pub fn into_update_price_level(self) -> PriceLevelFormResult<UpdatePriceLevel> {
         self.validate()?;
 
-        match sanitize_text(&self.name) {
-            Some(name) => Ok(UpdatePriceLevel::new(name, self.default)),
-            None => Err(PriceLevelFormError::EmptyName),
-        }
+        let name = sanitize_text(&self.name).ok_or(PriceLevelFormError::EmptyName)?;
+        let name = PriceLevelName::new(name).map_err(|_| PriceLevelFormError::EmptyName)?;
+
+        Ok(UpdatePriceLevel::new(name, self.default))
     }
 }
 
@@ -156,8 +160,8 @@ mod tests {
 
         let new_level = form.into_new_price_level(5).expect("expected success");
 
-        assert_eq!(new_level.hub_id, 5);
-        assert_eq!(new_level.name, "Premium\tLevel");
+        assert_eq!(new_level.hub_id.get(), 5);
+        assert_eq!(new_level.name.as_str(), "Premium\tLevel");
     }
 
     #[test]
@@ -228,7 +232,7 @@ mod tests {
 
         let update = form.into_update_price_level().expect("expected success");
 
-        assert_eq!(update.name, "Updated\nName");
+        assert_eq!(update.name.as_str(), "Updated\nName");
         assert!(update.is_default);
     }
 

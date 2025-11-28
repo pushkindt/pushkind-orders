@@ -15,7 +15,7 @@ use pushkind_orders::domain::{
     product::NewProduct,
     product_price_level::NewProductPriceLevelRate,
     tag::NewTag,
-    types::{CategoryName, HubId, PriceCents, PriceLevelId, ProductId},
+    types::{CategoryName, HubId, PriceCents, ProductId},
 };
 use pushkind_orders::repository::{
     CategoryWriter, CustomerWriter, DieselRepository, OrderWriter, PriceLevelWriter, ProductWriter,
@@ -326,7 +326,7 @@ async fn create_store_order_requires_authentication() {
     let test_db = common::TestDb::new("routes_store_order_requires_auth.db");
     let repo = DieselRepository::new(test_db.pool());
     let price_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Default", true))
+        .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
         .expect("create price level");
     let product = repo
         .create_product(&NewProduct::new(1, "Coffee", "USD"))
@@ -336,7 +336,7 @@ async fn create_store_order_requires_authentication() {
         1,
         &[NewProductPriceLevelRate::new(
             ProductId::new(product.id).unwrap(),
-            PriceLevelId::new(price_level.id).unwrap(),
+            price_level.id,
             PriceCents::new(500).unwrap(),
         )],
     )
@@ -374,7 +374,7 @@ async fn create_store_order_validates_payload() {
     let test_db = common::TestDb::new("routes_store_order_validates_payload.db");
     let repo = DieselRepository::new(test_db.pool());
     let price_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Default", true))
+        .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
         .expect("create price level");
     let product = repo
         .create_product(&NewProduct::new(1, "Coffee", "USD"))
@@ -384,7 +384,7 @@ async fn create_store_order_validates_payload() {
         1,
         &[NewProductPriceLevelRate::new(
             ProductId::new(product.id).unwrap(),
-            PriceLevelId::new(price_level.id).unwrap(),
+            price_level.id,
             PriceCents::new(500).unwrap(),
         )],
     )
@@ -443,7 +443,7 @@ async fn create_store_order_creates_order() {
     let test_db = common::TestDb::new("routes_store_order_creates.db");
     let repo = DieselRepository::new(test_db.pool());
     let price_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Default", true))
+        .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
         .expect("create price level");
     let product = repo
         .create_product(&NewProduct::new(1, "Coffee", "USD"))
@@ -453,7 +453,7 @@ async fn create_store_order_creates_order() {
         1,
         &[NewProductPriceLevelRate::new(
             ProductId::new(product.id).unwrap(),
-            PriceLevelId::new(price_level.id).unwrap(),
+            price_level.id,
             PriceCents::new(500).unwrap(),
         )],
     )

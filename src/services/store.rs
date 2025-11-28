@@ -145,6 +145,7 @@ fn resolve_default_price_level_id<R>(repo: &R, hub_id: i32) -> ServiceResult<Opt
 where
     R: PriceLevelReader + ?Sized,
 {
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
     let (_, price_levels) = repo
         .list_price_levels(PriceLevelListQuery::new(hub_id))
         .map_err(ServiceError::from)?;
@@ -152,7 +153,7 @@ where
     Ok(price_levels
         .into_iter()
         .find(|level| level.is_default)
-        .map(|level| level.id))
+        .map(|level| level.id.get()))
 }
 
 /// Create a storefront order for the authenticated customer.
@@ -383,7 +384,7 @@ mod tests {
     use super::*;
     use crate::domain::types::{
         CategoryId, CategoryName, CustomerId, CustomerName, HubId, PriceCents, PriceLevelId,
-        ProductId, ProductPriceLevelRateId, TagId, TagName,
+        PriceLevelName, ProductId, ProductPriceLevelRateId, TagId, TagName,
     };
     use crate::domain::{
         category::Category,
@@ -488,9 +489,9 @@ mod tests {
 
     fn sample_price_level(id: i32, is_default: bool) -> PriceLevel {
         PriceLevel {
-            id,
-            hub_id: 1,
-            name: format!("Level {id}"),
+            id: PriceLevelId::new(id).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: PriceLevelName::new(format!("Level {id}")).unwrap(),
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
             is_default,
@@ -579,7 +580,7 @@ mod tests {
         repo.price_level_reader
             .expect_list_price_levels()
             .returning(|query| {
-                assert_eq!(query.hub_id, 1);
+                assert_eq!(query.hub_id.get(), 1);
                 Ok((1, vec![sample_price_level(2, true)]))
             });
 
@@ -1418,9 +1419,9 @@ mod tests {
 
         let mut price_level_reader = MockPriceLevelReader::new();
         let price_levels = vec![PriceLevel {
-            id: 10,
-            hub_id: 1,
-            name: "Default".to_string(),
+            id: PriceLevelId::new(10).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: PriceLevelName::new("Default").unwrap(),
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
             is_default: true,
@@ -1428,7 +1429,7 @@ mod tests {
 
         price_level_reader
             .expect_list_price_levels()
-            .withf(|query| query.hub_id == 1)
+            .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((1, price_levels.clone())));
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
@@ -1499,17 +1500,17 @@ mod tests {
         let mut price_level_reader = MockPriceLevelReader::new();
         let price_levels = vec![
             PriceLevel {
-                id: 10,
-                hub_id: 1,
-                name: "Default".to_string(),
+                id: PriceLevelId::new(10).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Default").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: true,
             },
             PriceLevel {
-                id: 11,
-                hub_id: 1,
-                name: "Premium".to_string(),
+                id: PriceLevelId::new(11).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Premium").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: false,
@@ -1518,7 +1519,7 @@ mod tests {
 
         price_level_reader
             .expect_list_price_levels()
-            .withf(|query| query.hub_id == 1)
+            .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
@@ -1575,17 +1576,17 @@ mod tests {
         let mut price_level_reader = MockPriceLevelReader::new();
         let price_levels = vec![
             PriceLevel {
-                id: 10,
-                hub_id: 1,
-                name: "Default".to_string(),
+                id: PriceLevelId::new(10).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Default").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: true,
             },
             PriceLevel {
-                id: 11,
-                hub_id: 1,
-                name: "Premium".to_string(),
+                id: PriceLevelId::new(11).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Premium").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: false,
@@ -1594,7 +1595,7 @@ mod tests {
 
         price_level_reader
             .expect_list_price_levels()
-            .withf(|query| query.hub_id == 1)
+            .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
@@ -1655,17 +1656,17 @@ mod tests {
         let mut price_level_reader = MockPriceLevelReader::new();
         let price_levels = vec![
             PriceLevel {
-                id: 10,
-                hub_id: 1,
-                name: "Default".to_string(),
+                id: PriceLevelId::new(10).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Default").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: true,
             },
             PriceLevel {
-                id: 11,
-                hub_id: 1,
-                name: "Premium".to_string(),
+                id: PriceLevelId::new(11).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Premium").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: false,
@@ -1673,7 +1674,7 @@ mod tests {
         ];
         price_level_reader
             .expect_list_price_levels()
-            .withf(|query| query.hub_id == 1)
+            .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
@@ -1736,17 +1737,17 @@ mod tests {
         let mut price_level_reader = MockPriceLevelReader::new();
         let price_levels = vec![
             PriceLevel {
-                id: 10,
-                hub_id: 1,
-                name: "Default".to_string(),
+                id: PriceLevelId::new(10).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Default").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: true,
             },
             PriceLevel {
-                id: 11,
-                hub_id: 1,
-                name: "Premium".to_string(),
+                id: PriceLevelId::new(11).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Premium").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: false,
@@ -1754,7 +1755,7 @@ mod tests {
         ];
         price_level_reader
             .expect_list_price_levels()
-            .withf(|query| query.hub_id == 1)
+            .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
@@ -1804,17 +1805,17 @@ mod tests {
         let mut price_level_reader = MockPriceLevelReader::new();
         let price_levels = vec![
             PriceLevel {
-                id: 10,
-                hub_id: 1,
-                name: "Default".to_string(),
+                id: PriceLevelId::new(10).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Default").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: true,
             },
             PriceLevel {
-                id: 11,
-                hub_id: 1,
-                name: "Premium".to_string(),
+                id: PriceLevelId::new(11).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: PriceLevelName::new("Premium").unwrap(),
                 created_at: sample_timestamp(),
                 updated_at: sample_timestamp(),
                 is_default: false,
@@ -1822,7 +1823,7 @@ mod tests {
         ];
         price_level_reader
             .expect_list_price_levels()
-            .withf(|query| query.hub_id == 1)
+            .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
@@ -1910,7 +1911,7 @@ mod tests {
         let mut price_level_reader = MockPriceLevelReader::new();
         price_level_reader
             .expect_list_price_levels()
-            .withf(|query| query.hub_id == 1)
+            .withf(|query| query.hub_id.get() == 1)
             .return_once(|_| Ok((0, Vec::new())));
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
@@ -1945,7 +1946,7 @@ mod tests {
         let mut price_level_reader = MockPriceLevelReader::new();
         price_level_reader
             .expect_list_price_levels()
-            .withf(|query| query.hub_id == 1)
+            .withf(|query| query.hub_id.get() == 1)
             .return_once(|_| Ok((0, Vec::new())));
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);

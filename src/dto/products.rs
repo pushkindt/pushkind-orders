@@ -127,7 +127,7 @@ impl ProductPriceLevelView {
 
         Some(Self {
             price_level_id: rate.price_level_id.get(),
-            price_level_name: level.name.clone(),
+            price_level_name: level.name.as_str().to_string(),
             price_cents: rate.price_cents.get(),
             price_formatted,
         })

@@ -8,7 +8,7 @@ use pushkind_orders::domain::{
     price_level::{NewPriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
-    types::{CategoryName, HubId, PriceCents, PriceLevelId, ProductId},
+    types::{CategoryName, HubId, PriceCents, PriceLevelName, ProductId},
     user::{NewUser, UpdateUser},
 };
 use pushkind_orders::models::category::NewCategory as DbNewCategory;
@@ -113,7 +113,7 @@ fn test_customer_repository_crud() {
     let repo = DieselRepository::new(test_db.pool());
 
     let vip_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "VIP", false))
+        .create_price_level(&NewPriceLevel::try_new(1, "VIP", false).unwrap())
         .expect("failed to create price level");
 
     let alice_new = NewCustomer::try_new(1, "Alice", "+15551234")
@@ -203,31 +203,25 @@ fn test_customer_repository_crud() {
     assert_eq!(total_filtered, 1);
     assert_eq!(customers_filtered[0].id, bob.id);
 
-    repo.assign_price_level_to_customers(1, &[alice.id.into()], Some(vip_level.id))
+    repo.assign_price_level_to_customers(1, &[alice.id.into()], Some(vip_level.id.get()))
         .expect("failed to assign price level");
 
     let (total_vip, vip_customers) = repo
         .list_customers(
             CustomerListQuery::try_new(1)
                 .expect("valid hub")
-                .price_level(PriceLevelId::new(vip_level.id).unwrap()),
+                .price_level(vip_level.id),
         )
         .expect("failed to list vip customers");
     assert_eq!(total_vip, 1);
     assert_eq!(vip_customers[0].id, alice.id);
-    assert_eq!(
-        vip_customers[0].price_level_id.as_ref().map(|id| id.get()),
-        Some(vip_level.id)
-    );
+    assert_eq!(vip_customers[0].price_level_id, Some(vip_level.id));
 
     let updated = repo
         .get_customer_by_id(alice.id.into(), 1)
         .expect("failed to fetch after assignment")
         .expect("expected Alice after assignment");
-    assert_eq!(
-        updated.price_level_id.as_ref().map(|id| id.get()),
-        Some(vip_level.id)
-    );
+    assert_eq!(updated.price_level_id, Some(vip_level.id));
 
     repo.assign_price_level_to_customers(1, &[alice.id.into()], None)
         .expect("failed to clear price level");
@@ -239,12 +233,12 @@ fn test_customer_repository_crud() {
     assert_eq!(cleared.price_level_id, None);
 
     let err = repo
-        .assign_price_level_to_customers(1, &[9999], Some(vip_level.id))
+        .assign_price_level_to_customers(1, &[9999], Some(vip_level.id.get()))
         .expect_err("expected assigning missing customer to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 
     let err = repo
-        .assign_price_level_to_customers(2, &[carla.id.into()], Some(vip_level.id))
+        .assign_price_level_to_customers(2, &[carla.id.into()], Some(vip_level.id.get()))
         .expect_err("expected cross-hub price level to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 }
@@ -386,10 +380,10 @@ fn test_replace_product_price_levels() {
     let repo = DieselRepository::new(test_db.pool());
 
     let retail_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Retail", false))
+        .create_price_level(&NewPriceLevel::try_new(1, "Retail", false).unwrap())
         .expect("failed to create price level");
     let wholesale_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Wholesale", false))
+        .create_price_level(&NewPriceLevel::try_new(1, "Wholesale", false).unwrap())
         .expect("failed to create price level");
 
     let product = repo
@@ -399,12 +393,12 @@ fn test_replace_product_price_levels() {
     let rates = vec![
         NewProductPriceLevelRate::new(
             ProductId::new(product.id).unwrap(),
-            PriceLevelId::new(retail_level.id).unwrap(),
+            retail_level.id,
             PriceCents::new(1250).unwrap(),
         ),
         NewProductPriceLevelRate::new(
             ProductId::new(product.id).unwrap(),
-            PriceLevelId::new(wholesale_level.id).unwrap(),
+            wholesale_level.id,
             PriceCents::new(990).unwrap(),
         ),
     ];
@@ -422,15 +416,9 @@ fn test_replace_product_price_levels() {
         .sort_by_key(|rate| rate.price_level_id.get());
 
     assert_eq!(fetched.price_levels.len(), 2);
-    assert_eq!(
-        fetched.price_levels[0].price_level_id.get(),
-        retail_level.id
-    );
+    assert_eq!(fetched.price_levels[0].price_level_id, retail_level.id);
     assert_eq!(fetched.price_levels[0].price_cents.get(), 1250);
-    assert_eq!(
-        fetched.price_levels[1].price_level_id.get(),
-        wholesale_level.id
-    );
+    assert_eq!(fetched.price_levels[1].price_level_id, wholesale_level.id);
     assert_eq!(fetched.price_levels[1].price_cents.get(), 990);
 
     let err = repo
@@ -444,8 +432,16 @@ fn test_price_level_repository_crud() {
     let test_db = common::TestDb::new("test_price_level_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    let bronze_new = NewPriceLevel::new(1, "Bronze", false);
-    let silver_new = NewPriceLevel::new(1, "Silver", false);
+    let bronze_new = NewPriceLevel::new(
+        HubId::new(1).unwrap(),
+        PriceLevelName::new("Bronze").unwrap(),
+        false,
+    );
+    let silver_new = NewPriceLevel::new(
+        HubId::new(1).unwrap(),
+        PriceLevelName::new("Silver").unwrap(),
+        false,
+    );
 
     let bronze = repo
         .create_price_level(&bronze_new)
@@ -454,8 +450,8 @@ fn test_price_level_repository_crud() {
         .create_price_level(&silver_new)
         .expect("failed to create silver level");
 
-    assert_eq!(bronze.name, "Bronze");
-    assert_eq!(silver.name, "Silver");
+    assert_eq!(bronze.name.as_str(), "Bronze");
+    assert_eq!(silver.name.as_str(), "Silver");
     assert!(
         bronze.is_default,
         "first price level should default to true"
@@ -466,64 +462,59 @@ fn test_price_level_repository_crud() {
     );
 
     let fetched = repo
-        .get_price_level_by_id(bronze.id, 1)
+        .get_price_level_by_id(bronze.id.get(), 1)
         .expect("failed to fetch by id")
         .expect("expected bronze price level");
     assert_eq!(fetched.id, bronze.id);
-    assert_eq!(fetched.name, "Bronze");
+    assert_eq!(fetched.name.as_str(), "Bronze");
 
     assert!(
-        repo.get_price_level_by_id(bronze.id, 2)
+        repo.get_price_level_by_id(bronze.id.get(), 2)
             .expect("failed to fetch cross-hub")
             .is_none()
     );
 
     let (total_all, levels_all) = repo
-        .list_price_levels(PriceLevelListQuery::new(1))
+        .list_price_levels(PriceLevelListQuery::try_new(1).unwrap())
         .expect("failed to list price levels");
     assert_eq!(total_all, 2);
     assert_eq!(levels_all.len(), 2);
 
     let (total_search, levels_search) = repo
-        .list_price_levels(PriceLevelListQuery::new(1).search("Sil"))
+        .list_price_levels(PriceLevelListQuery::try_new(1).unwrap().search("Sil"))
         .expect("failed to search price levels");
     assert_eq!(total_search, 1);
     assert_eq!(levels_search[0].id, silver.id);
 
-    let updates = UpdatePriceLevel {
-        name: "Gold".to_string(),
-        updated_at: chrono::Utc::now().naive_utc(),
-        is_default: false,
-    };
+    let updates = UpdatePriceLevel::new(PriceLevelName::new("Gold").unwrap(), false);
 
     let updated = repo
-        .update_price_level(bronze.id, 1, &updates)
+        .update_price_level(bronze.id.get(), 1, &updates)
         .expect("failed to update price level");
-    assert_eq!(updated.name, "Gold");
+    assert_eq!(updated.name.as_str(), "Gold");
 
-    let mut cross_hub_updates = updates.clone();
-    cross_hub_updates.name = "Intruder".to_string();
+    let cross_hub_updates = UpdatePriceLevel::new(PriceLevelName::new("Intruder").unwrap(), false);
 
     let err = repo
-        .update_price_level(bronze.id, 2, &cross_hub_updates)
+        .update_price_level(bronze.id.get(), 2, &cross_hub_updates)
         .expect_err("expected cross-hub update failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
     let err = repo
-        .delete_price_level(bronze.id, 2)
+        .delete_price_level(bronze.id.get(), 2)
         .expect_err("expected cross-hub delete failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
-    repo.delete_price_level(bronze.id, 1)
+    repo.delete_price_level(bronze.id.get(), 1)
         .expect("failed to delete price level");
     assert!(
-        repo.get_price_level_by_id(bronze.id, 1)
+        repo.get_price_level_by_id(bronze.id.get(), 1)
             .expect("failed to fetch after delete")
             .is_none()
     );
 
     let (total_final, levels_final) = repo
-        .list_price_levels(PriceLevelListQuery::new(1))
+        .list_price_levels(PriceLevelListQuery::try_new(1).unwrap())
         .expect("failed to list after delete");
     assert_eq!(total_final, 1);
     assert_eq!(levels_final[0].id, silver.id);
@@ -535,10 +526,10 @@ fn updating_price_level_default_resets_previous_default() {
     let repo = DieselRepository::new(test_db.pool());
 
     let original_default = repo
-        .create_price_level(&NewPriceLevel::new(1, "Default", false))
+        .create_price_level(&NewPriceLevel::try_new(1, "Default", false).unwrap())
         .expect("failed to create initial default level");
     let secondary = repo
-        .create_price_level(&NewPriceLevel::new(1, "Secondary", false))
+        .create_price_level(&NewPriceLevel::try_new(1, "Secondary", false).unwrap())
         .expect("failed to create secondary level");
 
     assert!(
@@ -557,13 +548,13 @@ fn updating_price_level_default_resets_previous_default() {
     };
 
     let updated = repo
-        .update_price_level(secondary.id, 1, &updates)
+        .update_price_level(secondary.id.get(), 1, &updates)
         .expect("failed to promote second level to default");
 
     assert!(updated.is_default, "expected updated level to be default");
 
     let demoted = repo
-        .get_price_level_by_id(original_default.id, 1)
+        .get_price_level_by_id(original_default.id.get(), 1)
         .expect("failed to fetch original default")
         .expect("expected original level to exist after update");
 
@@ -585,7 +576,7 @@ fn deleting_price_level_removes_product_rates() {
         .create_product(&NewProduct::new(1, "Cascade Product", "USD"))
         .expect("failed to create product");
     let price_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Cascade Level", false))
+        .create_price_level(&NewPriceLevel::try_new(1, "Cascade Level", false).unwrap())
         .expect("failed to create price level");
 
     {
@@ -596,7 +587,7 @@ fn deleting_price_level_removes_product_rates() {
 
         let new_rate = DbNewProductPriceLevel {
             product_id: product.id,
-            price_level_id: price_level.id,
+            price_level_id: price_level.id.get(),
             price_cents: 1950,
         };
 
@@ -606,14 +597,14 @@ fn deleting_price_level_removes_product_rates() {
             .expect("failed to insert product price level");
 
         let existing: i64 = product_rates::product_price_levels
-            .filter(product_rates::price_level_id.eq(price_level.id))
+            .filter(product_rates::price_level_id.eq(price_level.id.get()))
             .count()
             .get_result(&mut conn)
             .expect("failed to count inserted rates");
         assert_eq!(existing, 1);
     }
 
-    repo.delete_price_level(price_level.id, 1)
+    repo.delete_price_level(price_level.id.get(), 1)
         .expect("failed to delete price level");
 
     {

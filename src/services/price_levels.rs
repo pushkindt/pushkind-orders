@@ -27,7 +27,8 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
-    let mut list_query = PriceLevelListQuery::new(user.hub_id);
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let mut list_query = PriceLevelListQuery::new(hub_id);
 
     if let Some(value) = query.search.as_ref() {
         list_query = list_query.search(value);
@@ -55,16 +56,16 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+
     let (_, price_levels) = repo
-        .list_price_levels(PriceLevelListQuery::new(user.hub_id))
+        .list_price_levels(PriceLevelListQuery::new(hub_id))
         .map_err(ServiceError::from)?;
 
     let default_price_level_id = price_levels
         .iter()
         .find(|level| level.is_default)
-        .map(|level| level.id);
-
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+        .map(|level| level.id.get());
 
     let (_, customers) = repo
         .list_customers(CustomerListQuery::new(hub_id))
@@ -205,7 +206,7 @@ mod tests {
     use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer};
     use crate::domain::price_level::PriceLevel;
     use crate::domain::types::{
-        CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, UserEmail,
+        CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, PriceLevelName, UserEmail,
     };
     use crate::dto::price_levels::{ClientPriceLevelAssignment, PriceLevelsQuery};
     use crate::forms::price_levels::{AddPriceLevelForm, AssignClientPriceLevelPayload};
@@ -280,9 +281,9 @@ mod tests {
 
     fn sample_level(id: i32, hub_id: i32, name: &str) -> PriceLevel {
         PriceLevel {
-            id,
-            hub_id,
-            name: name.to_string(),
+            id: PriceLevelId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: PriceLevelName::new(name).unwrap(),
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
             is_default: false,
@@ -334,7 +335,7 @@ mod tests {
         repo.expect_list_price_levels()
             .times(1)
             .withf(move |query| {
-                assert_eq!(query.hub_id, expected_hub);
+                assert_eq!(query.hub_id.get(), expected_hub);
                 assert_eq!(query.search.as_deref(), Some("sil"));
                 true
             })
@@ -385,14 +386,16 @@ mod tests {
         let expected_hub = user.hub_id;
         repo.expect_create_price_level()
             .times(1)
-            .withf(move |payload| payload.hub_id == expected_hub && payload.name == "Retail")
+            .withf(move |payload| {
+                payload.hub_id.get() == expected_hub && payload.name.as_str() == "Retail"
+            })
             .returning(move |_| Ok(sample_level(5, expected_hub, "Retail")));
 
         let result = create_price_level(&repo, &user, form).expect("expected success");
 
-        assert_eq!(result.id, 5);
-        assert_eq!(result.hub_id, expected_hub);
-        assert_eq!(result.name, "Retail");
+        assert_eq!(result.id.get(), 5);
+        assert_eq!(result.hub_id.get(), expected_hub);
+        assert_eq!(result.name.as_str(), "Retail");
     }
 
     #[test]
@@ -446,15 +449,15 @@ mod tests {
             .withf(move |id, hub, updates| {
                 *id == 7
                     && *hub == expected_hub
-                    && updates.name == "Retail Plus"
+                    && updates.name.as_str() == "Retail Plus"
                     && updates.is_default
             })
             .return_once(move |_, _, _| Ok(sample_level(7, expected_hub, "Retail Plus")));
 
         let result = update_price_level(&repo, &user, 7, form).expect("expected success");
 
-        assert_eq!(result.id, 7);
-        assert_eq!(result.name, "Retail Plus");
+        assert_eq!(result.id.get(), 7);
+        assert_eq!(result.name.as_str(), "Retail Plus");
     }
 
     #[test]
@@ -575,7 +578,7 @@ mod tests {
 
         repo.price_level_reader
             .expect_list_price_levels()
-            .withf(move |query| query.hub_id == hub_id)
+            .withf(move |query| query.hub_id.get() == hub_id)
             .returning(move |_| {
                 Ok((
                     2,

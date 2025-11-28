@@ -204,8 +204,10 @@ impl AddProductForm {
         sanitized_tags.sort_unstable();
         sanitized_tags.dedup();
 
-        let price_level_map: HashMap<i32, &PriceLevel> =
-            price_levels.iter().map(|level| (level.id, level)).collect();
+        let price_level_map: HashMap<i32, &PriceLevel> = price_levels
+            .iter()
+            .map(|level| (level.id.get(), level))
+            .collect();
 
         let mut parsed_price_levels = Vec::new();
         for entry in price_level_entries {
@@ -225,13 +227,13 @@ impl AddProductForm {
 
             let price_cents = parse_price_to_cents(trimmed).ok_or_else(|| {
                 ProductFormError::InvalidPriceLevelAmount {
-                    price_level: price_level.name.clone(),
+                    price_level: price_level.name.as_str().to_string(),
                     value: raw_price.to_string(),
                 }
             })?;
 
             parsed_price_levels.push(NewProductUploadPriceLevel {
-                price_level_id: price_level.id,
+                price_level_id: price_level.id.get(),
                 price_cents,
             });
         }
@@ -382,13 +384,13 @@ impl UploadProductsForm {
                 let price_cents = parse_price_to_cents(value).ok_or_else(|| {
                     ProductFormError::UploadInvalidPrice {
                         row: row_number,
-                        price_level: column.price_level.name.clone(),
+                        price_level: column.price_level.name.as_str().to_string(),
                         value: value.to_string(),
                     }
                 })?;
 
                 parsed_price_levels.push(NewProductUploadPriceLevel {
-                    price_level_id: column.price_level.id,
+                    price_level_id: column.price_level.id.get(),
                     price_cents,
                 });
             }
@@ -533,8 +535,10 @@ impl EditProductForm {
         sanitized_tags.sort_unstable();
         sanitized_tags.dedup();
 
-        let price_level_map: HashMap<i32, &PriceLevel> =
-            price_levels.iter().map(|level| (level.id, level)).collect();
+        let price_level_map: HashMap<i32, &PriceLevel> = price_levels
+            .iter()
+            .map(|level| (level.id.get(), level))
+            .collect();
         let mut parsed_price_levels = Vec::new();
         for entry in price_level_entries {
             entry.validate()?;
@@ -556,13 +560,13 @@ impl EditProductForm {
 
             let price_cents = parse_price_to_cents(trimmed).ok_or_else(|| {
                 ProductFormError::InvalidPriceLevelAmount {
-                    price_level: price_level.name.clone(),
+                    price_level: price_level.name.as_str().to_string(),
                     value: raw_price.to_string(),
                 }
             })?;
 
             parsed_price_levels.push(NewProductUploadPriceLevel {
-                price_level_id: price_level.id,
+                price_level_id: price_level.id.get(),
                 price_cents,
             });
         }
@@ -680,6 +684,7 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use crate::domain::price_level::PriceLevel;
+    use crate::domain::types::{HubId, PriceLevelId, PriceLevelName};
 
     #[test]
     fn add_product_form_converts_successfully() {
@@ -940,9 +945,9 @@ Banana,usd,,Ripe banana,,8.50,
             .naive_utc();
 
         PriceLevel {
-            id,
-            hub_id: 1,
-            name: name.to_string(),
+            id: PriceLevelId::new(id).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: PriceLevelName::new(name).unwrap(),
             created_at: epoch,
             updated_at: epoch,
             is_default: false,

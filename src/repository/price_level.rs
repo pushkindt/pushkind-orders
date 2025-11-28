@@ -6,12 +6,17 @@ use crate::{
         NewPriceLevel as DomainNewPriceLevel, PriceLevel as DomainPriceLevel, PriceLevelListQuery,
         UpdatePriceLevel as DomainUpdatePriceLevel,
     },
+    domain::types::TypeConstraintError,
     models::price_level::{
         NewPriceLevel as DbNewPriceLevel, PriceLevel as DbPriceLevel,
         UpdatePriceLevel as DbUpdatePriceLevel,
     },
     repository::{DieselRepository, PriceLevelReader, PriceLevelWriter},
 };
+
+fn map_type_error(err: TypeConstraintError) -> RepositoryError {
+    RepositoryError::Unexpected(format!("Invalid price level data: {err}"))
+}
 
 impl PriceLevelReader for DieselRepository {
     fn get_price_level_by_id(
@@ -28,7 +33,10 @@ impl PriceLevelReader for DieselRepository {
             .first::<DbPriceLevel>(&mut conn)
             .optional()?;
 
-        Ok(price_level.map(Into::into))
+        price_level
+            .map(DomainPriceLevel::try_from)
+            .transpose()
+            .map_err(map_type_error)
     }
 
     fn list_price_levels(
@@ -41,7 +49,7 @@ impl PriceLevelReader for DieselRepository {
 
         let query_builder = || {
             let mut items = price_levels::table
-                .filter(price_levels::hub_id.eq(query.hub_id))
+                .filter(price_levels::hub_id.eq(query.hub_id.get()))
                 .into_boxed::<diesel::sqlite::Sqlite>();
 
             if let Some(term) = query.search.as_ref() {
@@ -69,7 +77,14 @@ impl PriceLevelReader for DieselRepository {
             return Ok((total, Vec::new()));
         }
 
-        Ok((total, db_price_levels.into_iter().map(Into::into).collect()))
+        Ok((
+            total,
+            db_price_levels
+                .into_iter()
+                .map(DomainPriceLevel::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_type_error)?,
+        ))
     }
 }
 
@@ -81,11 +96,11 @@ impl PriceLevelWriter for DieselRepository {
         use crate::schema::price_levels;
 
         let mut conn = self.conn()?;
-        conn.transaction(|conn| {
+        let created = conn.transaction::<DbPriceLevel, diesel::result::Error, _>(|conn| {
             let mut db_new = DbNewPriceLevel::from(new_price_level);
 
             let existing_count = price_levels::table
-                .filter(price_levels::hub_id.eq(new_price_level.hub_id))
+                .filter(price_levels::hub_id.eq(new_price_level.hub_id.get()))
                 .count()
                 .get_result::<i64>(conn)?;
 
@@ -93,13 +108,12 @@ impl PriceLevelWriter for DieselRepository {
                 db_new.is_default = true;
             }
 
-            let created = diesel::insert_into(price_levels::table)
+            diesel::insert_into(price_levels::table)
                 .values(&db_new)
-                .get_result::<DbPriceLevel>(conn)?;
+                .get_result::<DbPriceLevel>(conn)
+        })?;
 
-            Ok::<DomainPriceLevel, diesel::result::Error>(created.into())
-        })
-        .map_err(Into::into)
+        DomainPriceLevel::try_from(created).map_err(map_type_error)
     }
 
     fn update_price_level(
@@ -112,7 +126,7 @@ impl PriceLevelWriter for DieselRepository {
 
         let mut conn = self.conn()?;
 
-        conn.transaction(|conn| {
+        let updated = conn.transaction::<DbPriceLevel, diesel::result::Error, _>(|conn| {
             let db_updates = DbUpdatePriceLevel::from(updates);
 
             let target = price_levels::table
@@ -133,9 +147,10 @@ impl PriceLevelWriter for DieselRepository {
                 .execute(conn)?;
             }
 
-            Ok::<DomainPriceLevel, diesel::result::Error>(updated.into())
-        })
-        .map_err(Into::into)
+            Ok(updated)
+        })?;
+
+        DomainPriceLevel::try_from(updated).map_err(map_type_error)
     }
 
     fn delete_price_level(&self, price_level_id: i32, hub_id: i32) -> RepositoryResult<()> {
