@@ -3,8 +3,8 @@ use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::customer::{CustomerListQuery, NewCustomer};
-use crate::domain::types::{HubId, PriceLevelId};
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
+use crate::domain::types::{HubId, PriceLevelId};
 use crate::dto::price_levels::{
     ClientPriceLevelAssignment, ClientPriceLevelAssignments, PriceLevelsPageData, PriceLevelsQuery,
 };
@@ -194,7 +194,7 @@ where
         &[customer.id.into()],
         assignment.price_level_id,
     )
-        .map_err(ServiceError::from)
+    .map_err(ServiceError::from)
 }
 
 #[cfg(test)]
@@ -204,15 +204,15 @@ mod tests {
 
     use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer};
     use crate::domain::price_level::PriceLevel;
+    use crate::domain::types::{
+        CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, UserEmail,
+    };
     use crate::dto::price_levels::{ClientPriceLevelAssignment, PriceLevelsQuery};
     use crate::forms::price_levels::{AddPriceLevelForm, AssignClientPriceLevelPayload};
     use crate::repository::mock::{
         MockCustomerReader, MockCustomerWriter, MockPriceLevelReader, MockPriceLevelWriter,
     };
     use crate::repository::{CustomerReader, CustomerWriter};
-    use crate::domain::types::{
-        CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, UserEmail,
-    };
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
     struct CombinedCustomerRepo {
@@ -296,8 +296,7 @@ mod tests {
             name: CustomerName::new(&format!("Customer {id}")).unwrap(),
             email: Some(UserEmail::new(&format!("customer{id}@example.com")).unwrap()),
             phone: PhoneNumber::new(&format!("+100000{id}")).unwrap(),
-            price_level_id: price_level_id
-                .map(|value| PriceLevelId::new(value).unwrap()),
+            price_level_id: price_level_id.map(|value| PriceLevelId::new(value).unwrap()),
         }
     }
 
@@ -735,15 +734,11 @@ mod tests {
             .times(1)
             .withf(move |new_customer| {
                 new_customer.hub_id.get() == hub_id
-                    && new_customer
-                        .email
-                        .as_ref()
-                        .map(|email| email.as_str())
+                    && new_customer.email.as_ref().map(|email| email.as_str())
                         == Some("missing@example.com")
                     && new_customer.name.as_str() == "Missing User"
                     && new_customer.phone.as_str() == "+1999000"
-                    && new_customer.price_level_id
-                        == Some(PriceLevelId::new(1).unwrap())
+                    && new_customer.price_level_id == Some(PriceLevelId::new(1).unwrap())
             })
             .returning(move |new_customer| {
                 Ok(Customer {

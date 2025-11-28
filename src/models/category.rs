@@ -5,6 +5,9 @@ use crate::domain::category::{
     Category as DomainCategory, NewCategory as DomainNewCategory,
     UpdateCategory as DomainUpdateCategory,
 };
+use crate::domain::types::{
+    CategoryDescription, CategoryId, CategoryName, HubId, ImageUrl, TypeConstraintError,
+};
 
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::categories)]
@@ -40,30 +43,35 @@ pub struct UpdateCategory<'a> {
     pub image_url: Option<&'a str>,
 }
 
-impl From<Category> for DomainCategory {
-    fn from(value: Category) -> Self {
-        Self {
-            id: value.id,
-            hub_id: value.hub_id,
-            parent_id: value.parent_id,
-            name: value.name,
-            description: value.description,
+impl TryFrom<Category> for DomainCategory {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: Category) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: CategoryId::new(value.id)?,
+            hub_id: HubId::new(value.hub_id)?,
+            parent_id: value.parent_id.map(CategoryId::new).transpose()?,
+            name: CategoryName::new(value.name)?,
+            description: value
+                .description
+                .map(CategoryDescription::new)
+                .transpose()?,
             is_archived: value.is_archived,
             created_at: value.created_at,
             updated_at: value.updated_at,
-            image_url: value.image_url,
-        }
+            image_url: value.image_url.map(ImageUrl::new).transpose()?,
+        })
     }
 }
 
 impl<'a> From<&'a DomainNewCategory> for NewCategory<'a> {
     fn from(value: &'a DomainNewCategory) -> Self {
         Self {
-            hub_id: value.hub_id,
-            parent_id: value.parent_id,
+            hub_id: value.hub_id.get(),
+            parent_id: value.parent_id.map(|id| id.get()),
             name: value.name.as_str(),
-            description: value.description.as_deref(),
-            image_url: value.image_url.as_deref(),
+            description: value.description.as_ref().map(|value| value.as_str()),
+            image_url: value.image_url.as_ref().map(|value| value.as_str()),
         }
     }
 }
@@ -74,8 +82,8 @@ impl<'a> From<&'a DomainUpdateCategory> for UpdateCategory<'a> {
             is_archived: value.is_archived,
             updated_at: value.updated_at,
             name: value.name.as_str(),
-            description: value.description.as_deref(),
-            image_url: value.image_url.as_deref(),
+            description: value.description.as_ref().map(|value| value.as_str()),
+            image_url: value.image_url.as_ref().map(|value| value.as_str()),
         }
     }
 }

@@ -80,6 +80,7 @@ id_newtype!(ProductTagId);
 id_newtype!(ProductId);
 id_newtype!(CustomerId);
 id_newtype!(PriceLevelId);
+id_newtype!(CategoryId);
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Lower-cased and validated email address.
@@ -305,6 +306,126 @@ impl CustomerName {
 
     pub fn into_inner(self) -> String {
         self.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Category name wrapper enforcing non-empty values.
+pub struct CategoryName(String);
+
+impl CategoryName {
+    /// Constructs a category name that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let name = NonEmptyString::new(value)?;
+        Ok(Self(name.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for CategoryName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for CategoryName {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for CategoryName {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<CategoryName> for String {
+    fn from(value: CategoryName) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Optional descriptive text for categories.
+pub struct CategoryDescription(String);
+
+impl CategoryDescription {
+    /// Constructs a description that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let description = NonEmptyString::new(value)?;
+        Ok(Self(description.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl TryFrom<String> for CategoryDescription {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for CategoryDescription {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Validated image URL wrapper.
+pub struct ImageUrl(String);
+
+impl ImageUrl {
+    /// Constructs an image URL that is trimmed and non-empty.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let url = NonEmptyString::new(value)?;
+        Ok(Self(url.into_inner()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl TryFrom<String> for ImageUrl {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for ImageUrl {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
     }
 }
 

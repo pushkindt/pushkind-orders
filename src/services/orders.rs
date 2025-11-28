@@ -40,11 +40,11 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
 
+    use crate::domain::types::{CustomerId, CustomerName, HubId, PhoneNumber, UserEmail};
     use crate::domain::{
         customer::Customer,
         order::{Order, OrderProduct, OrderStatus},
     };
-    use crate::domain::types::{CustomerId, CustomerName, HubId, PhoneNumber, UserEmail};
     use crate::repository::mock::{MockCustomerReader, MockOrderReader};
     use pushkind_common::repository::errors::RepositoryResult;
 

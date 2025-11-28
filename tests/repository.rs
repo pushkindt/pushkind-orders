@@ -8,8 +8,8 @@ use pushkind_orders::domain::{
     price_level::{NewPriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
+    types::{CategoryName, HubId, PriceLevelId},
     user::{NewUser, UpdateUser},
-    types::PriceLevelId,
 };
 use pushkind_orders::models::category::NewCategory as DbNewCategory;
 use pushkind_orders::models::product_price_level::NewProductPriceLevel as DbNewProductPriceLevel;
@@ -194,7 +194,11 @@ fn test_customer_repository_crud() {
     assert_eq!(customers_all.len(), 2);
 
     let (total_filtered, customers_filtered) = repo
-        .list_customers(CustomerListQuery::try_new(1).expect("valid hub").search("bob"))
+        .list_customers(
+            CustomerListQuery::try_new(1)
+                .expect("valid hub")
+                .search("bob"),
+        )
         .expect("failed to search customers");
     assert_eq!(total_filtered, 1);
     assert_eq!(customers_filtered[0].id, bob.id);
@@ -212,10 +216,7 @@ fn test_customer_repository_crud() {
     assert_eq!(total_vip, 1);
     assert_eq!(vip_customers[0].id, alice.id);
     assert_eq!(
-        vip_customers[0]
-            .price_level_id
-            .as_ref()
-            .map(|id| id.get()),
+        vip_customers[0].price_level_id.as_ref().map(|id| id.get()),
         Some(vip_level.id)
     );
 
@@ -254,7 +255,8 @@ fn test_product_repository_crud() {
     let repo = DieselRepository::new(test_db.pool());
 
     let mut conn = test_db.pool().get().expect("obtain connection");
-    let category_domain = DomainNewCategory::new(1, "Fruit");
+    let category_domain =
+        DomainNewCategory::new(HubId::new(1).unwrap(), CategoryName::new("Fruit").unwrap());
     let db_category = DbNewCategory::from(&category_domain);
     let category_id: i32 = diesel::insert_into(categories::table)
         .values(&db_category)

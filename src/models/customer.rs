@@ -42,15 +42,9 @@ impl TryFrom<Customer> for DomainCustomer {
             id: CustomerId::new(value.id)?,
             hub_id: HubId::new(value.hub_id)?,
             name: CustomerName::new(value.name)?,
-            email: value
-                .email
-                .map(UserEmail::new)
-                .transpose()?,
+            email: value.email.map(UserEmail::new).transpose()?,
             phone: PhoneNumber::new(value.phone)?,
-            price_level_id: value
-                .price_level_id
-                .map(PriceLevelId::new)
-                .transpose()?,
+            price_level_id: value.price_level_id.map(PriceLevelId::new).transpose()?,
         })
     }
 }

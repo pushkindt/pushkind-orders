@@ -7,10 +7,15 @@ use crate::domain::category::{
     Category as DomainCategory, CategoryTreeQuery, NewCategory as DomainNewCategory,
     UpdateCategory as DomainUpdateCategory,
 };
+use crate::domain::types::TypeConstraintError;
 use crate::models::category::{
     Category as DbCategory, NewCategory as DbNewCategory, UpdateCategory,
 };
 use crate::repository::{CategoryReader, CategoryWriter, DieselRepository};
+
+fn map_type_error(err: TypeConstraintError) -> RepositoryError {
+    RepositoryError::Unexpected(format!("Invalid category data: {err}"))
+}
 
 impl CategoryReader for DieselRepository {
     fn list_categories(
@@ -23,7 +28,7 @@ impl CategoryReader for DieselRepository {
 
         let query_builder = || {
             let mut items = categories::table
-                .filter(categories::hub_id.eq(query.hub_id))
+                .filter(categories::hub_id.eq(query.hub_id.get()))
                 .into_boxed::<diesel::sqlite::Sqlite>();
 
             if !query.include_archived {
@@ -54,7 +59,11 @@ impl CategoryReader for DieselRepository {
         }
 
         let categories = items_query.load::<DbCategory>(&mut conn)?;
-        let categories = categories.into_iter().map(DomainCategory::from).collect();
+        let categories = categories
+            .into_iter()
+            .map(DomainCategory::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_type_error)?;
 
         Ok((total, categories))
     }
@@ -74,7 +83,12 @@ impl CategoryReader for DieselRepository {
             .first::<DbCategory>(&mut conn)
             .optional()?;
 
-        Ok(category.map(DomainCategory::from))
+        let category = category
+            .map(DomainCategory::try_from)
+            .transpose()
+            .map_err(map_type_error)?;
+
+        Ok(category)
     }
 
     fn get_category_by_name_and_parent(
@@ -98,7 +112,11 @@ impl CategoryReader for DieselRepository {
         }
 
         let category = query.first::<DbCategory>(&mut conn).optional()?;
-        Ok(category.map(DomainCategory::from))
+        let category = category
+            .map(DomainCategory::try_from)
+            .transpose()
+            .map_err(map_type_error)?;
+        Ok(category)
     }
 }
 
@@ -112,7 +130,7 @@ impl CategoryWriter for DieselRepository {
         let mut conn = self.conn()?;
 
         if let Some(parent_id) = new_category.parent_id {
-            ensure_category_with_hub(&mut conn, new_category.hub_id, parent_id)?;
+            ensure_category_with_hub(&mut conn, new_category.hub_id.get(), parent_id.get())?;
         }
 
         let insertable = DbNewCategory::from(new_category);
@@ -121,7 +139,7 @@ impl CategoryWriter for DieselRepository {
             .values(&insertable)
             .get_result::<DbCategory>(&mut conn)?;
 
-        Ok(created.into())
+        DomainCategory::try_from(created).map_err(map_type_error)
     }
 
     fn update_category(
@@ -144,7 +162,7 @@ impl CategoryWriter for DieselRepository {
             .set(&db_updates)
             .get_result::<DbCategory>(&mut conn)?;
 
-        Ok(updated.into())
+        DomainCategory::try_from(updated).map_err(map_type_error)
     }
 
     fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()> {

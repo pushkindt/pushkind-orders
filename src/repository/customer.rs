@@ -3,8 +3,8 @@ use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
-    domain::types::TypeConstraintError,
     domain::customer::{Customer as DomainCustomer, NewCustomer as DomainNewCustomer},
+    domain::types::TypeConstraintError,
     models::customer::{Customer as DbCustomer, NewCustomer as DbNewCustomer},
     repository::{CustomerListQuery, CustomerReader, CustomerWriter, DieselRepository},
 };
@@ -24,10 +24,10 @@ impl CustomerReader for DieselRepository {
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
-        Ok(customer
+        customer
             .map(DomainCustomer::try_from)
             .transpose()
-            .map_err(map_type_error)?)
+            .map_err(map_type_error)
     }
 
     fn get_customer_by_email(
@@ -46,10 +46,10 @@ impl CustomerReader for DieselRepository {
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
-        Ok(customer
+        customer
             .map(DomainCustomer::try_from)
             .transpose()
-            .map_err(map_type_error)?)
+            .map_err(map_type_error)
     }
 
     fn get_customer_by_phone(
@@ -68,10 +68,10 @@ impl CustomerReader for DieselRepository {
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
-        Ok(customer
+        customer
             .map(DomainCustomer::try_from)
             .transpose()
-            .map_err(map_type_error)?)
+            .map_err(map_type_error)
     }
 
     fn list_customers(

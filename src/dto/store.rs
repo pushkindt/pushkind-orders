@@ -31,11 +31,11 @@ pub struct StoreCategory {
 impl From<Category> for StoreCategory {
     fn from(value: Category) -> Self {
         Self {
-            id: value.id,
-            parent_id: value.parent_id,
-            name: value.name,
-            description: value.description,
-            image_url: value.image_url,
+            id: value.id.get(),
+            parent_id: value.parent_id.map(|id| id.get()),
+            name: value.name.as_str().to_string(),
+            description: value.description.map(|desc| desc.as_str().to_string()),
+            image_url: value.image_url.map(|url| url.as_str().to_string()),
         }
     }
 }

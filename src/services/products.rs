@@ -11,6 +11,7 @@ use crate::domain::{
     product::{Product, ProductListQuery},
     product_price_level::NewProductPriceLevelRate,
     tag::TagListQuery,
+    types::HubId,
 };
 use crate::dto::products::{ProductView, ProductsPageData, ProductsQuery};
 use crate::forms::products::{
@@ -53,19 +54,20 @@ where
     }
 
     let (total, items) = repo.list_products(list_query).map_err(ServiceError::from)?;
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
     let (_, price_levels) = repo
         .list_price_levels(PriceLevelListQuery::new(user.hub_id))
         .map_err(ServiceError::from)?;
 
     let (_, mut categories) = repo
-        .list_categories(CategoryTreeQuery::new(user.hub_id))
+        .list_categories(CategoryTreeQuery::new(hub_id))
         .map_err(ServiceError::from)?;
     let category_lookup: HashMap<i32, String> = categories
         .iter()
-        .map(|category| (category.id, category.name.clone()))
+        .map(|category| (category.id.get(), category.name.as_str().to_string()))
         .collect();
     categories.retain(|category| !category.is_archived);
-    categories.sort_by(|a, b| a.name.cmp(&b.name));
+    categories.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
     let tag_query = TagListQuery::try_new(user.hub_id).map_err(|_| ServiceError::Internal)?;
     let (_, mut tags) = repo.list_tags(tag_query).map_err(ServiceError::from)?;
@@ -224,7 +226,7 @@ where
 
     if let Some(category) = category {
         let category = create_category_chain(&category, product.hub_id, repo)?;
-        product.category_id = Some(category.id);
+        product.category_id = Some(category.id.get());
     }
 
     let mut created = repo.create_product(&product).map_err(ServiceError::from)?;
@@ -294,7 +296,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::domain::category::{NewCategory, UpdateCategory};
-    use crate::domain::types::{HubId, TagId, TagName};
+    use crate::domain::types::{CategoryId, CategoryName, HubId, TagId, TagName};
     use crate::domain::{
         category::Category, price_level::PriceLevel, product::Product,
         product_price_level::ProductPriceLevelRate, tag::Tag,
@@ -463,7 +465,7 @@ mod tests {
             .expect_list_categories()
             .times(1)
             .withf(move |qry| {
-                assert_eq!(qry.hub_id, expected_hub);
+                assert_eq!(qry.hub_id.get(), expected_hub);
                 assert!(!qry.include_archived);
                 true
             })
@@ -1368,10 +1370,10 @@ Banana,USD,7.50,
 
     fn category(id: i32, hub_id: i32, name: &str, is_archived: bool) -> Category {
         Category {
-            id,
-            hub_id,
+            id: CategoryId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
             parent_id: None,
-            name: name.to_string(),
+            name: CategoryName::new(name).unwrap(),
             description: None,
             is_archived,
             created_at: datetime(),

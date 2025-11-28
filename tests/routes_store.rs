@@ -6,9 +6,16 @@ use actix_web::{
     test, web,
 };
 use pushkind_orders::domain::{
-    category::NewCategory, customer::Customer, customer::NewCustomer, order::NewOrder,
-    order::OrderProduct, price_level::NewPriceLevel, product::NewProduct,
-    product_price_level::NewProductPriceLevelRate, tag::NewTag,
+    category::NewCategory,
+    customer::Customer,
+    customer::NewCustomer,
+    order::NewOrder,
+    order::OrderProduct,
+    price_level::NewPriceLevel,
+    product::NewProduct,
+    product_price_level::NewProductPriceLevelRate,
+    tag::NewTag,
+    types::{CategoryName, HubId},
 };
 use pushkind_orders::repository::{
     CategoryWriter, CustomerWriter, DieselRepository, OrderWriter, PriceLevelWriter, ProductWriter,
@@ -37,7 +44,10 @@ async fn store_endpoints_return_data() {
     let repo = DieselRepository::new(test_db.pool());
 
     let _category = repo
-        .create_category(&NewCategory::new(1, "Beverages"))
+        .create_category(&NewCategory::new(
+            HubId::new(1).unwrap(),
+            CategoryName::new("Beverages").unwrap(),
+        ))
         .expect("create category");
     let tag = repo
         .create_tag(&NewTag::try_new(1, "Organic").expect("build tag"))
@@ -106,14 +116,22 @@ async fn store_products_respect_query_parameters() {
     let repo = DieselRepository::new(test_db.pool());
 
     let beverages = repo
-        .create_category(&NewCategory::new(1, "Beverages"))
+        .create_category(&NewCategory::new(
+            HubId::new(1).unwrap(),
+            CategoryName::new("Beverages").unwrap(),
+        ))
         .expect("create beverages category");
     let _snacks = repo
-        .create_category(&NewCategory::new(1, "Snacks"))
+        .create_category(&NewCategory::new(
+            HubId::new(1).unwrap(),
+            CategoryName::new("Snacks").unwrap(),
+        ))
         .expect("create snacks category");
 
-    repo.create_product(&NewProduct::new(1, "Coffee Beans", "USD").with_category_id(beverages.id))
-        .expect("create coffee product");
+    repo.create_product(
+        &NewProduct::new(1, "Coffee Beans", "USD").with_category_id(beverages.id.into()),
+    )
+    .expect("create coffee product");
     repo.create_product(&NewProduct::new(1, "Special Tea", "USD"))
         .expect("create tea product");
 
@@ -150,7 +168,7 @@ async fn store_products_respect_query_parameters() {
     let req = test::TestRequest::get()
         .uri(&format!(
             "/api/v1/store/1/products?categoryId={}",
-            beverages.id
+            beverages.id.get()
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -160,7 +178,7 @@ async fn store_products_respect_query_parameters() {
     assert!(
         category_products
             .iter()
-            .all(|product| product.category_id == Some(beverages.id))
+            .all(|product| product.category_id == Some(beverages.id.get()))
     );
 
     let req = test::TestRequest::get()
@@ -192,10 +210,16 @@ async fn store_categories_respect_parent_query_parameter() {
     let repo = DieselRepository::new(test_db.pool());
 
     let beverages = repo
-        .create_category(&NewCategory::new(1, "Beverages"))
+        .create_category(&NewCategory::new(
+            HubId::new(1).unwrap(),
+            CategoryName::new("Beverages").unwrap(),
+        ))
         .expect("create root category");
-    repo.create_category(&NewCategory::new(1, "Coffee").with_parent_id(beverages.id))
-        .expect("create child category");
+    repo.create_category(
+        &NewCategory::new(HubId::new(1).unwrap(), CategoryName::new("Coffee").unwrap())
+            .with_parent_id(beverages.id),
+    )
+    .expect("create child category");
 
     let app_repo = repo.clone();
     let app = test::init_service(
@@ -216,19 +240,19 @@ async fn store_categories_respect_parent_query_parameter() {
     assert_eq!(resp.status(), StatusCode::OK);
     let root_categories: Vec<StoreCategory> = test::read_body_json(resp).await;
     assert_eq!(root_categories.len(), 1);
-    assert_eq!(root_categories[0].id, beverages.id);
+    assert_eq!(root_categories[0].id, beverages.id.get());
 
     let req = test::TestRequest::get()
         .uri(&format!(
             "/api/v1/store/1/categories?parentId={}",
-            beverages.id
+            beverages.id.get()
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let child_categories: Vec<StoreCategory> = test::read_body_json(resp).await;
     assert_eq!(child_categories.len(), 1);
-    assert_eq!(child_categories[0].parent_id, Some(beverages.id));
+    assert_eq!(child_categories[0].parent_id, Some(beverages.id.get()));
 }
 
 #[actix_web::test]
@@ -361,14 +385,12 @@ async fn create_store_order_validates_payload() {
         &[NewProductPriceLevelRate::new(
             product.id,
             price_level.id,
-        500,
-    )],
-)
-.expect("attach price level");
+            500,
+        )],
+    )
+    .expect("attach price level");
     let customer = repo
-        .create_customer(
-            &NewCustomer::try_new(1, "John", "+111").expect("valid customer payload"),
-        )
+        .create_customer(&NewCustomer::try_new(1, "John", "+111").expect("valid customer payload"))
         .expect("create customer");
 
     let key = Key::generate();
@@ -437,9 +459,7 @@ async fn create_store_order_creates_order() {
     )
     .expect("attach price level");
     let customer = repo
-        .create_customer(
-            &NewCustomer::try_new(1, "John", "+111").expect("valid customer payload"),
-        )
+        .create_customer(&NewCustomer::try_new(1, "John", "+111").expect("valid customer payload"))
         .expect("create customer");
 
     let key = Key::generate();

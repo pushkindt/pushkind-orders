@@ -14,6 +14,7 @@ use crate::domain::{
     price_level::PriceLevelListQuery,
     store_otp::NewStoreOtp,
     tag::TagListQuery,
+    types::{CategoryId, HubId},
 };
 pub use crate::dto::store::{
     StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreOtpAcceptResponse,
@@ -121,12 +122,9 @@ where
     {
         Some(customer) => customer,
         None => {
-            let new_customer = NewCustomer::try_new(
-                hub_id,
-                request.phone.clone(),
-                request.phone.clone(),
-            )
-            .map_err(|_| ServiceError::Internal)?;
+            let new_customer =
+                NewCustomer::try_new(hub_id, request.phone.clone(), request.phone.clone())
+                    .map_err(|_| ServiceError::Internal)?;
 
             repo.create_customer(&new_customer)
                 .map_err(ServiceError::from)?
@@ -273,10 +271,11 @@ pub fn load_store_categories<R>(
 where
     R: CategoryReader + ?Sized,
 {
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
     let query = CategoryTreeQuery::new(hub_id);
     let categories = repo.list_categories(query).map_err(ServiceError::from)?.1;
 
-    let parent_id = filters.parent_id;
+    let parent_id = filters.parent_id.and_then(|id| CategoryId::new(id).ok());
     let filtered = categories
         .into_iter()
         .filter(|category| !category.is_archived)
@@ -374,10 +373,7 @@ pub fn load_store_session_customer<R>(
 where
     R: CustomerReader + ?Sized,
 {
-    repo.get_customer_by_id(
-        session_customer.id.into(),
-        session_customer.hub_id.into(),
-    )
+    repo.get_customer_by_id(session_customer.id.into(), session_customer.hub_id.into())
         .map_err(ServiceError::from)?
         .ok_or(ServiceError::Unauthorized)
 }
@@ -385,7 +381,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::{CustomerId, CustomerName, HubId, PriceLevelId, TagId, TagName};
+    use crate::domain::types::{
+        CategoryId, CategoryName, CustomerId, CustomerName, HubId, PriceLevelId, TagId, TagName,
+    };
     use crate::domain::{
         category::Category,
         customer::{Customer, CustomerListQuery},
@@ -818,9 +816,7 @@ mod tests {
                     && query.customer_id == Some(match_customer.id.get())
                     && query.pagination.is_none()
             })
-            .return_once(move |_| {
-                Ok((1, vec![sample_order(1, 99, match_customer.id.get())]))
-            });
+            .return_once(move |_| Ok((1, vec![sample_order(1, 99, match_customer.id.get())])));
 
         let orders = list_store_orders(&repo, customer.hub_id.get(), &customer, None)
             .expect("expected orders");
@@ -1282,10 +1278,10 @@ mod tests {
         let mut repo = MockCategoryReader::new();
         let categories = vec![
             Category {
-                id: 1,
-                hub_id: 1,
+                id: CategoryId::new(1).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
                 parent_id: None,
-                name: "Coffee".to_string(),
+                name: CategoryName::new("Coffee").unwrap(),
                 description: None,
                 is_archived: false,
                 created_at: sample_timestamp(),
@@ -1293,10 +1289,10 @@ mod tests {
                 image_url: None,
             },
             Category {
-                id: 2,
-                hub_id: 1,
+                id: CategoryId::new(2).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
                 parent_id: None,
-                name: "Archived".to_string(),
+                name: CategoryName::new("Archived").unwrap(),
                 description: None,
                 is_archived: true,
                 created_at: sample_timestamp(),
@@ -1306,7 +1302,7 @@ mod tests {
         ];
 
         repo.expect_list_categories()
-            .withf(|query| query.hub_id == 1 && !query.include_archived)
+            .withf(|query| query.hub_id.get() == 1 && !query.include_archived)
             .return_once(move |_| Ok((2, categories.clone())));
 
         let result = load_store_categories(&repo, 1, StoreCategoryFilters::default())
@@ -1321,10 +1317,10 @@ mod tests {
         let mut repo = MockCategoryReader::new();
         let categories = vec![
             Category {
-                id: 1,
-                hub_id: 1,
+                id: CategoryId::new(1).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
                 parent_id: None,
-                name: "Root".to_string(),
+                name: CategoryName::new("Root").unwrap(),
                 description: None,
                 is_archived: false,
                 created_at: sample_timestamp(),
@@ -1332,10 +1328,10 @@ mod tests {
                 image_url: None,
             },
             Category {
-                id: 2,
-                hub_id: 1,
-                parent_id: Some(1),
-                name: "Child".to_string(),
+                id: CategoryId::new(2).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                parent_id: Some(CategoryId::new(1).unwrap()),
+                name: CategoryName::new("Child").unwrap(),
                 description: None,
                 is_archived: false,
                 created_at: sample_timestamp(),
@@ -1346,7 +1342,7 @@ mod tests {
 
         let categories_clone = categories.clone();
         repo.expect_list_categories()
-            .withf(|query| query.hub_id == 1 && !query.include_archived)
+            .withf(|query| query.hub_id.get() == 1 && !query.include_archived)
             .times(2)
             .returning(move |_| Ok((2, categories_clone.clone())));
 

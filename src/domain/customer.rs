@@ -64,7 +64,6 @@ impl NewCustomer {
     }
 
     /// Attach an email address to the customer payload.
-    #[must_use]
     pub fn with_email(mut self, email: impl Into<String>) -> Result<Self, TypeConstraintError> {
         self.email = Some(UserEmail::new(email)?);
         Ok(self)
