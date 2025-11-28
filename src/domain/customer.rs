@@ -88,8 +88,8 @@ impl NewCustomer {
     }
 }
 
-#[derive(Debug, Clone)]
 /// Query definition used to list customers for a hub.
+#[derive(Debug, Clone)]
 pub struct CustomerListQuery {
     pub hub_id: HubId,
     pub search: Option<String>,

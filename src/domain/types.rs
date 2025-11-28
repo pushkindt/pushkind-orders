@@ -41,7 +41,8 @@ pub enum TypeConstraintError {
 
 /// Macro to generate lightweight newtypes for positive identifiers.
 macro_rules! id_newtype {
-    ($name:ident) => {
+    ($name:ident, $doc:expr) => {
+        #[doc = $doc]
         #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $name(i32);
 
@@ -83,19 +84,19 @@ macro_rules! id_newtype {
     };
 }
 
-id_newtype!(UserId);
-id_newtype!(HubId);
-id_newtype!(TagId);
-id_newtype!(ProductTagId);
-id_newtype!(ProductId);
-id_newtype!(CustomerId);
-id_newtype!(CategoryId);
-id_newtype!(ProductPriceLevelRateId);
-id_newtype!(PriceLevelId);
-id_newtype!(OrderId);
+id_newtype!(UserId, "Unique identifier for a user.");
+id_newtype!(HubId, "Unique identifier for a hub.");
+id_newtype!(TagId, "Unique identifier for a tag.");
+id_newtype!(ProductTagId, "Unique identifier for a product-tag association.");
+id_newtype!(ProductId, "Unique identifier for a product.");
+id_newtype!(CustomerId, "Unique identifier for a customer.");
+id_newtype!(CategoryId, "Unique identifier for a category.");
+id_newtype!(ProductPriceLevelRateId, "Unique identifier for a product price level rate.");
+id_newtype!(PriceLevelId, "Unique identifier for a price level.");
+id_newtype!(OrderId, "Unique identifier for an order.");
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Price stored in the smallest currency unit; must be positive.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct PriceCents(i32);
 
 impl PriceCents {
@@ -134,8 +135,8 @@ impl From<PriceCents> for i32 {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Lower-cased and validated email address.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UserEmail(String);
 
 impl UserEmail {
@@ -188,8 +189,8 @@ impl From<UserEmail> for String {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Wrapper for non-empty, trimmed strings.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct NonEmptyString(String);
 
 impl NonEmptyString {
@@ -241,8 +242,8 @@ impl From<NonEmptyString> for String {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Optional user name wrapper enforcing non-empty values.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UserName(String);
 
 impl UserName {
@@ -291,8 +292,8 @@ impl From<UserName> for String {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Tag name wrapper enforcing non-empty values.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TagName(String);
 
 impl TagName {
@@ -341,8 +342,8 @@ impl From<TagName> for String {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Customer name wrapper enforcing non-empty values.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CustomerName(String);
 
 impl CustomerName {
@@ -361,8 +362,8 @@ impl CustomerName {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Category name wrapper enforcing non-empty values.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CategoryName(String);
 
 impl CategoryName {
@@ -409,8 +410,8 @@ impl From<CategoryName> for String {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Product name wrapper enforcing non-empty values.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ProductName(String);
 
 impl ProductName {
@@ -483,8 +484,8 @@ impl PartialEq<ProductName> for &str {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Price level name wrapper enforcing non-empty values.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct PriceLevelName(String);
 
 impl PriceLevelName {
@@ -531,8 +532,8 @@ impl From<PriceLevelName> for String {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Optional SKU wrapper enforcing non-empty values.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ProductSku(String);
 
 impl ProductSku {
@@ -605,8 +606,8 @@ impl PartialEq<ProductSku> for &str {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Units wrapper enforcing non-empty values.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ProductUnits(String);
 
 impl ProductUnits {
@@ -679,8 +680,8 @@ impl PartialEq<ProductUnits> for &str {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// ISO 4217 currency code wrapper enforcing three uppercase ASCII letters.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CurrencyCode(String);
 
 impl CurrencyCode {
@@ -759,8 +760,8 @@ impl PartialEq<CurrencyCode> for &str {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Optional descriptive text for categories.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CategoryDescription(String);
 
 impl CategoryDescription {
@@ -795,8 +796,8 @@ impl TryFrom<&str> for CategoryDescription {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Optional descriptive text for products.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ProductDescription(String);
 
 impl ProductDescription {
@@ -831,8 +832,8 @@ impl TryFrom<&str> for ProductDescription {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
 /// Product amount; must be positive.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct ProductAmount(f32);
 
 impl ProductAmount {
@@ -871,8 +872,8 @@ impl From<ProductAmount> for f32 {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Validated image URL wrapper.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ImageUrl(String);
 
 impl ImageUrl {
@@ -945,8 +946,8 @@ pub fn normalize_phone_to_e164(value: &str) -> Result<String, TypeConstraintErro
     Ok(parsed.format().mode(Mode::E164).to_string())
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Normalized phone number wrapper (expected E.164).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct PhoneNumber(String);
 
 impl PhoneNumber {
@@ -993,8 +994,8 @@ impl From<PhoneNumber> for String {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Six-digit one-time password wrapper.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct OtpCode(String);
 
 impl OtpCode {
@@ -1045,8 +1046,8 @@ impl From<OtpCode> for String {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Product quantity; must be positive.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ProductQuantity(i32);
 
 impl ProductQuantity {
@@ -1087,8 +1088,8 @@ impl From<ProductQuantity> for i32 {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Optional order reference wrapper.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct OrderReference(String);
 
 impl OrderReference {
@@ -1135,8 +1136,8 @@ impl From<OrderReference> for String {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Optional order notes wrapper.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct OrderNotes(String);
 
 impl OrderNotes {
