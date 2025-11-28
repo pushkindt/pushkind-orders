@@ -21,7 +21,7 @@ use crate::routes::api::{
 };
 use crate::routes::categories::{add_category, delete_category, edit_category, show_categories};
 use crate::routes::main::show_index;
-use crate::routes::order::show_order;
+use crate::routes::orders::show_order;
 use crate::routes::price_levels::{
     add_price_level, delete_price_level, edit_price_level, show_price_levels,
 };
@@ -35,6 +35,7 @@ use crate::routes::store_session::get_store_session;
 use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
 
 pub mod domain;
+pub mod dto;
 pub mod forms;
 pub mod models;
 pub mod repository;

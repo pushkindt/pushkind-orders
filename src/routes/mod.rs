@@ -1,7 +1,7 @@
 pub mod api;
 pub mod categories;
 pub mod main;
-pub mod order;
+pub mod orders;
 pub mod price_levels;
 pub mod products;
 pub mod store;
