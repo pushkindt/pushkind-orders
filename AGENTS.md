@@ -42,11 +42,21 @@ cargo fmt --all -- --check
 - Use idiomatic Rust; avoid `unwrap` and `expect` in production paths.
 - Keep modules focused: domain types in `src/domain`, Diesel models in
   `src/models`, and conversions implemented via `From`/`Into`.
+- Domain structs should expose strongly typed fields (e.g., `UserEmail`,
+  `HubId`, `MenuName`, `RoleName`, `UserName`) that encode validation
+  constraints. Construct these types at the boundaries (forms/services) so
+  domain data is always trusted and cannot represent invalid input.
 - Define error enums with `thiserror` inside the crate that owns the failure and
   return `RepositoryResult<T>` / `ServiceResult<T>` from repository and service
   functions.
+- Services should return DTO-level structs when handing data to routes or other
+  crates; perform domain-to-DTO conversion inside the service layer to keep
+  handlers thin.
 - Service functions should accept trait bounds (e.g., `OrderReader + OrderWriter`)
   so the `DieselRepository` and `mockall`-powered fakes remain interchangeable.
+- Domain structs must not perform validation or normalization (e.g., no
+  `to_lowercase`); assume inputs are already sanitized and transformed by forms
+  or services before reaching the domain layer.
 - Sanitize and validate user input early using `validator` and `ammonia` helpers
   from the form layer.
 - Perform trimming, case normalisation, and other input clean-up before

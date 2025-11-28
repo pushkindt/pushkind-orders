@@ -43,8 +43,9 @@ jobs:
         run: |
           ssh cicd@orders.pushkind.com "sudo /usr/bin/systemctl stop pushkind-orders.service"
           scp ./target/release/pushkind-orders cicd@orders.pushkind.com:/var/www11/html/
+          scp -r ./config/ cicd@orders.pushkind.com:/var/www11/html/
           scp -r ./assets/ cicd@orders.pushkind.com:/var/www11/html/
           scp -r ./templates/ cicd@orders.pushkind.com:/var/www11/html/
           scp -r ./migrations/ cicd@orders.pushkind.com:/var/www11/html/
-          ssh cicd@orders.pushkind.com "cd /var/www11/html/ && /home/cicd/.cargo/bin/diesel migration run"
+          ssh cicd@orders.pushkind.com "cd /var/www11/html/ && /home/cicd/.cargo/bin/diesel migration run --database-url app.db"
           ssh cicd@orders.pushkind.com "sudo /usr/bin/systemctl start pushkind-orders.service"

@@ -10,6 +10,7 @@ Group=www-data
 
 # Working directory and command (from Supervisor config)
 WorkingDirectory=/var/www11/html
+Environment=APP_ENV=prod
 ExecStart=/var/www11/html/pushkind-orders
 
 # Autostart / autorestart mapping
