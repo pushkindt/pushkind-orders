@@ -1,3 +1,5 @@
+//! Domain layer containing type-safe models and business logic.
+
 pub mod category;
 pub mod customer;
 pub mod order;
@@ -7,4 +9,5 @@ pub mod product_price_level;
 pub mod product_tag;
 pub mod store_otp;
 pub mod tag;
+pub mod types;
 pub mod user;

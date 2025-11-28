@@ -5,15 +5,11 @@ use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::category::{Category, CategoryTreeNode, CategoryTreeQuery, NewCategory};
+use crate::domain::types::{CategoryId, CategoryName, HubId};
+use crate::dto::categories::CategoryTreeData;
 use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
 use crate::repository::{CategoryReader, CategoryWriter};
 use crate::services::{ServiceError, ServiceResult};
-
-/// Data required to render the categories index template.
-pub struct CategoryTreeData {
-    /// Hierarchical representation of the categories.
-    pub tree: Vec<CategoryTreeNode>,
-}
 
 /// Loads the categories overview page.
 pub fn load_categories<R>(repo: &R, user: &AuthenticatedUser) -> ServiceResult<CategoryTreeData>
@@ -24,15 +20,17 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+
     let (_, mut flat) = repo
-        .list_categories(CategoryTreeQuery::new(user.hub_id).include_archived())
+        .list_categories(CategoryTreeQuery::new(hub_id).include_archived())
         .map_err(ServiceError::from)?;
 
     if flat.is_empty() {
         return Ok(CategoryTreeData { tree: Vec::new() });
     }
 
-    flat.sort_by(|a, b| a.name.cmp(&b.name));
+    flat.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
     let tree = build_category_tree(&flat);
 
     Ok(CategoryTreeData { tree })
@@ -95,8 +93,9 @@ where
         .map_err(ServiceError::from)
 }
 
+/// Builds a hierarchical tree structure from a flat list of categories.
 fn build_category_tree(categories: &[Category]) -> Vec<CategoryTreeNode> {
-    let mut children_by_parent: HashMap<Option<i32>, Vec<&Category>> = HashMap::new();
+    let mut children_by_parent: HashMap<Option<CategoryId>, Vec<&Category>> = HashMap::new();
 
     for category in categories {
         children_by_parent
@@ -106,12 +105,12 @@ fn build_category_tree(categories: &[Category]) -> Vec<CategoryTreeNode> {
     }
 
     for children in children_by_parent.values_mut() {
-        children.sort_by(|a, b| a.name.cmp(&b.name));
+        children.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
     }
 
     fn build_branch(
-        parent_id: Option<i32>,
-        grouped: &HashMap<Option<i32>, Vec<&Category>>,
+        parent_id: Option<CategoryId>,
+        grouped: &HashMap<Option<CategoryId>, Vec<&Category>>,
     ) -> Vec<CategoryTreeNode> {
         match grouped.get(&parent_id) {
             Some(children) => {
@@ -137,21 +136,27 @@ pub fn create_category_chain<R>(path: &str, hub_id: i32, repo: &R) -> ServiceRes
 where
     R: CategoryReader + CategoryWriter + ?Sized,
 {
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
     path.split('/')
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .try_fold(None, |parent: Option<Category>, name| {
-            let parent_id = parent.as_ref().map(|c| c.id);
+            let parent_id = parent.as_ref().map(|c| c.id.get());
 
-            if let Some(cat) = repo.get_category_by_name_and_parent(name, parent_id, hub_id)? {
+            if let Some(cat) =
+                repo.get_category_by_name_and_parent(name, parent_id, hub_id.get())?
+            {
                 Ok::<Option<Category>, ServiceError>(Some(cat))
             } else {
-                let new_category = NewCategory {
+                let mut new_category = NewCategory::new(
                     hub_id,
-                    parent_id,
-                    name: name.to_owned(),
-                    ..Default::default()
-                };
+                    CategoryName::new(name).map_err(|_| ServiceError::Internal)?,
+                );
+                if let Some(parent_id) = parent_id {
+                    new_category = new_category
+                        .try_with_parent_id(parent_id)
+                        .map_err(|_| ServiceError::Internal)?;
+                }
                 let created = repo.create_category(&new_category)?;
                 Ok(Some(created))
             }
@@ -167,6 +172,7 @@ mod tests {
     use crate::domain::category::{
         NewCategory as DomainNewCategory, UpdateCategory as DomainUpdateCategory,
     };
+    use crate::domain::types::{CategoryId, CategoryName, HubId};
     use crate::repository::mock::{MockCategoryReader, MockCategoryWriter};
     use pushkind_common::repository::errors::RepositoryResult;
 
@@ -250,10 +256,10 @@ mod tests {
 
     fn sample_category(id: i32, hub_id: i32, name: &str) -> Category {
         Category {
-            id,
-            hub_id,
+            id: CategoryId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
             parent_id: None,
-            name: name.to_string(),
+            name: CategoryName::new(name).unwrap(),
             description: None,
             is_archived: false,
             created_at: fixed_datetime(),
@@ -281,7 +287,7 @@ mod tests {
         repo.expect_list_categories()
             .times(1)
             .returning(move |query| {
-                assert_eq!(query.hub_id, expected_hub);
+                assert_eq!(query.hub_id.get(), expected_hub);
                 assert!(query.include_archived);
                 assert!(query.search.is_none());
                 assert!(query.pagination.is_none());
@@ -300,14 +306,14 @@ mod tests {
 
         assert_eq!(data.tree.len(), 1);
         let root = &data.tree[0];
-        assert_eq!(root.category.name, "Beverages");
+        assert_eq!(root.category.name.as_str(), "Beverages");
         assert_eq!(root.children.len(), 1);
 
         let child = &root.children[0];
-        assert_eq!(child.category.name, "Hot Drinks");
+        assert_eq!(child.category.name.as_str(), "Hot Drinks");
         assert!(child.category.is_archived);
         assert_eq!(child.children.len(), 1);
-        assert_eq!(child.children[0].category.name, "Coffee");
+        assert_eq!(child.children[0].category.name.as_str(), "Coffee");
     }
 
     #[test]
@@ -350,9 +356,9 @@ mod tests {
         repo.expect_create_category()
             .times(1)
             .withf(|new_category| {
-                assert_eq!(new_category.hub_id, 9);
-                assert_eq!(new_category.name, "Fresh   Produce");
-                assert_eq!(new_category.parent_id, Some(4));
+                assert_eq!(new_category.hub_id.get(), 9);
+                assert_eq!(new_category.name.as_str(), "Fresh   Produce");
+                assert_eq!(new_category.parent_id.as_ref().map(|id| id.get()), Some(4));
                 true
             })
             .returning(|_| Ok(sample_category(10, 9, "Fresh   Produce")));
@@ -366,8 +372,8 @@ mod tests {
 
         let created = create_category(&repo, &user, form).expect("expected success");
 
-        assert_eq!(created.id, 10);
-        assert_eq!(created.name, "Fresh   Produce");
+        assert_eq!(created.id.get(), 10);
+        assert_eq!(created.name.as_str(), "Fresh   Produce");
     }
 
     #[test]
@@ -398,8 +404,11 @@ mod tests {
             .withf(|category_id, hub_id, updates| {
                 assert_eq!(*category_id, 3);
                 assert_eq!(*hub_id, 9);
-                assert_eq!(updates.name, "Dry Goods");
-                assert_eq!(updates.description.as_deref(), Some("pantry items"));
+                assert_eq!(updates.name.as_str(), "Dry Goods");
+                assert_eq!(
+                    updates.description.as_ref().map(|desc| desc.as_str()),
+                    Some("pantry items")
+                );
                 true
             })
             .returning(|_, _, _| Ok(sample_category(3, 9, "Dry Goods")));
@@ -414,7 +423,7 @@ mod tests {
 
         let updated = modify_category(&repo, &user, form).expect("expected success");
 
-        assert_eq!(updated.id, 3);
+        assert_eq!(updated.id.get(), 3);
     }
 
     #[test]

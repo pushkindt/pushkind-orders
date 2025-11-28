@@ -1,11 +1,19 @@
+//! User repository implementation with Diesel.
+
 use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
+    domain::types::TypeConstraintError,
     domain::user::{NewUser as DomainNewUser, UpdateUser as DomainUpdateUser, User as DomainUser},
     models::user::{NewUser as DbNewUser, UpdateUser as DbUpdateUser, User as DbUser},
     repository::{DieselRepository, UserListQuery, UserReader, UserWriter},
 };
+
+/// Convert a type constraint error into a repository error.
+fn map_type_error(err: TypeConstraintError) -> RepositoryError {
+    RepositoryError::Unexpected(format!("Invalid user data: {err}"))
+}
 
 impl UserReader for DieselRepository {
     fn get_user_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainUser>> {
@@ -18,7 +26,9 @@ impl UserReader for DieselRepository {
             .first::<DbUser>(&mut conn)
             .optional()?;
 
-        Ok(user.map(Into::into))
+        user.map(DomainUser::try_from)
+            .transpose()
+            .map_err(map_type_error)
     }
 
     fn get_user_by_email(&self, email: &str, hub_id: i32) -> RepositoryResult<Option<DomainUser>> {
@@ -31,7 +41,9 @@ impl UserReader for DieselRepository {
             .first::<DbUser>(&mut conn)
             .optional()?;
 
-        Ok(user.map(Into::into))
+        user.map(DomainUser::try_from)
+            .transpose()
+            .map_err(map_type_error)
     }
 
     fn list_users(&self, query: UserListQuery) -> RepositoryResult<(usize, Vec<DomainUser>)> {
@@ -72,7 +84,13 @@ impl UserReader for DieselRepository {
             return Ok((total, Vec::new()));
         }
 
-        Ok((total, db_users.into_iter().map(Into::into).collect()))
+        let domain_users = db_users
+            .into_iter()
+            .map(DomainUser::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_type_error)?;
+
+        Ok((total, domain_users))
     }
 }
 
@@ -87,7 +105,7 @@ impl UserWriter for DieselRepository {
             .values(&db_new)
             .get_result::<DbUser>(&mut conn)?;
 
-        Ok(created.into())
+        DomainUser::try_from(created).map_err(map_type_error)
     }
 
     fn update_user(
@@ -109,7 +127,7 @@ impl UserWriter for DieselRepository {
             .set(&db_updates)
             .get_result::<DbUser>(&mut conn)?;
 
-        Ok(updated.into())
+        DomainUser::try_from(updated).map_err(map_type_error)
     }
 
     fn delete_user(&self, user_id: i32, hub_id: i32) -> RepositoryResult<()> {

@@ -2,7 +2,8 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::order::OrderDetails;
+use crate::domain::types::{HubId, OrderId};
+use crate::dto::orders::OrderDetails;
 use crate::repository::{CustomerReader, OrderReader};
 use crate::services::{ServiceError, ServiceResult};
 
@@ -19,15 +20,18 @@ where
         return Err(ServiceError::Unauthorized);
     }
 
+    let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+
     let order = repo
-        .get_order_by_id(order_id, user.hub_id)
+        .get_order_by_id(order_id, hub_id)
         .map_err(ServiceError::from)?;
 
     let order = order.ok_or(ServiceError::NotFound)?;
 
     let customer = match order.customer_id {
         Some(customer_id) => repo
-            .get_customer_by_id(customer_id, user.hub_id)
+            .get_customer_by_id(customer_id.get(), hub_id.get())
             .map_err(ServiceError::from)?,
         None => None,
     };
@@ -40,6 +44,10 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
 
+    use crate::domain::types::{
+        CurrencyCode, CustomerId, CustomerName, HubId, OrderId, OrderNotes, OrderReference,
+        PhoneNumber, PriceCents, ProductId, ProductName, ProductQuantity, UserEmail,
+    };
     use crate::domain::{
         customer::Customer,
         order::{Order, OrderProduct, OrderStatus},
@@ -60,7 +68,7 @@ mod tests {
     }
 
     impl OrderReader for OrderServiceRepo {
-        fn get_order_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Order>> {
+        fn get_order_by_id(&self, id: OrderId, hub_id: HubId) -> RepositoryResult<Option<Order>> {
             self.orders.get_order_by_id(id, hub_id)
         }
 
@@ -110,22 +118,22 @@ mod tests {
 
     fn sample_order(id: i32, hub_id: i32, customer_id: Option<i32>) -> Order {
         Order {
-            id,
-            hub_id,
-            customer_id,
-            reference: Some(format!("ORD-{id}")),
+            id: OrderId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            customer_id: customer_id.map(|id| CustomerId::new(id).unwrap()),
+            reference: Some(OrderReference::new(format!("ORD-{id}")).unwrap()),
             status: OrderStatus::Pending,
-            notes: Some("Notes".to_string()),
-            total_cents: 1500,
-            currency: "RUB".to_string(),
+            notes: Some(OrderNotes::new("Notes").unwrap()),
+            total_cents: PriceCents::new(1500).unwrap(),
+            currency: CurrencyCode::new("RUB").unwrap(),
             products: vec![OrderProduct {
-                product_id: Some(10),
-                name: "Sample".to_string(),
+                product_id: Some(ProductId::new(10).unwrap()),
+                name: ProductName::new("Sample").unwrap(),
                 sku: None,
                 description: None,
-                price_cents: 1500,
-                currency: "RUB".to_string(),
-                quantity: 1,
+                price_cents: PriceCents::new(1500).unwrap(),
+                currency: CurrencyCode::new("RUB").unwrap(),
+                quantity: ProductQuantity::new(1).unwrap(),
             }],
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
@@ -134,11 +142,11 @@ mod tests {
 
     fn sample_customer(id: i32, hub_id: i32) -> Customer {
         Customer {
-            id,
-            hub_id,
-            name: "Sample Customer".to_string(),
-            email: Some("customer@example.com".to_string()),
-            phone: "+10000000000".to_string(),
+            id: CustomerId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: CustomerName::new("Sample Customer").unwrap(),
+            email: Some(UserEmail::new("customer@example.com").unwrap()),
+            phone: PhoneNumber::new("+10000000000").unwrap(),
             price_level_id: None,
         }
     }
@@ -173,7 +181,7 @@ mod tests {
         repo.orders
             .expect_get_order_by_id()
             .times(1)
-            .withf(move |id, hub_id| *id == 5 && *hub_id == expected_hub)
+            .withf(move |id, hub_id| id.get() == 5 && hub_id.get() == expected_hub)
             .returning(|_, _| Ok(None));
 
         let result = load_order_details(&repo, &user, 5);
@@ -190,8 +198,8 @@ mod tests {
         repo.orders
             .expect_get_order_by_id()
             .times(1)
-            .withf(move |id, hub_id| *id == 3 && *hub_id == expected_hub)
-            .returning(move |id, hub_id| Ok(Some(sample_order(id, hub_id, None))));
+            .withf(move |id, hub_id| id.get() == 3 && hub_id.get() == expected_hub)
+            .returning(move |id, hub_id| Ok(Some(sample_order(id.get(), hub_id.get(), None))));
 
         let result = load_order_details(&repo, &user, 3);
 
@@ -200,8 +208,8 @@ mod tests {
             Err(err) => panic!("expected order details, got error: {err}"),
         };
 
-        assert_eq!(details.order.id, 3);
-        assert_eq!(details.order.hub_id, expected_hub);
+        assert_eq!(details.order.id.get(), 3);
+        assert_eq!(details.order.hub_id.get(), expected_hub);
         assert!(details.customer.is_none());
     }
 
@@ -214,8 +222,8 @@ mod tests {
         repo.orders
             .expect_get_order_by_id()
             .times(1)
-            .withf(move |id, hub_id| *id == 4 && *hub_id == expected_hub)
-            .returning(move |id, hub_id| Ok(Some(sample_order(id, hub_id, Some(11)))));
+            .withf(move |id, hub_id| id.get() == 4 && hub_id.get() == expected_hub)
+            .returning(move |id, hub_id| Ok(Some(sample_order(id.get(), hub_id.get(), Some(11)))));
 
         repo.customers
             .expect_get_customer_by_id()
@@ -230,9 +238,9 @@ mod tests {
             Err(err) => panic!("expected order details, got error: {err}"),
         };
 
-        assert_eq!(details.order.id, 4);
+        assert_eq!(details.order.id.get(), 4);
         let customer = details.customer.expect("expected customer details");
-        assert_eq!(customer.id, 11);
-        assert_eq!(customer.hub_id, expected_hub);
+        assert_eq!(customer.id.get(), 11);
+        assert_eq!(customer.hub_id.get(), expected_hub);
     }
 }

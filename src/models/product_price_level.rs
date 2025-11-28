@@ -1,3 +1,5 @@
+//! Diesel model for product price level association records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
@@ -6,7 +8,9 @@ use crate::domain::product_price_level::{
     ProductPriceLevelRate as DomainProductPriceLevelRate,
     UpdateProductPriceLevelRate as DomainUpdateProductPriceLevelRate,
 };
+use crate::domain::types::{PriceLevelId, ProductId, ProductPriceLevelRateId, TypeConstraintError};
 
+/// Database representation of a product price level association record.
 #[derive(Debug, Clone, Identifiable, Queryable, Associations, Selectable)]
 #[diesel(
     table_name = crate::schema::product_price_levels,
@@ -22,6 +26,7 @@ pub struct ProductPriceLevel {
     pub updated_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new product price level association record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::product_price_levels)]
 pub struct NewProductPriceLevel {
@@ -30,6 +35,7 @@ pub struct NewProductPriceLevel {
     pub price_cents: i32,
 }
 
+/// Payload for updating an existing product price level association record.
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::product_price_levels)]
 #[diesel(treat_none_as_null = true)]
@@ -38,25 +44,27 @@ pub struct UpdateProductPriceLevel {
     pub updated_at: NaiveDateTime,
 }
 
-impl From<ProductPriceLevel> for DomainProductPriceLevelRate {
-    fn from(value: ProductPriceLevel) -> Self {
-        Self {
-            id: value.id,
-            product_id: value.product_id,
-            price_level_id: value.price_level_id,
-            price_cents: value.price_cents,
+impl TryFrom<ProductPriceLevel> for DomainProductPriceLevelRate {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: ProductPriceLevel) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: ProductPriceLevelRateId::new(value.id)?,
+            product_id: ProductId::new(value.product_id)?,
+            price_level_id: PriceLevelId::new(value.price_level_id)?,
+            price_cents: value.price_cents.try_into()?,
             created_at: value.created_at,
             updated_at: value.updated_at,
-        }
+        })
     }
 }
 
 impl From<&DomainNewProductPriceLevelRate> for NewProductPriceLevel {
     fn from(value: &DomainNewProductPriceLevelRate) -> Self {
         Self {
-            product_id: value.product_id,
-            price_level_id: value.price_level_id,
-            price_cents: value.price_cents,
+            product_id: value.product_id.get(),
+            price_level_id: value.price_level_id.get(),
+            price_cents: value.price_cents.get(),
         }
     }
 }

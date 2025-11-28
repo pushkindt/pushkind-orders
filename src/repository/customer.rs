@@ -1,12 +1,20 @@
+//! Customer repository implementation with Diesel.
+
 use diesel::dsl::{exists, select};
 use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
     domain::customer::{Customer as DomainCustomer, NewCustomer as DomainNewCustomer},
+    domain::types::TypeConstraintError,
     models::customer::{Customer as DbCustomer, NewCustomer as DbNewCustomer},
     repository::{CustomerListQuery, CustomerReader, CustomerWriter, DieselRepository},
 };
+
+/// Convert a type constraint error into a repository error.
+fn map_type_error(err: TypeConstraintError) -> RepositoryError {
+    RepositoryError::Unexpected(format!("Invalid customer data: {err}"))
+}
 
 impl CustomerReader for DieselRepository {
     fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainCustomer>> {
@@ -19,7 +27,10 @@ impl CustomerReader for DieselRepository {
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
-        Ok(customer.map(Into::into))
+        customer
+            .map(DomainCustomer::try_from)
+            .transpose()
+            .map_err(map_type_error)
     }
 
     fn get_customer_by_email(
@@ -38,7 +49,10 @@ impl CustomerReader for DieselRepository {
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
-        Ok(customer.map(Into::into))
+        customer
+            .map(DomainCustomer::try_from)
+            .transpose()
+            .map_err(map_type_error)
     }
 
     fn get_customer_by_phone(
@@ -57,7 +71,10 @@ impl CustomerReader for DieselRepository {
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
-        Ok(customer.map(Into::into))
+        customer
+            .map(DomainCustomer::try_from)
+            .transpose()
+            .map_err(map_type_error)
     }
 
     fn list_customers(
@@ -70,7 +87,7 @@ impl CustomerReader for DieselRepository {
 
         let query_builder = || {
             let mut items = customers::table
-                .filter(customers::hub_id.eq(query.hub_id))
+                .filter(customers::hub_id.eq(query.hub_id.get()))
                 .into_boxed::<diesel::sqlite::Sqlite>();
 
             if let Some(term) = query.search.as_ref() {
@@ -83,7 +100,7 @@ impl CustomerReader for DieselRepository {
             }
 
             if let Some(price_level_id) = query.price_level_id {
-                items = items.filter(customers::price_level_id.eq(price_level_id));
+                items = items.filter(customers::price_level_id.eq(price_level_id.get()));
             }
 
             items
@@ -105,7 +122,13 @@ impl CustomerReader for DieselRepository {
             return Ok((total, Vec::new()));
         }
 
-        Ok((total, db_customers.into_iter().map(Into::into).collect()))
+        let customers = db_customers
+            .into_iter()
+            .map(DomainCustomer::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_type_error)?;
+
+        Ok((total, customers))
     }
 }
 
@@ -119,7 +142,7 @@ impl CustomerWriter for DieselRepository {
         let mut conn = self.conn()?;
 
         if let Some(level_id) = new_customer.price_level_id {
-            ensure_price_level_with_hub(&mut conn, new_customer.hub_id, level_id)?;
+            ensure_price_level_with_hub(&mut conn, new_customer.hub_id.get(), level_id.get())?;
         }
 
         let db_new = DbNewCustomer::from(new_customer);
@@ -128,7 +151,7 @@ impl CustomerWriter for DieselRepository {
             .values(&db_new)
             .get_result::<DbCustomer>(&mut conn)?;
 
-        Ok(created.into())
+        DomainCustomer::try_from(created).map_err(map_type_error)
     }
 
     fn assign_price_level_to_customers(
@@ -165,6 +188,7 @@ impl CustomerWriter for DieselRepository {
     }
 }
 
+/// Verify that a price level exists and belongs to the specified hub.
 fn ensure_price_level_with_hub(
     conn: &mut SqliteConnection,
     hub_id: i32,

@@ -6,13 +6,17 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
+use crate::dto::products::ProductsQuery;
 use crate::forms::products::{AddProductForm, EditProductForm, UploadProductsForm};
 use crate::repository::DieselRepository;
 use crate::services::{ServiceError, products};
 
 #[get("/products")]
+/// Render the products management page with search, filters, and pagination.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn show_products(
-    params: web::Query<products::ProductsQuery>,
+    params: web::Query<ProductsQuery>,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
     flash_messages: IncomingFlashMessages,
@@ -55,6 +59,9 @@ pub async fn show_products(
 }
 
 #[post("/products/add")]
+/// Create a new product.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn add_product(
     req: HttpRequest,
     body: web::Bytes,
@@ -96,6 +103,9 @@ pub async fn add_product(
 }
 
 #[post("/products/upload")]
+/// Batch upload products from a CSV file.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn upload_products(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -123,6 +133,9 @@ pub async fn upload_products(
 }
 
 #[post("/products/edit")]
+/// Update an existing product.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn edit_product(
     req: HttpRequest,
     body: web::Bytes,

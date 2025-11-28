@@ -1,3 +1,5 @@
+//! Diesel models for order and order product records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
@@ -5,7 +7,12 @@ use crate::domain::order::{
     NewOrder as DomainNewOrder, Order as DomainOrder, OrderProduct as DomainOrderProduct,
     UpdateOrder as DomainUpdateOrder,
 };
+use crate::domain::types::{
+    CurrencyCode, CustomerId, HubId, OrderId, OrderNotes, OrderReference, PriceCents,
+    ProductDescription, ProductId, ProductName, ProductQuantity, ProductSku,
+};
 
+/// Database representation of an order record.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable, Associations)]
 #[diesel(
     table_name = crate::schema::orders,
@@ -24,6 +31,7 @@ pub struct Order {
     pub updated_at: NaiveDateTime,
 }
 
+/// Database representation of a product snapshot within an order.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable, Associations)]
 #[diesel(table_name = crate::schema::order_products)]
 #[diesel(belongs_to(Order, foreign_key = order_id))]
@@ -41,6 +49,7 @@ pub struct OrderProduct {
     pub updated_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new order record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::orders)]
 pub struct NewOrder<'a> {
@@ -53,6 +62,7 @@ pub struct NewOrder<'a> {
     pub currency: &'a str,
 }
 
+/// Payload for inserting a new order product record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::order_products)]
 pub struct NewOrderProduct<'a> {
@@ -66,6 +76,7 @@ pub struct NewOrderProduct<'a> {
     pub quantity: i32,
 }
 
+/// Payload for updating an existing order record.
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::orders)]
 #[diesel(treat_none_as_null = true)]
@@ -82,14 +93,16 @@ pub struct UpdateOrder<'a> {
 impl Order {
     pub fn into_domain(self, products: Vec<OrderProduct>) -> DomainOrder {
         DomainOrder {
-            id: self.id,
-            hub_id: self.hub_id,
-            customer_id: self.customer_id,
-            reference: self.reference,
+            id: OrderId::new(self.id).expect("valid order id from database"),
+            hub_id: HubId::new(self.hub_id).expect("valid hub id from database"),
+            customer_id: self
+                .customer_id
+                .map(|id| CustomerId::new(id).expect("valid customer id from database")),
+            reference: self.reference.and_then(|r| OrderReference::new(r).ok()),
             status: self.status.as_str().into(),
-            notes: self.notes,
-            total_cents: self.total_cents,
-            currency: self.currency,
+            notes: self.notes.and_then(|n| OrderNotes::new(n).ok()),
+            total_cents: PriceCents::new(self.total_cents).expect("valid price from database"),
+            currency: CurrencyCode::new(self.currency).expect("valid currency from database"),
             products: products
                 .into_iter()
                 .map(OrderProduct::into_domain)
@@ -103,13 +116,17 @@ impl Order {
 impl OrderProduct {
     pub fn into_domain(self) -> DomainOrderProduct {
         DomainOrderProduct {
-            product_id: self.product_id,
-            name: self.name,
-            sku: self.sku,
-            description: self.description,
-            price_cents: self.price_cents,
-            currency: self.currency,
-            quantity: self.quantity,
+            product_id: self
+                .product_id
+                .map(|id| ProductId::new(id).expect("valid product id from database")),
+            name: ProductName::new(self.name).expect("valid product name from database"),
+            sku: self.sku.and_then(|s| ProductSku::new(s).ok()),
+            description: self
+                .description
+                .and_then(|d| ProductDescription::new(d).ok()),
+            price_cents: PriceCents::new(self.price_cents).expect("valid price from database"),
+            currency: CurrencyCode::new(self.currency).expect("valid currency from database"),
+            quantity: ProductQuantity::new(self.quantity).expect("valid quantity from database"),
         }
     }
 }
@@ -123,12 +140,12 @@ impl From<(Order, Vec<OrderProduct>)> for DomainOrder {
 impl<'a> From<&'a DomainNewOrder> for NewOrder<'a> {
     fn from(value: &'a DomainNewOrder) -> Self {
         Self {
-            hub_id: value.hub_id,
-            customer_id: value.customer_id,
-            reference: value.reference.as_deref(),
+            hub_id: value.hub_id.get(),
+            customer_id: value.customer_id.map(|id| id.get()),
+            reference: value.reference.as_ref().map(|r| r.as_str()),
             status: value.status.into(),
-            notes: value.notes.as_deref(),
-            total_cents: value.total_cents,
+            notes: value.notes.as_ref().map(|n| n.as_str()),
+            total_cents: value.total_cents.get(),
             currency: value.currency.as_str(),
         }
     }
@@ -138,13 +155,13 @@ impl<'a> NewOrderProduct<'a> {
     pub fn from_domain(order_id: i32, value: &'a DomainOrderProduct) -> Self {
         Self {
             order_id,
-            product_id: value.product_id,
+            product_id: value.product_id.map(|id| id.get()),
             name: value.name.as_str(),
-            sku: value.sku.as_deref(),
-            description: value.description.as_deref(),
-            price_cents: value.price_cents,
+            sku: value.sku.as_ref().map(|s| s.as_str()),
+            description: value.description.as_ref().map(|d| d.as_str()),
+            price_cents: value.price_cents.get(),
             currency: value.currency.as_str(),
-            quantity: value.quantity,
+            quantity: value.quantity.get(),
         }
     }
 }
@@ -153,11 +170,11 @@ impl<'a> From<&'a DomainUpdateOrder> for UpdateOrder<'a> {
     fn from(value: &'a DomainUpdateOrder) -> Self {
         Self {
             status: value.status.into(),
-            notes: value.notes.as_deref(),
-            total_cents: value.total_cents,
+            notes: value.notes.as_ref().map(|n| n.as_str()),
+            total_cents: value.total_cents.get(),
             currency: value.currency.as_str(),
-            customer_id: value.customer_id,
-            reference: value.reference.as_deref(),
+            customer_id: value.customer_id.map(|id| id.get()),
+            reference: value.reference.as_ref().map(|r| r.as_str()),
             updated_at: value.updated_at,
         }
     }

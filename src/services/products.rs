@@ -3,16 +3,17 @@ use std::collections::HashMap;
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::check_role;
-use serde::{Deserialize, Serialize};
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::{
-    category::{Category, CategoryTreeQuery},
+    category::CategoryTreeQuery,
     price_level::{PriceLevel, PriceLevelListQuery},
     product::{Product, ProductListQuery},
-    product_price_level::{NewProductPriceLevelRate, ProductPriceLevelRate},
-    tag::{Tag, TagListQuery},
+    product_price_level::NewProductPriceLevelRate,
+    tag::TagListQuery,
+    types::{HubId, PriceCents, PriceLevelId, ProductId},
 };
+use crate::dto::products::{ProductView, ProductsPageData, ProductsQuery};
 use crate::forms::products::{
     AddProductForm, EditProductForm, EditProductUpdate, NewProductUpload, UploadProductsForm,
 };
@@ -21,34 +22,6 @@ use crate::repository::{
 };
 use crate::services::categories::create_category_chain;
 use crate::services::{ServiceError, ServiceResult};
-
-/// Query parameters accepted by the products index page.
-#[derive(Debug, Default, Deserialize)]
-pub struct ProductsQuery {
-    /// Optional search string entered by the user.
-    pub search: Option<String>,
-    /// Page requested by the UI (1-based).
-    pub page: Option<usize>,
-    /// Whether archived items should be included in the response.
-    #[serde(default)]
-    pub show_archived: bool,
-}
-
-/// Data required to render the products index template.
-pub struct ProductsPageData {
-    /// Paginated list of products displayed in the table.
-    pub products: Paginated<ProductView>,
-    /// Search query echoed back to the view when present.
-    pub search: Option<String>,
-    /// All price levels used to render the modal form.
-    pub price_levels: Vec<PriceLevel>,
-    /// All available categories for the add product form.
-    pub categories: Vec<Category>,
-    /// All available tags for the edit product modal.
-    pub tags: Vec<Tag>,
-    /// Whether archived items were requested.
-    pub show_archived: bool,
-}
 
 /// Loads the products overview page.
 pub fn load_products_page<R>(
@@ -70,7 +43,8 @@ where
     } = query;
 
     let page = page.unwrap_or(1);
-    let mut list_query = ProductListQuery::new(user.hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let mut list_query = ProductListQuery::new(hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
 
     if let Some(search_term) = search.as_ref() {
         list_query = list_query.search(search_term);
@@ -82,26 +56,27 @@ where
 
     let (total, items) = repo.list_products(list_query).map_err(ServiceError::from)?;
     let (_, price_levels) = repo
-        .list_price_levels(PriceLevelListQuery::new(user.hub_id))
+        .list_price_levels(PriceLevelListQuery::new(hub_id))
         .map_err(ServiceError::from)?;
 
     let (_, mut categories) = repo
-        .list_categories(CategoryTreeQuery::new(user.hub_id))
+        .list_categories(CategoryTreeQuery::new(hub_id))
         .map_err(ServiceError::from)?;
     let category_lookup: HashMap<i32, String> = categories
         .iter()
-        .map(|category| (category.id, category.name.clone()))
+        .map(|category| (category.id.get(), category.name.as_str().to_string()))
         .collect();
     categories.retain(|category| !category.is_archived);
-    categories.sort_by(|a, b| a.name.cmp(&b.name));
+    categories.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
-    let (_, mut tags) = repo
-        .list_tags(TagListQuery::new(user.hub_id))
-        .map_err(ServiceError::from)?;
-    tags.sort_by(|a, b| a.name.cmp(&b.name));
+    let tag_query = TagListQuery::try_new(hub_id.get()).map_err(|_| ServiceError::Internal)?;
+    let (_, mut tags) = repo.list_tags(tag_query).map_err(ServiceError::from)?;
+    tags.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
-    let level_lookup: HashMap<i32, &PriceLevel> =
-        price_levels.iter().map(|level| (level.id, level)).collect();
+    let level_lookup: HashMap<i32, &PriceLevel> = price_levels
+        .iter()
+        .map(|level| (level.id.get(), level))
+        .collect();
 
     let view_items: Vec<ProductView> = items
         .into_iter()
@@ -209,7 +184,11 @@ where
     let price_level_rates: Vec<NewProductPriceLevelRate> = price_levels
         .into_iter()
         .map(|rate| {
-            NewProductPriceLevelRate::new(product_id, rate.price_level_id, rate.price_cents)
+            NewProductPriceLevelRate::new(
+                ProductId::new(product_id).unwrap(),
+                PriceLevelId::new(rate.price_level_id).unwrap(),
+                PriceCents::new(rate.price_cents).unwrap(),
+            )
         })
         .collect();
 
@@ -226,15 +205,17 @@ where
         .map_err(ServiceError::from)
 }
 
+/// Fetches all price levels for a hub.
 fn fetch_all_price_levels<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<PriceLevel>>
 where
     R: PriceLevelReader + ?Sized,
 {
-    let query = PriceLevelListQuery::new(hub_id);
+    let query = PriceLevelListQuery::new(HubId::new(hub_id).map_err(|_| ServiceError::Internal)?);
     let (_, price_levels) = repo.list_price_levels(query).map_err(ServiceError::from)?;
     Ok(price_levels)
 }
 
+/// Persists a new product with associated price levels, images, tags, and category.
 fn persist_new_product<R>(
     repo: &R,
     hub_id: i32,
@@ -252,15 +233,15 @@ where
     } = payload;
 
     if let Some(category) = category {
-        let category = create_category_chain(&category, product.hub_id, repo)?;
+        let category = create_category_chain(&category, product.hub_id.get(), repo)?;
         product.category_id = Some(category.id);
     }
 
     let mut created = repo.create_product(&product).map_err(ServiceError::from)?;
 
-    if let Err(err) = repo.replace_product_images(created.id, hub_id, &image_urls) {
+    if let Err(err) = repo.replace_product_images(created.id.get(), hub_id, &image_urls) {
         log::error!("Failed to attach images to product {}: {err}", created.id);
-        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
+        if let Err(delete_err) = repo.delete_product(created.id.get(), hub_id) {
             log::error!(
                 "Failed to roll back product {} after image error: {delete_err}",
                 created.id
@@ -274,10 +255,10 @@ where
     }
 
     if !tag_ids.is_empty()
-        && let Err(err) = repo.replace_product_tags(created.id, hub_id, &tag_ids)
+        && let Err(err) = repo.replace_product_tags(created.id.get(), hub_id, &tag_ids)
     {
         log::error!("Failed to attach tags to product {}: {err}", created.id);
-        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
+        if let Err(delete_err) = repo.delete_product(created.id.get(), hub_id) {
             log::error!(
                 "Failed to roll back product {} after tag error: {delete_err}",
                 created.id
@@ -293,16 +274,20 @@ where
     let rates: Vec<NewProductPriceLevelRate> = price_levels
         .iter()
         .map(|rate| {
-            NewProductPriceLevelRate::new(created.id, rate.price_level_id, rate.price_cents)
+            NewProductPriceLevelRate::new(
+                created.id,
+                PriceLevelId::new(rate.price_level_id).unwrap(),
+                PriceCents::new(rate.price_cents).unwrap(),
+            )
         })
         .collect();
 
-    if let Err(err) = repo.replace_product_price_levels(created.id, hub_id, &rates) {
+    if let Err(err) = repo.replace_product_price_levels(created.id.get(), hub_id, &rates) {
         log::error!(
             "Failed to attach price levels to product {}: {err}",
             created.id
         );
-        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
+        if let Err(delete_err) = repo.delete_product(created.id.get(), hub_id) {
             log::error!(
                 "Failed to roll back product {} after price level error: {delete_err}",
                 created.id
@@ -314,120 +299,6 @@ where
     Ok(created)
 }
 
-/// View model exposed to the products index template.
-#[derive(Debug, Serialize)]
-pub struct ProductView {
-    pub id: i32,
-    pub hub_id: i32,
-    pub name: String,
-    pub sku: Option<String>,
-    pub description: Option<String>,
-    pub units: Option<String>,
-    pub currency: String,
-    pub is_archived: bool,
-    pub category_id: Option<i32>,
-    pub category_name: Option<String>,
-    pub updated_at: chrono::NaiveDateTime,
-    pub price_levels: Vec<ProductPriceLevelView>,
-    pub tags: Vec<ProductTagView>,
-    pub image_urls: Vec<String>,
-    pub amount: Option<f32>,
-}
-
-impl ProductView {
-    fn from_product(
-        product: crate::domain::product::Product,
-        level_lookup: &HashMap<i32, &PriceLevel>,
-        category_lookup: &HashMap<i32, String>,
-    ) -> Self {
-        let crate::domain::product::Product {
-            id,
-            hub_id,
-            name,
-            sku,
-            description,
-            units,
-            currency,
-            is_archived,
-            category_id,
-            price_levels,
-            tags,
-            image_urls,
-            created_at: _,
-            updated_at,
-            amount,
-            ..
-        } = product;
-
-        let price_levels = price_levels
-            .into_iter()
-            .flat_map(|rate| ProductPriceLevelView::from_rate(rate, level_lookup))
-            .collect();
-
-        let tags = tags.into_iter().map(ProductTagView::from_tag).collect();
-
-        Self {
-            id,
-            hub_id,
-            name,
-            sku,
-            description,
-            units,
-            currency,
-            is_archived,
-            category_id,
-            category_name: category_id.and_then(|id| category_lookup.get(&id).cloned()),
-            updated_at,
-            price_levels,
-            tags,
-            image_urls,
-            amount,
-        }
-    }
-}
-
-/// View model for a product price level entry.
-#[derive(Debug, Serialize)]
-pub struct ProductPriceLevelView {
-    pub price_level_id: i32,
-    pub price_level_name: String,
-    pub price_cents: i32,
-    pub price_formatted: String,
-}
-
-/// View model for a product tag entry.
-#[derive(Debug, Serialize)]
-pub struct ProductTagView {
-    pub id: i32,
-    pub name: String,
-}
-
-impl ProductTagView {
-    fn from_tag(tag: Tag) -> Self {
-        Self {
-            id: tag.id,
-            name: tag.name,
-        }
-    }
-}
-
-impl ProductPriceLevelView {
-    fn from_rate(
-        rate: ProductPriceLevelRate,
-        level_lookup: &HashMap<i32, &PriceLevel>,
-    ) -> Option<Self> {
-        let level = level_lookup.get(&rate.price_level_id)?;
-        let price_formatted = format!("{:.2}", rate.price_cents as f64 / 100.0);
-
-        Some(Self {
-            price_level_id: rate.price_level_id,
-            price_level_name: level.name.clone(),
-            price_cents: rate.price_cents,
-            price_formatted,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,10 +308,16 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::domain::category::{NewCategory, UpdateCategory};
+    use crate::domain::types::{
+        CategoryId, CategoryName, CurrencyCode, HubId, ImageUrl, PriceCents, PriceLevelId,
+        PriceLevelName, ProductDescription, ProductId, ProductName, ProductPriceLevelRateId,
+        ProductSku, ProductUnits, TagId, TagName,
+    };
     use crate::domain::{
         category::Category, price_level::PriceLevel, product::Product,
-        product_price_level::ProductPriceLevelRate,
+        product_price_level::ProductPriceLevelRate, tag::Tag,
     };
+    use crate::dto::products::ProductsQuery;
     use crate::forms::products::{
         AddProductForm, AddProductPriceLevelForm, EditProductForm, EditProductPriceLevelForm,
         UploadProductsForm,
@@ -466,13 +343,13 @@ mod tests {
         price_levels: Vec<ProductPriceLevelRate>,
     ) -> Product {
         Product {
-            id,
-            hub_id,
-            name: name.to_string(),
+            id: ProductId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: ProductName::new(name).unwrap(),
             sku: None,
             description: None,
             units: None,
-            currency: "USD".to_string(),
+            currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: None,
             price_levels,
@@ -523,6 +400,7 @@ mod tests {
         };
 
         let expected_hub = user.hub_id;
+        let expected_hub_id = HubId::new(expected_hub).unwrap();
 
         let price_level_rows = vec![
             price_level(10, expected_hub, "Retail"),
@@ -544,7 +422,7 @@ mod tests {
             .expect_list_products()
             .times(1)
             .withf(move |qry| {
-                assert_eq!(qry.hub_id, expected_hub);
+                assert_eq!(qry.hub_id.get(), expected_hub);
                 assert_eq!(qry.search.as_deref(), Some("coffee"));
                 match &qry.pagination {
                     Some(pagination) => {
@@ -561,33 +439,33 @@ mod tests {
                     expected_hub,
                     "Coffee A",
                     vec![ProductPriceLevelRate {
-                        id: 1,
-                        product_id: 1,
-                        price_level_id: 10,
-                        price_cents: 1299,
+                        id: ProductPriceLevelRateId::new(1).unwrap(),
+                        product_id: ProductId::new(1).unwrap(),
+                        price_level_id: PriceLevelId::new(10).unwrap(),
+                        price_cents: PriceCents::new(1299).unwrap(),
                         created_at: datetime(),
                         updated_at: datetime(),
                     }],
                 );
                 product_a.tags = vec![product_tag_rows[0].clone()];
-                product_a.category_id = Some(31);
+                product_a.category_id = Some(CategoryId::new(31).unwrap());
 
                 let mut product_b = sample_product(
                     2,
                     expected_hub,
                     "Coffee B",
                     vec![ProductPriceLevelRate {
-                        id: 2,
-                        product_id: 2,
-                        price_level_id: 11,
-                        price_cents: 1599,
+                        id: ProductPriceLevelRateId::new(2).unwrap(),
+                        product_id: ProductId::new(2).unwrap(),
+                        price_level_id: PriceLevelId::new(11).unwrap(),
+                        price_cents: PriceCents::new(1599).unwrap(),
                         created_at: datetime(),
                         updated_at: datetime(),
                     }],
                 );
 
                 product_b.tags = vec![product_tag_rows[1].clone()];
-                product_b.category_id = Some(33);
+                product_b.category_id = Some(CategoryId::new(33).unwrap());
 
                 Ok((27, vec![product_a, product_b]))
             });
@@ -603,7 +481,7 @@ mod tests {
             .expect_list_categories()
             .times(1)
             .withf(move |qry| {
-                assert_eq!(qry.hub_id, expected_hub);
+                assert_eq!(qry.hub_id.get(), expected_hub);
                 assert!(!qry.include_archived);
                 true
             })
@@ -615,7 +493,7 @@ mod tests {
             .expect_list_tags()
             .times(1)
             .withf(move |qry| {
-                assert_eq!(qry.hub_id, expected_hub);
+                assert_eq!(qry.hub_id, expected_hub_id);
                 assert!(qry.search.is_none());
                 assert!(qry.pagination.is_none());
                 true
@@ -696,7 +574,7 @@ mod tests {
             .expect_list_products()
             .times(1)
             .withf(move |qry| {
-                assert_eq!(qry.hub_id, expected_hub);
+                assert_eq!(qry.hub_id.get(), expected_hub);
                 assert!(qry.include_archived);
                 true
             })
@@ -779,10 +657,13 @@ mod tests {
             .expect_create_product()
             .times(1)
             .withf(move |new_product| {
-                assert_eq!(new_product.hub_id, hub_id);
-                assert_eq!(new_product.name, "Widget");
-                assert_eq!(new_product.currency, "USD");
-                assert_eq!(new_product.units.as_deref(), Some("Each"));
+                assert_eq!(new_product.hub_id.get(), hub_id);
+                assert_eq!(new_product.name.as_str(), "Widget");
+                assert_eq!(new_product.currency.as_str(), "USD");
+                assert_eq!(
+                    new_product.units.as_ref().map(|units| units.as_str()),
+                    Some("Each")
+                );
                 true
             })
             .returning(move |_| Ok(sample_product(101, hub_id, "Widget", Vec::new())));
@@ -793,11 +674,8 @@ mod tests {
             .withf(move |product_id, scope_hub, urls| {
                 assert_eq!((*product_id, *scope_hub), (101, hub_id));
                 assert_eq!(
-                    urls,
-                    &[
-                        "https://example.com/a.png".to_string(),
-                        "https://example.com/b.png".to_string()
-                    ]
+                    urls.iter().map(|url| url.as_str()).collect::<Vec<_>>(),
+                    &["https://example.com/a.png", "https://example.com/b.png"]
                 );
                 true
             })
@@ -821,8 +699,8 @@ mod tests {
                 assert_eq!(*product_id, 101);
                 assert_eq!(*scope_hub, expected_hub);
                 assert_eq!(rates.len(), 1);
-                assert_eq!(rates[0].price_level_id, 10);
-                assert_eq!(rates[0].price_cents, 1234);
+                assert_eq!(rates[0].price_level_id.get(), 10);
+                assert_eq!(rates[0].price_cents.get(), 1234);
                 true
             })
             .returning(|_, _, _| Ok(()));
@@ -846,11 +724,15 @@ mod tests {
         };
 
         let result = create_product(&repo, &user, form).expect("expected success");
-        assert_eq!(result.id, 101);
-        assert_eq!(result.hub_id, hub_id);
-        assert_eq!(result.name, "Widget");
+        assert_eq!(result.id.get(), 101);
+        assert_eq!(result.hub_id.get(), hub_id);
+        assert_eq!(result.name.as_str(), "Widget");
         assert_eq!(
-            result.image_urls,
+            result
+                .image_urls
+                .into_iter()
+                .map(|url| url.into_inner())
+                .collect::<Vec<_>>(),
             vec![
                 "https://example.com/a.png".to_string(),
                 "https://example.com/b.png".to_string()
@@ -1004,7 +886,7 @@ mod tests {
                 let id = *counter;
                 Ok(sample_product(
                     id,
-                    new_product.hub_id,
+                    new_product.hub_id.get(),
                     new_product.name.as_str(),
                     Vec::new(),
                 ))
@@ -1047,17 +929,17 @@ mod tests {
                         assert_eq!(product_id, 1);
                         assert_eq!(scope_hub, hub_id);
                         assert_eq!(rates.len(), 2);
-                        assert_eq!(rates[0].price_level_id, 1);
-                        assert_eq!(rates[0].price_cents, 1234);
-                        assert_eq!(rates[1].price_level_id, 2);
-                        assert_eq!(rates[1].price_cents, 990);
+                        assert_eq!(rates[0].price_level_id.get(), 1);
+                        assert_eq!(rates[0].price_cents.get(), 1234);
+                        assert_eq!(rates[1].price_level_id.get(), 2);
+                        assert_eq!(rates[1].price_cents.get(), 990);
                     }
                     1 => {
                         assert_eq!(product_id, 2);
                         assert_eq!(scope_hub, hub_id);
                         assert_eq!(rates.len(), 1);
-                        assert_eq!(rates[0].price_level_id, 1);
-                        assert_eq!(rates[0].price_cents, 750);
+                        assert_eq!(rates[0].price_level_id.get(), 1);
+                        assert_eq!(rates[0].price_cents.get(), 750);
                     }
                     _ => panic!("unexpected additional rate call"),
                 }
@@ -1173,13 +1055,13 @@ Banana,USD,7.50,
         let hub_id = user.hub_id;
 
         let mut base_product = sample_product(product_id, hub_id, "Espresso", Vec::new());
-        base_product.sku = Some("ESP-1".to_string());
-        base_product.description = Some("Strong".to_string());
-        base_product.units = Some("kg".to_string());
+        base_product.sku = Some(ProductSku::new("ESP-1").unwrap());
+        base_product.description = Some(ProductDescription::new("Strong").unwrap());
+        base_product.units = Some(ProductUnits::new("kg").unwrap());
         base_product.is_archived = false;
-        base_product.category_id = Some(5);
+        base_product.category_id = Some(CategoryId::new(5).unwrap());
         base_product.tags = vec![tag(40, hub_id, "Legacy")];
-        base_product.image_urls = vec!["https://example.com/legacy.png".to_string()];
+        base_product.image_urls = vec![ImageUrl::new("https://example.com/legacy.png").unwrap()];
         let price_level_rows = vec![
             price_level(31, hub_id, "Retail"),
             price_level(32, hub_id, "Wholesale"),
@@ -1191,15 +1073,16 @@ Banana,USD,7.50,
         let writer_product = base_product.clone();
         let final_product = {
             let mut product = writer_product.clone();
-            product.name = "Espresso Deluxe".to_string();
-            product.currency = "eur".to_string();
+            product.name = ProductName::new("Espresso Deluxe").unwrap();
+            product.currency = CurrencyCode::new("EUR").unwrap();
             product.sku = None;
             product.description = None;
-            product.units = Some("pack".to_string());
+            product.units = Some(ProductUnits::new("pack").unwrap());
             product.is_archived = true;
             product.category_id = None;
             product.tags = vec![tag(42, hub_id, "Featured"), tag(99, hub_id, "Top Seller")];
-            product.image_urls = vec!["https://cdn.example.com/espresso-deluxe.png".to_string()];
+            product.image_urls =
+                vec![ImageUrl::new("https://cdn.example.com/espresso-deluxe.png").unwrap()];
             product.updated_at = new_updated_at;
             product
         };
@@ -1226,7 +1109,10 @@ Banana,USD,7.50,
                 assert_eq!(updates.name.as_str(), "Espresso Deluxe");
                 assert_eq!(updates.currency.as_str(), "EUR");
                 assert!(updates.sku.is_none());
-                assert_eq!(updates.units.as_deref(), Some("pack"));
+                assert_eq!(
+                    updates.units.as_ref().map(|units| units.as_str()),
+                    Some("pack")
+                );
                 assert!(updates.is_archived);
                 true
             })
@@ -1254,10 +1140,10 @@ Banana,USD,7.50,
             .withf(move |id, hub, rates| {
                 assert_eq!((*id, *hub), (product_id, hub_id));
                 assert_eq!(rates.len(), 2);
-                assert_eq!(rates[0].price_level_id, 31);
-                assert_eq!(rates[0].price_cents, 4250);
-                assert_eq!(rates[1].price_level_id, 32);
-                assert_eq!(rates[1].price_cents, 3500);
+                assert_eq!(rates[0].price_level_id.get(), 31);
+                assert_eq!(rates[0].price_cents.get(), 4250);
+                assert_eq!(rates[1].price_level_id.get(), 32);
+                assert_eq!(rates[1].price_cents.get(), 3500);
                 true
             })
             .returning(|_, _, _| Ok(()));
@@ -1286,7 +1172,7 @@ Banana,USD,7.50,
 
         let form = EditProductForm {
             product_id,
-            name: "  Espresso Deluxe  ".to_string(),
+            name: "Espresso Deluxe".to_string(),
             sku: Some("   ".to_string()),         // clears SKU
             description: Some("   ".to_string()), // clears description
             units: Some("  pack ".to_string()),
@@ -1311,10 +1197,13 @@ Banana,USD,7.50,
         let result =
             update_product(&repo, &user, product_id, form).expect("expected update to succeed");
 
-        assert_eq!(result.name, "Espresso Deluxe");
-        assert_eq!(result.currency, "EUR");
+        assert_eq!(result.name.as_str(), "Espresso Deluxe");
+        assert_eq!(result.currency.as_str(), "EUR");
         assert!(result.sku.is_none());
-        assert_eq!(result.units.as_deref(), Some("pack"));
+        assert_eq!(
+            result.units.as_ref().map(|units| units.as_str()),
+            Some("pack")
+        );
         assert!(result.is_archived);
         assert_eq!(result.tags, final_product.tags);
         assert_eq!(result.updated_at, new_updated_at);
@@ -1471,7 +1360,7 @@ Banana,USD,7.50,
             &self,
             product_id: i32,
             hub_id: i32,
-            image_urls: &[String],
+            image_urls: &[ImageUrl],
         ) -> RepositoryResult<()> {
             self.product_writer
                 .replace_product_images(product_id, hub_id, image_urls)
@@ -1497,9 +1386,9 @@ Banana,USD,7.50,
 
     fn price_level(id: i32, hub_id: i32, name: &str) -> PriceLevel {
         PriceLevel {
-            id,
-            hub_id,
-            name: name.to_string(),
+            id: PriceLevelId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: PriceLevelName::new(name).unwrap(),
             created_at: datetime(),
             updated_at: datetime(),
             is_default: false,
@@ -1508,10 +1397,10 @@ Banana,USD,7.50,
 
     fn category(id: i32, hub_id: i32, name: &str, is_archived: bool) -> Category {
         Category {
-            id,
-            hub_id,
+            id: CategoryId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
             parent_id: None,
-            name: name.to_string(),
+            name: CategoryName::new(name).unwrap(),
             description: None,
             is_archived,
             created_at: datetime(),
@@ -1522,9 +1411,9 @@ Banana,USD,7.50,
 
     fn tag(id: i32, hub_id: i32, name: &str) -> Tag {
         Tag {
-            id,
-            hub_id,
-            name: name.to_string(),
+            id: TagId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: TagName::new(name).unwrap(),
             created_at: datetime(),
             updated_at: datetime(),
         }

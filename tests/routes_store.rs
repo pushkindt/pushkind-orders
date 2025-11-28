@@ -6,9 +6,16 @@ use actix_web::{
     test, web,
 };
 use pushkind_orders::domain::{
-    category::NewCategory, customer::Customer, customer::NewCustomer, order::NewOrder,
-    order::OrderProduct, price_level::NewPriceLevel, product::NewProduct,
-    product_price_level::NewProductPriceLevelRate, tag::NewTag,
+    category::NewCategory,
+    customer::Customer,
+    customer::NewCustomer,
+    order::NewOrder,
+    order::OrderProduct,
+    price_level::NewPriceLevel,
+    product::NewProduct,
+    product_price_level::NewProductPriceLevelRate,
+    tag::NewTag,
+    types::{CategoryName, HubId, PriceCents, ProductId},
 };
 use pushkind_orders::repository::{
     CategoryWriter, CustomerWriter, DieselRepository, OrderWriter, PriceLevelWriter, ProductWriter,
@@ -37,16 +44,19 @@ async fn store_endpoints_return_data() {
     let repo = DieselRepository::new(test_db.pool());
 
     let _category = repo
-        .create_category(&NewCategory::new(1, "Beverages"))
+        .create_category(&NewCategory::new(
+            HubId::new(1).unwrap(),
+            CategoryName::new("Beverages").unwrap(),
+        ))
         .expect("create category");
     let tag = repo
-        .create_tag(&NewTag::new(1, "Organic"))
+        .create_tag(&NewTag::try_new(1, "Organic").expect("build tag"))
         .expect("create tag");
 
     let product = repo
-        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
-    repo.replace_product_tags(product.id, 1, &[tag.id])
+    repo.replace_product_tags(product.id.get(), 1, &[tag.id.get()])
         .expect("attach tag");
 
     let app_repo = repo.clone();
@@ -78,7 +88,7 @@ async fn store_endpoints_return_data() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let product_response: StoreProduct = test::read_body_json(resp).await;
-    assert_eq!(product_response.id, product.id);
+    assert_eq!(product_response.id, product.id.get());
     assert_eq!(product_response.name, "Coffee");
 
     let req = test::TestRequest::get()
@@ -106,19 +116,29 @@ async fn store_products_respect_query_parameters() {
     let repo = DieselRepository::new(test_db.pool());
 
     let beverages = repo
-        .create_category(&NewCategory::new(1, "Beverages"))
+        .create_category(&NewCategory::new(
+            HubId::new(1).unwrap(),
+            CategoryName::new("Beverages").unwrap(),
+        ))
         .expect("create beverages category");
     let _snacks = repo
-        .create_category(&NewCategory::new(1, "Snacks"))
+        .create_category(&NewCategory::new(
+            HubId::new(1).unwrap(),
+            CategoryName::new("Snacks").unwrap(),
+        ))
         .expect("create snacks category");
 
-    repo.create_product(&NewProduct::new(1, "Coffee Beans", "USD").with_category_id(beverages.id))
-        .expect("create coffee product");
-    repo.create_product(&NewProduct::new(1, "Special Tea", "USD"))
+    repo.create_product(
+        &NewProduct::try_new(1, "Coffee Beans", "USD")
+            .unwrap()
+            .with_category_id(beverages.id),
+    )
+    .expect("create coffee product");
+    repo.create_product(&NewProduct::try_new(1, "Special Tea", "USD").unwrap())
         .expect("create tea product");
 
     for index in 0..21 {
-        repo.create_product(&NewProduct::new(1, format!("Extra Item {index}"), "USD"))
+        repo.create_product(&NewProduct::try_new(1, format!("Extra Item {index}"), "USD").unwrap())
             .expect("create extra product");
     }
 
@@ -150,7 +170,7 @@ async fn store_products_respect_query_parameters() {
     let req = test::TestRequest::get()
         .uri(&format!(
             "/api/v1/store/1/products?categoryId={}",
-            beverages.id
+            beverages.id.get()
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -160,7 +180,7 @@ async fn store_products_respect_query_parameters() {
     assert!(
         category_products
             .iter()
-            .all(|product| product.category_id == Some(beverages.id))
+            .all(|product| product.category_id == Some(beverages.id.get()))
     );
 
     let req = test::TestRequest::get()
@@ -192,10 +212,16 @@ async fn store_categories_respect_parent_query_parameter() {
     let repo = DieselRepository::new(test_db.pool());
 
     let beverages = repo
-        .create_category(&NewCategory::new(1, "Beverages"))
+        .create_category(&NewCategory::new(
+            HubId::new(1).unwrap(),
+            CategoryName::new("Beverages").unwrap(),
+        ))
         .expect("create root category");
-    repo.create_category(&NewCategory::new(1, "Coffee").with_parent_id(beverages.id))
-        .expect("create child category");
+    repo.create_category(
+        &NewCategory::new(HubId::new(1).unwrap(), CategoryName::new("Coffee").unwrap())
+            .with_parent_id(beverages.id),
+    )
+    .expect("create child category");
 
     let app_repo = repo.clone();
     let app = test::init_service(
@@ -216,19 +242,19 @@ async fn store_categories_respect_parent_query_parameter() {
     assert_eq!(resp.status(), StatusCode::OK);
     let root_categories: Vec<StoreCategory> = test::read_body_json(resp).await;
     assert_eq!(root_categories.len(), 1);
-    assert_eq!(root_categories[0].id, beverages.id);
+    assert_eq!(root_categories[0].id, beverages.id.get());
 
     let req = test::TestRequest::get()
         .uri(&format!(
             "/api/v1/store/1/categories?parentId={}",
-            beverages.id
+            beverages.id.get()
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let child_categories: Vec<StoreCategory> = test::read_body_json(resp).await;
     assert_eq!(child_categories.len(), 1);
-    assert_eq!(child_categories[0].parent_id, Some(beverages.id));
+    assert_eq!(child_categories[0].parent_id, Some(beverages.id.get()));
 }
 
 #[actix_web::test]
@@ -302,18 +328,18 @@ async fn create_store_order_requires_authentication() {
     let test_db = common::TestDb::new("routes_store_order_requires_auth.db");
     let repo = DieselRepository::new(test_db.pool());
     let price_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Default", true))
+        .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
         .expect("create price level");
     let product = repo
-        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
     repo.replace_product_price_levels(
-        product.id,
+        product.id.get(),
         1,
         &[NewProductPriceLevelRate::new(
             product.id,
             price_level.id,
-            500,
+            PriceCents::new(500).unwrap(),
         )],
     )
     .expect("attach price level");
@@ -350,23 +376,23 @@ async fn create_store_order_validates_payload() {
     let test_db = common::TestDb::new("routes_store_order_validates_payload.db");
     let repo = DieselRepository::new(test_db.pool());
     let price_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Default", true))
+        .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
         .expect("create price level");
     let product = repo
-        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
     repo.replace_product_price_levels(
-        product.id,
+        product.id.get(),
         1,
         &[NewProductPriceLevelRate::new(
             product.id,
             price_level.id,
-            500,
+            PriceCents::new(500).unwrap(),
         )],
     )
     .expect("attach price level");
     let customer = repo
-        .create_customer(&NewCustomer::new(1, "John", "+111"))
+        .create_customer(&NewCustomer::try_new(1, "John", "+111").expect("valid customer payload"))
         .expect("create customer");
 
     let key = Key::generate();
@@ -419,23 +445,23 @@ async fn create_store_order_creates_order() {
     let test_db = common::TestDb::new("routes_store_order_creates.db");
     let repo = DieselRepository::new(test_db.pool());
     let price_level = repo
-        .create_price_level(&NewPriceLevel::new(1, "Default", true))
+        .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
         .expect("create price level");
     let product = repo
-        .create_product(&NewProduct::new(1, "Coffee", "USD"))
+        .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
     repo.replace_product_price_levels(
-        product.id,
+        product.id.get(),
         1,
         &[NewProductPriceLevelRate::new(
             product.id,
             price_level.id,
-            500,
+            PriceCents::new(500).unwrap(),
         )],
     )
     .expect("attach price level");
     let customer = repo
-        .create_customer(&NewCustomer::new(1, "John", "+111"))
+        .create_customer(&NewCustomer::try_new(1, "John", "+111").expect("valid customer payload"))
         .expect("create customer");
 
     let key = Key::generate();
@@ -483,7 +509,7 @@ async fn create_store_order_creates_order() {
 
     assert_eq!(resp.status(), StatusCode::CREATED);
     let order: StoreOrder = test::read_body_json(resp).await;
-    assert_eq!(order.customer_id, Some(customer.id));
+    assert_eq!(order.customer_id, Some(customer.id.into()));
     assert_eq!(order.total_cents, 1000);
     assert_eq!(order.products.len(), 1);
     assert_eq!(order.products[0].price_cents, 1000);
@@ -523,11 +549,16 @@ async fn list_store_orders_returns_orders_for_customer() {
     let test_db = common::TestDb::new("routes_store_orders_returns_data.db");
     let repo = DieselRepository::new(test_db.pool());
     let customer = repo
-        .create_customer(&NewCustomer::new(1, "Customer", "+111"))
+        .create_customer(
+            &NewCustomer::try_new(1, "Customer", "+111").expect("valid customer payload"),
+        )
         .expect("create customer");
 
-    let product = OrderProduct::new("Coffee", 500, "USD", 1).with_product_id(1);
-    let new_order = NewOrder::new(1, 500, "USD")
+    let product = OrderProduct::try_new("Coffee", 500, "USD", 1)
+        .unwrap()
+        .with_product_id(ProductId::new(1).unwrap());
+    let new_order = NewOrder::try_new(1, 500, "USD")
+        .unwrap()
         .with_customer_id(customer.id)
         .with_products(vec![product]);
     repo.create_order(&new_order).expect("create order");
@@ -575,7 +606,7 @@ async fn list_store_orders_returns_orders_for_customer() {
     assert_eq!(resp.status(), StatusCode::OK);
     let orders: Vec<StoreOrder> = test::read_body_json(resp).await;
     assert_eq!(orders.len(), 1);
-    assert_eq!(orders[0].customer_id, Some(customer.id));
+    assert_eq!(orders[0].customer_id, Some(customer.id.into()));
     assert_eq!(orders[0].total_cents, 500);
 }
 
@@ -584,7 +615,9 @@ async fn list_store_orders_returns_empty_results() {
     let test_db = common::TestDb::new("routes_store_orders_empty_results.db");
     let repo = DieselRepository::new(test_db.pool());
     let customer = repo
-        .create_customer(&NewCustomer::new(1, "Customer", "+111"))
+        .create_customer(
+            &NewCustomer::try_new(1, "Customer", "+111").expect("valid customer payload"),
+        )
         .expect("create customer");
 
     let key = Key::generate();

@@ -1,10 +1,14 @@
+//! Diesel model for product tag association records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
-use crate::domain::product_tag::{
-    NewProductTag as DomainNewProductTag, ProductTag as DomainProductTag,
+use crate::domain::{
+    product_tag::{NewProductTag as DomainNewProductTag, ProductTag as DomainProductTag},
+    types::{ProductId, ProductTagId, TagId, TypeConstraintError},
 };
 
+/// Database representation of a product tag association record.
 #[derive(Debug, Clone, Identifiable, Queryable, Associations, Selectable)]
 #[diesel(
     table_name = crate::schema::product_tags,
@@ -19,6 +23,7 @@ pub struct ProductTag {
     pub updated_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new product tag association record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::product_tags)]
 pub struct NewProductTag {
@@ -26,23 +31,25 @@ pub struct NewProductTag {
     pub tag_id: i32,
 }
 
-impl From<ProductTag> for DomainProductTag {
-    fn from(value: ProductTag) -> Self {
-        Self {
-            id: value.id,
-            product_id: value.product_id,
-            tag_id: value.tag_id,
+impl TryFrom<ProductTag> for DomainProductTag {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: ProductTag) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: ProductTagId::new(value.id)?,
+            product_id: ProductId::new(value.product_id)?,
+            tag_id: TagId::new(value.tag_id)?,
             created_at: value.created_at,
             updated_at: value.updated_at,
-        }
+        })
     }
 }
 
 impl From<&DomainNewProductTag> for NewProductTag {
     fn from(value: &DomainNewProductTag) -> Self {
         Self {
-            product_id: value.product_id,
-            tag_id: value.tag_id,
+            product_id: value.product_id.get(),
+            tag_id: value.tag_id.get(),
         }
     }
 }

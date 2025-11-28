@@ -1,10 +1,14 @@
+//! Diesel model for user records.
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
-use crate::domain::user::{
-    NewUser as DomainNewUser, UpdateUser as DomainUpdateUser, User as DomainUser,
+use crate::domain::{
+    types::{HubId, TypeConstraintError, UserEmail, UserId, UserName},
+    user::{NewUser as DomainNewUser, UpdateUser as DomainUpdateUser, User as DomainUser},
 };
 
+/// Database representation of a user record.
 #[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::users)]
 pub struct User {
@@ -16,6 +20,7 @@ pub struct User {
     pub updated_at: NaiveDateTime,
 }
 
+/// Payload for inserting a new user record.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::users)]
 pub struct NewUser<'a> {
@@ -24,6 +29,7 @@ pub struct NewUser<'a> {
     pub email: &'a str,
 }
 
+/// Payload for updating an existing user record.
 #[derive(AsChangeset)]
 #[diesel(table_name = crate::schema::users)]
 pub struct UpdateUser<'a> {
@@ -31,21 +37,23 @@ pub struct UpdateUser<'a> {
     pub updated_at: NaiveDateTime,
 }
 
-impl From<User> for DomainUser {
-    fn from(value: User) -> Self {
-        Self {
-            id: value.id,
-            hub_id: value.hub_id,
-            name: value.name,
-            email: value.email,
-        }
+impl TryFrom<User> for DomainUser {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: User) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: UserId::new(value.id)?,
+            hub_id: HubId::new(value.hub_id)?,
+            name: UserName::new(value.name)?,
+            email: UserEmail::new(value.email)?,
+        })
     }
 }
 
 impl<'a> From<&'a DomainNewUser> for NewUser<'a> {
     fn from(value: &'a DomainNewUser) -> Self {
         Self {
-            hub_id: value.hub_id,
+            hub_id: value.hub_id.get(),
             name: value.name.as_str(),
             email: value.email.as_str(),
         }

@@ -1,24 +1,30 @@
+//! Category domain models with hierarchical tree support.
+
 use chrono::NaiveDateTime;
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
+use crate::domain::types::{
+    CategoryDescription, CategoryId, CategoryName, HubId, ImageUrl, TypeConstraintError,
+};
+
 /// Domain representation of a hierarchical product category belonging to a hub.
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Category {
     /// Unique identifier of the category.
-    pub id: i32,
+    pub id: CategoryId,
     /// Owning hub identifier.
-    pub hub_id: i32,
+    pub hub_id: HubId,
     /// Optional identifier of the parent category when building a tree.
-    pub parent_id: Option<i32>,
+    pub parent_id: Option<CategoryId>,
     /// Human-readable name of the category.
-    pub name: String,
+    pub name: CategoryName,
     /// Optional description that expands upon the category name.
-    pub description: Option<String>,
+    pub description: Option<CategoryDescription>,
     /// Flag indicating whether the category has been archived.
     pub is_archived: bool,
     /// Optional image URL for the category
-    pub image_url: Option<String>,
+    pub image_url: Option<ImageUrl>,
     /// Timestamp for when the category record was created.
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the category record.
@@ -26,24 +32,23 @@ pub struct Category {
 }
 
 /// Payload required to insert a new category for a hub.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NewCategory {
     /// Owning hub identifier.
-    pub hub_id: i32,
+    pub hub_id: HubId,
     /// Optional identifier of the parent category when building a tree.
-    pub parent_id: Option<i32>,
+    pub parent_id: Option<CategoryId>,
     /// Human-readable name of the category.
-    pub name: String,
+    pub name: CategoryName,
     /// Optional description that expands upon the category name.
-    pub description: Option<String>,
+    pub description: Option<CategoryDescription>,
     /// Optional image URL for the category
-    pub image_url: Option<String>,
+    pub image_url: Option<ImageUrl>,
 }
 
 impl NewCategory {
     /// Build a new category payload with the supplied details.
-    pub fn new(hub_id: i32, name: impl Into<String>) -> Self {
-        let name = name.into();
+    pub fn new(hub_id: HubId, name: CategoryName) -> Self {
         Self {
             hub_id,
             parent_id: None,
@@ -53,22 +58,51 @@ impl NewCategory {
         }
     }
 
+    /// Attempt to build a category payload from raw identifiers.
+    pub fn try_new(hub_id: i32, name: impl Into<String>) -> Result<Self, TypeConstraintError> {
+        Ok(Self::new(HubId::new(hub_id)?, CategoryName::new(name)?))
+    }
+
     /// Attach a parent identifier to the category payload.
-    pub fn with_parent_id(mut self, parent_id: i32) -> Self {
+    pub fn with_parent_id(mut self, parent_id: CategoryId) -> Self {
         self.parent_id = Some(parent_id);
         self
     }
 
+    /// Attach a parent identifier from a raw integer.
+    pub fn try_with_parent_id(mut self, parent_id: i32) -> Result<Self, TypeConstraintError> {
+        self.parent_id = Some(CategoryId::new(parent_id)?);
+        Ok(self)
+    }
+
     /// Attach a descriptive text to the category payload.
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
+    pub fn with_description(mut self, description: CategoryDescription) -> Self {
+        self.description = Some(description);
         self
     }
 
+    /// Attach a description from a raw string.
+    pub fn try_with_description(
+        mut self,
+        description: impl Into<String>,
+    ) -> Result<Self, TypeConstraintError> {
+        self.description = Some(CategoryDescription::new(description)?);
+        Ok(self)
+    }
+
     /// Attach an image URL for the category payload.
-    pub fn with_image_url(mut self, image_url: impl Into<String>) -> Self {
-        self.image_url = Some(image_url.into());
+    pub fn with_image_url(mut self, image_url: ImageUrl) -> Self {
+        self.image_url = Some(image_url);
         self
+    }
+
+    /// Attach an image URL from a raw string.
+    pub fn try_with_image_url(
+        mut self,
+        image_url: impl Into<String>,
+    ) -> Result<Self, TypeConstraintError> {
+        self.image_url = Some(ImageUrl::new(image_url)?);
+        Ok(self)
     }
 }
 
@@ -76,13 +110,13 @@ impl NewCategory {
 #[derive(Debug, Clone)]
 pub struct UpdateCategory {
     /// Updated name for the category.
-    pub name: String,
+    pub name: CategoryName,
     /// New description value; `None` clears the description.
-    pub description: Option<String>,
+    pub description: Option<CategoryDescription>,
     /// Archive flag state applied by this update.
     pub is_archived: bool,
     /// Optional image URL for the category
-    pub image_url: Option<String>,
+    pub image_url: Option<ImageUrl>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }
@@ -90,10 +124,10 @@ pub struct UpdateCategory {
 impl UpdateCategory {
     /// Build a category update payload with name and a fresh timestamp.
     pub fn new(
-        name: String,
-        description: Option<String>,
+        name: CategoryName,
+        description: Option<CategoryDescription>,
         is_archived: bool,
-        image_url: Option<String>,
+        image_url: Option<ImageUrl>,
     ) -> Self {
         let updated_at = chrono::Local::now().naive_utc();
         Self {
@@ -110,7 +144,7 @@ impl UpdateCategory {
 #[derive(Debug, Clone)]
 pub struct CategoryTreeQuery {
     /// Owning hub identifier.
-    pub hub_id: i32,
+    pub hub_id: HubId,
     /// Whether archived categories should be included in the results.
     pub include_archived: bool,
     /// Optional case-insensitive substring search applied to category names.
@@ -121,13 +155,18 @@ pub struct CategoryTreeQuery {
 
 impl CategoryTreeQuery {
     /// Construct a query that targets the category tree belonging to `hub_id`.
-    pub fn new(hub_id: i32) -> Self {
+    pub fn new(hub_id: HubId) -> Self {
         Self {
             hub_id,
             include_archived: false,
             search: None,
             pagination: None,
         }
+    }
+
+    /// Attempt to construct a query from a raw hub identifier.
+    pub fn try_new(hub_id: i32) -> Result<Self, TypeConstraintError> {
+        Ok(Self::new(HubId::new(hub_id)?))
     }
 
     /// Include archived categories in the results.

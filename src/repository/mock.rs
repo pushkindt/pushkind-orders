@@ -1,3 +1,5 @@
+//! Mock repository implementations for testing.
+
 use mockall::mock;
 
 use super::{
@@ -14,6 +16,7 @@ use crate::domain::{
     product_price_level::NewProductPriceLevelRate,
     store_otp::{NewStoreOtp, StoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
+    types::{HubId, ImageUrl, OrderId},
     user::{NewUser, UpdateUser, User},
 };
 use pushkind_common::repository::errors::RepositoryResult;
@@ -36,7 +39,7 @@ mock! {
         fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()>;
         fn replace_product_price_levels(&self, product_id: i32, hub_id: i32, rates: &[NewProductPriceLevelRate]) -> RepositoryResult<()>;
         fn replace_product_tags(&self, product_id: i32, hub_id: i32, tag_ids: &[i32]) -> RepositoryResult<()>;
-        fn replace_product_images(&self, product_id: i32, hub_id: i32, image_urls: &[String]) -> RepositoryResult<()>;
+        fn replace_product_images(&self, product_id: i32, hub_id: i32, image_urls: &[ImageUrl]) -> RepositoryResult<()>;
     }
 }
 
@@ -83,7 +86,7 @@ mock! {
     pub OrderReader {}
 
     impl OrderReader for OrderReader {
-        fn get_order_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Order>>;
+        fn get_order_by_id(&self, id: OrderId, hub_id: HubId) -> RepositoryResult<Option<Order>>;
         fn list_orders(&self, query: OrderListQuery) -> RepositoryResult<(usize, Vec<Order>)>;
     }
 }
@@ -93,8 +96,8 @@ mock! {
 
     impl OrderWriter for OrderWriter {
         fn create_order(&self, new_order: &NewOrder) -> RepositoryResult<Order>;
-        fn update_order(&self, order_id: i32, hub_id: i32, updates: &UpdateOrder) -> RepositoryResult<Order>;
-        fn delete_order(&self, order_id: i32, hub_id: i32) -> RepositoryResult<()>;
+        fn update_order(&self, order_id: OrderId, hub_id: HubId, updates: &UpdateOrder) -> RepositoryResult<Order>;
+        fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()>;
     }
 }
 

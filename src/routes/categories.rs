@@ -13,6 +13,9 @@ use crate::services::categories::{
 };
 
 #[get("/categories")]
+/// Render the categories management page with a hierarchical tree view.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn show_categories(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -43,6 +46,9 @@ pub async fn show_categories(
 }
 
 #[post("/categories/add")]
+/// Create a new product category.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn add_category(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -74,6 +80,9 @@ pub async fn add_category(
 }
 
 #[post("/categories/edit")]
+/// Update an existing product category.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn edit_category(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -101,6 +110,9 @@ pub async fn edit_category(
 }
 
 #[post("/categories/{category_id}/delete")]
+/// Delete a product category by ID.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn delete_category(
     path: web::Path<i32>,
     user: AuthenticatedUser,

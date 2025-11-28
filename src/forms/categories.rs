@@ -5,6 +5,7 @@ use validator::{Validate, ValidationErrors};
 
 use crate::{
     domain::category::{NewCategory, UpdateCategory},
+    domain::types::{CategoryDescription, CategoryName, HubId, ImageUrl},
     forms::{empty_id_as_none, sanitize_text},
 };
 
@@ -58,10 +59,15 @@ impl AddCategoryForm {
     pub fn into_new_category(self, hub_id: i32) -> CategoryFormResult<NewCategory> {
         self.validate()?;
 
+        let hub_id = HubId::new(hub_id)
+            .map_err(|_| CategoryFormError::Validation(ValidationErrors::new()))?;
+
         let sanitized_name = self.name.trim();
         if sanitized_name.is_empty() {
             return Err(CategoryFormError::EmptyName);
         }
+        let category_name =
+            CategoryName::new(sanitized_name).map_err(|_| CategoryFormError::EmptyName)?;
 
         let sanitized_description = self
             .description
@@ -75,14 +81,20 @@ impl AddCategoryForm {
             .map(str::trim)
             .filter(|value| !value.is_empty());
 
-        let mut new_category = NewCategory::new(hub_id, sanitized_name);
+        let mut new_category = NewCategory::new(hub_id, category_name);
         if let Some(description) = sanitized_description {
+            let description =
+                CategoryDescription::new(description).map_err(|_| CategoryFormError::EmptyName)?;
             new_category = new_category.with_description(description);
         }
         if let Some(parent_id) = self.parent_id {
-            new_category = new_category.with_parent_id(parent_id);
+            new_category = new_category
+                .try_with_parent_id(parent_id)
+                .map_err(|_| CategoryFormError::Validation(ValidationErrors::new()))?;
         }
         if let Some(image_url) = sanitized_image_url {
+            let image_url = ImageUrl::new(image_url)
+                .map_err(|_| CategoryFormError::Validation(ValidationErrors::new()))?;
             new_category = new_category.with_image_url(image_url);
         }
         Ok(new_category)
@@ -129,6 +141,18 @@ impl EditCategoryForm {
 
         let description = description.and_then(|x| sanitize_text(&x));
 
+        let name = CategoryName::new(name).map_err(|_| CategoryFormError::EmptyName)?;
+        let description = description
+            .and_then(|x| sanitize_text(&x))
+            .map(CategoryDescription::new)
+            .transpose()
+            .map_err(|_| CategoryFormError::EmptyName)?;
+        let image_url = image_url
+            .and_then(|url| sanitize_text(&url))
+            .map(ImageUrl::new)
+            .transpose()
+            .map_err(|_| CategoryFormError::Validation(ValidationErrors::new()))?;
+
         let update = UpdateCategory::new(name, description, is_archived, image_url);
 
         Ok(update)
@@ -152,13 +176,13 @@ mod tests {
             .into_new_category(5)
             .expect("expected conversion to succeed");
 
-        assert_eq!(new_category.hub_id, 5);
-        assert_eq!(new_category.name, "Fresh Produce");
+        assert_eq!(new_category.hub_id.get(), 5);
+        assert_eq!(new_category.name.as_str(), "Fresh Produce");
         assert_eq!(
-            new_category.description.as_deref(),
+            new_category.description.as_ref().map(|desc| desc.as_str()),
             Some("Fruits\n\n Vegetables")
         );
-        assert_eq!(new_category.parent_id, Some(12));
+        assert_eq!(new_category.parent_id.map(|id| id.get()), Some(12));
     }
 
     #[test]
@@ -202,8 +226,11 @@ mod tests {
             .into_update_category()
             .expect("expected payload conversion to succeed");
 
-        assert_eq!(update.name, "Pantry");
-        assert_eq!(update.description.as_deref(), Some("Dry goods"));
+        assert_eq!(update.name.as_str(), "Pantry");
+        assert_eq!(
+            update.description.as_ref().map(|desc| desc.as_str()),
+            Some("Dry goods")
+        );
         assert!(update.is_archived);
     }
 

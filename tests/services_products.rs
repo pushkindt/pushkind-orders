@@ -12,7 +12,7 @@ fn create_product_stores_price_levels() {
     let test_db = common::TestDb::new("service_create_product_stores_price_levels.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    repo.create_price_level(&NewPriceLevel::new(1, "Retail", false))
+    repo.create_price_level(&NewPriceLevel::try_new(1, "Retail", false).unwrap())
         .expect("create price level");
 
     let user = AuthenticatedUser {
@@ -47,15 +47,15 @@ fn create_product_stores_price_levels() {
     );
 
     let product = repo
-        .list_products(ProductListQuery::new(1))
+        .list_products(ProductListQuery::try_new(1).unwrap())
         .expect("list products")
         .1
         .pop()
         .expect("product should exist");
 
     assert_eq!(product.price_levels.len(), 1);
-    assert_eq!(product.price_levels[0].price_level_id, 1);
-    assert_eq!(product.price_levels[0].price_cents, 1250);
+    assert_eq!(product.price_levels[0].price_level_id.get(), 1);
+    assert_eq!(product.price_levels[0].price_cents.get(), 1250);
 }
 
 #[test]
