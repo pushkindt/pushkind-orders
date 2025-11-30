@@ -10,9 +10,12 @@ of Actix Web, Diesel, and Tera and integrates tightly with the shared
 
 - **Role-gated order dashboard** – Hub members with `SERVICE_ACCESS_ROLE` can browse their orders with pagination, search, statuses, totals, and captured timestamps.
 - **Order domain snapshots** – Orders retain product snapshots (name, SKU, quantity, price, currency) so historical totals remain consistent when catalog data changes.
+- **Customer management** – Track customers with phone-based authentication, assign price levels, and maintain customer-specific pricing for storefront orders.
+- **Storefront API** – REST endpoints for customer-facing product browsing, OTP authentication, and order placement with customer-specific pricing.
 - **Price level directory** – `/price-levels` lists named price tiers with search and pagination to help operators audit configured pricing ladders.
 - **Shared Pushkind scaffolding** – Navigation, flash messaging, auth guards, and pagination helpers come from `pushkind-common` for a consistent UX across services.
-- **Diesel-backed persistence layer** – Repository traits and a `DieselRepository` implementation span orders, products, price levels, and users for reuse in services and tests.
+- **Diesel-backed persistence layer** – Repository traits and a `DieselRepository` implementation span orders, products, price levels, customers, and users for reuse in services and tests.
+- **SMS integration** – ZeroMQ-based event publishing for OTP delivery and other SMS notifications.
 
 ## Pages
 
@@ -21,6 +24,18 @@ of Actix Web, Diesel, and Tera and integrates tightly with the shared
 - **Categories page** – Manage product categories with inline actions to browse, create, rename, and delete entries.
 - **Prices page** – Inspect and maintain product price levels, including creating, renaming, and deleting tiers. Assign price levels to clients. Each assignment requires approval from a user with the `orders_manager` role, and clients can only view price levels that have been granted to them.
 - **Tags page** – Manage product tags with inline actions to browse, create, rename, and delete entries.
+- **Not assigned page** – Displayed to authenticated users who lack proper hub assignment.
+
+## Store API
+
+The service exposes REST endpoints under `/api/v1/store/{hub_id}` for customer-facing storefronts:
+
+- **Product browsing** – `GET /products` and `GET /products/{product_id}` return products with customer-specific pricing based on assigned price levels.
+- **Category and tag listing** – `GET /categories` and `GET /tags` support storefront navigation and filtering.
+- **OTP authentication** – `POST /auth/otp` requests a one-time password sent via SMS, and `POST /auth/otp/verify` establishes a customer session.
+- **Order management** – `POST /orders` creates orders for authenticated customers, and `GET /orders` lists their order history.
+
+Store sessions are managed separately from hub user sessions using dedicated cookie-based storage.
 
 ## Architecture at a Glance
 
@@ -28,8 +43,8 @@ The codebase follows a clean, layered structure so that business logic can be
 exercised and tested without going through the web framework:
 
 - **Domain (`src/domain`)** – Type-safe models for orders, products, price levels,
-  and users with builders for create/update payloads and query helpers to support
-  paginated lookups.
+  customers, users, categories, tags, and OTP records with builders for create/update
+  payloads and query helpers to support paginated lookups.
 - **Repository (`src/repository`)** – Traits that describe the persistence
   contract and a Diesel-backed implementation (`DieselRepository`) that speaks to
   a SQLite database. Each module translates between Diesel models and domain
@@ -38,10 +53,14 @@ exercised and tested without going through the web framework:
   logic, repository traits, and Pushkind authentication helpers. Services return
   `ServiceResult<T>` and map infrastructure errors into well-defined service
   errors.
+- **DTOs (`src/dto`)** – Data transfer objects for rendering templates and API
+  responses. Services convert domain types to DTOs before handing data to routes,
+  keeping handlers thin and domain models focused.
 - **Forms (`src/forms`)** – `serde`/`validator` powered structs that handle
   request payload validation, CSV parsing, and transformation into domain types.
 - **Routes (`src/routes`)** – Actix Web handlers that wire HTTP requests into the
-  service layer and render Tera templates or redirect with flash messages.
+  service layer and render Tera templates, return JSON responses, or redirect with
+  flash messages.
 - **Templates (`templates/`)** – Server-rendered UI built with Tera and
   Bootstrap 5, backed by sanitized HTML rendered via `ammonia` when necessary.
 
@@ -59,8 +78,8 @@ by swapping in the `mockall`-based fakes from `src/repository/mock.rs`.
 - [`pushkind-common`](https://github.com/pushkindt/pushkind-common) shared crate
   for authentication guards, configuration, database helpers, and reusable
   patterns
-- Supporting crates: `chrono`, `validator`, `serde`, `ammonia`, `csv`, and
-  `thiserror`
+- Supporting crates: `chrono`, `validator`, `serde`, `ammonia`, `csv`,
+  `thiserror`, `zmq` (ZeroMQ), `phonenumber`, and `mockall` (testing)
 
 ## Getting Started
 
@@ -85,10 +104,13 @@ Key settings you may want to override:
 | `APP_SECRET` | 64-byte secret used to sign cookies and flash messages | _required_ |
 | `APP_DATABASE_URL` | Path to the SQLite database file | `app.db` |
 | `APP_ADDRESS` | Interface to bind | `127.0.0.1` |
-| `APP_PORT` | HTTP port | `8080` when `APP_ENV=local` |
-| `APP_DOMAIN` | Cookie domain (without protocol) | `test.me` when `APP_ENV=local` |
+| `APP_PORT` | HTTP port | `80` (override to `8080` in local.yaml) |
+| `APP_DOMAIN` | Cookie domain (without protocol) | _required_ |
 | `APP_TEMPLATES_DIR` | Glob pattern for templates consumed by Tera | `templates/**/*` |
-| `APP_ZMQ_SMS_PUB` | ZeroMQ PUB endpoint for outgoing sms events | `tcp://127.0.0.1:5561` |
+| `APP_ZMQ_SMS_PUB` | ZeroMQ PUB endpoint for outgoing SMS events | `tcp://127.0.0.1:5561` |
+| `APP_SMS_SENDER` | Sender identifier for outbound SMS messages | `cns.shared` |
+| `APP_AUTH_SERVICE_URL` | URL of the Pushkind authentication service | _required_ |
+| `APP_CRM_SERVICE_URL` | URL of the Pushkind CRM service | _required_ |
 
 Switch to the production profile with `APP_ENV=prod` or provide your own
 `config/{env}.yaml`. Environment variables always win over YAML values, so a
