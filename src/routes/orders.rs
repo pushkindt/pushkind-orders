@@ -1,10 +1,11 @@
-use actix_web::{HttpResponse, Responder, get, web};
+use actix_web::{HttpResponse, Responder, get, post, web};
 use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
+use crate::forms::orders::EditOrderForm;
 use crate::repository::DieselRepository;
 use crate::services::{ServiceError, orders as order_service};
 
@@ -45,6 +46,52 @@ pub async fn show_order(
         Err(err) => {
             log::error!("Failed to load order {order_id}: {err}");
             HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[post("/orders/{order_id}/edit")]
+/// Accept edits submitted from the order details modal.
+pub async fn edit_order(
+    path: web::Path<i32>,
+    form: web::Form<EditOrderForm>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+) -> impl Responder {
+    let order_id = path.into_inner();
+    let order_path = format!("/order/{order_id}");
+
+    let form = form.into_inner();
+    if form.order_id != order_id {
+        log::warn!(
+            "Order id mismatch when editing order: path={order_id} payload={}",
+            form.order_id
+        );
+        FlashMessage::error("Некорректные данные формы.").send();
+        return redirect(order_path.as_str());
+    }
+
+    match order_service::update_order(repo.get_ref(), &user, order_id, form) {
+        Ok(_) => {
+            FlashMessage::success("Заказ обновлён.").send();
+            redirect(order_path.as_str())
+        }
+        Err(ServiceError::Unauthorized) => {
+            FlashMessage::error("Недостаточно прав.").send();
+            redirect("/na")
+        }
+        Err(ServiceError::Form(message)) => {
+            FlashMessage::error(message).send();
+            redirect(order_path.as_str())
+        }
+        Err(ServiceError::NotFound) => {
+            FlashMessage::error("Заказ не найден или уже удалён.").send();
+            redirect("/")
+        }
+        Err(err) => {
+            log::error!("Failed to update order {order_id}: {err}");
+            FlashMessage::error("Не удалось обновить заказ.").send();
+            redirect(order_path.as_str())
         }
     }
 }

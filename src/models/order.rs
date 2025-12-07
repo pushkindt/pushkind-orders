@@ -107,7 +107,7 @@ impl TryFrom<(Order, Vec<OrderProduct>)> for DomainOrder {
             hub_id: HubId::new(order.hub_id)?,
             customer_id: order.customer_id.map(CustomerId::new).transpose()?,
             reference: order.reference.and_then(|r| OrderReference::new(r).ok()),
-            status: order.status.as_str().into(),
+            status: order.status.as_str().try_into()?,
             notes: order.notes.and_then(|n| OrderNotes::new(n).ok()),
             total_cents: PriceCents::new(order.total_cents)?,
             currency: CurrencyCode::new(order.currency)?,

@@ -8,6 +8,7 @@ use serde::{Deserialize, Deserializer};
 
 pub mod categories;
 pub mod main;
+pub mod orders;
 pub mod price_levels;
 pub mod products;
 pub mod store;

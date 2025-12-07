@@ -37,6 +37,9 @@ pub enum TypeConstraintError {
     /// OTP code is not six ASCII digits.
     #[error("invalid OTP code")]
     InvalidOtpCode,
+    /// Order status string failed to parse to a valid enum.
+    #[error("invalid order status")]
+    InvalidOrderStatus,
 }
 
 /// Macro to generate lightweight newtypes for positive identifiers.

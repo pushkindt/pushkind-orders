@@ -26,15 +26,17 @@ pub enum OrderStatus {
     Cancelled,
 }
 
-impl From<&str> for OrderStatus {
-    fn from(value: &str) -> Self {
+impl TryFrom<&str> for OrderStatus {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "Draft" => Self::Draft,
-            "Pending" => Self::Pending,
-            "Processing" => Self::Processing,
-            "Completed" => Self::Completed,
-            "Cancelled" => Self::Cancelled,
-            _ => Self::Draft,
+            "Draft" => Ok(Self::Draft),
+            "Pending" => Ok(Self::Pending),
+            "Processing" => Ok(Self::Processing),
+            "Completed" => Ok(Self::Completed),
+            "Cancelled" => Ok(Self::Cancelled),
+            _ => Err(TypeConstraintError::InvalidOrderStatus),
         }
     }
 }
