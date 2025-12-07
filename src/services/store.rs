@@ -219,6 +219,7 @@ where
             line_total,
             product_currency.clone(),
             item.quantity,
+            None,
         )
         .map_err(|_| ServiceError::Internal)?
         .with_product_id(product.id);
@@ -803,7 +804,7 @@ mod tests {
             notes: None,
             total_cents: PriceCents::new(500).unwrap(),
             currency: CurrencyCode::new("USD").unwrap(),
-            products: vec![OrderProduct::try_new("Item", 500, "USD", 1).unwrap()],
+            products: vec![OrderProduct::try_new("Item", 500, "USD", 1, None).unwrap()],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
         }

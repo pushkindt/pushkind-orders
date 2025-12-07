@@ -9,7 +9,7 @@ use crate::domain::order::{
 };
 use crate::domain::types::{
     CurrencyCode, CustomerId, HubId, OrderId, OrderNotes, OrderReference, PriceCents,
-    ProductDescription, ProductId, ProductName, ProductQuantity, ProductSku,
+    ProductDescription, ProductId, ProductName, ProductQuantity, ProductSku, TypeConstraintError,
 };
 
 /// Database representation of an order record.
@@ -47,6 +47,7 @@ pub struct OrderProduct {
     pub quantity: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub default_price_cents: Option<i32>,
 }
 
 /// Payload for inserting a new order record.
@@ -74,6 +75,7 @@ pub struct NewOrderProduct<'a> {
     pub price_cents: i32,
     pub currency: &'a str,
     pub quantity: i32,
+    pub default_price_cents: Option<i32>,
 }
 
 /// Payload for updating an existing order record.
@@ -90,50 +92,45 @@ pub struct UpdateOrder<'a> {
     pub updated_at: NaiveDateTime,
 }
 
-impl Order {
-    pub fn into_domain(self, products: Vec<OrderProduct>) -> DomainOrder {
-        DomainOrder {
-            id: OrderId::new(self.id).expect("valid order id from database"),
-            hub_id: HubId::new(self.hub_id).expect("valid hub id from database"),
-            customer_id: self
-                .customer_id
-                .map(|id| CustomerId::new(id).expect("valid customer id from database")),
-            reference: self.reference.and_then(|r| OrderReference::new(r).ok()),
-            status: self.status.as_str().into(),
-            notes: self.notes.and_then(|n| OrderNotes::new(n).ok()),
-            total_cents: PriceCents::new(self.total_cents).expect("valid price from database"),
-            currency: CurrencyCode::new(self.currency).expect("valid currency from database"),
+impl TryFrom<(Order, Vec<OrderProduct>)> for DomainOrder {
+    type Error = TypeConstraintError;
+    fn try_from(value: (Order, Vec<OrderProduct>)) -> Result<Self, Self::Error> {
+        let (order, products) = value;
+        Ok(Self {
+            id: OrderId::new(order.id)?,
+            hub_id: HubId::new(order.hub_id)?,
+            customer_id: order.customer_id.map(CustomerId::new).transpose()?,
+            reference: order.reference.and_then(|r| OrderReference::new(r).ok()),
+            status: order.status.as_str().into(),
+            notes: order.notes.and_then(|n| OrderNotes::new(n).ok()),
+            total_cents: PriceCents::new(order.total_cents)?,
+            currency: CurrencyCode::new(order.currency)?,
             products: products
-                .into_iter()
-                .map(OrderProduct::into_domain)
-                .collect(),
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        }
+                .iter()
+                .map(|p| p.try_into())
+                .collect::<Result<Vec<DomainOrderProduct>, Self::Error>>()?,
+            created_at: order.created_at,
+            updated_at: order.updated_at,
+        })
     }
 }
 
-impl OrderProduct {
-    pub fn into_domain(self) -> DomainOrderProduct {
-        DomainOrderProduct {
-            product_id: self
-                .product_id
-                .map(|id| ProductId::new(id).expect("valid product id from database")),
-            name: ProductName::new(self.name).expect("valid product name from database"),
-            sku: self.sku.and_then(|s| ProductSku::new(s).ok()),
-            description: self
+impl TryFrom<&OrderProduct> for DomainOrderProduct {
+    type Error = TypeConstraintError;
+    fn try_from(value: &OrderProduct) -> Result<Self, Self::Error> {
+        Ok(Self {
+            product_id: value.product_id.map(ProductId::new).transpose()?,
+            name: ProductName::new(value.name.clone())?,
+            sku: value.sku.clone().and_then(|s| ProductSku::new(s).ok()),
+            description: value
                 .description
+                .clone()
                 .and_then(|d| ProductDescription::new(d).ok()),
-            price_cents: PriceCents::new(self.price_cents).expect("valid price from database"),
-            currency: CurrencyCode::new(self.currency).expect("valid currency from database"),
-            quantity: ProductQuantity::new(self.quantity).expect("valid quantity from database"),
-        }
-    }
-}
-
-impl From<(Order, Vec<OrderProduct>)> for DomainOrder {
-    fn from(value: (Order, Vec<OrderProduct>)) -> Self {
-        value.0.into_domain(value.1)
+            price_cents: PriceCents::new(value.price_cents)?,
+            currency: CurrencyCode::new(value.currency.clone())?,
+            quantity: ProductQuantity::new(value.quantity)?,
+            default_price_cents: value.default_price_cents.map(PriceCents::new).transpose()?,
+        })
     }
 }
 
@@ -162,6 +159,7 @@ impl<'a> NewOrderProduct<'a> {
             price_cents: value.price_cents.get(),
             currency: value.currency.as_str(),
             quantity: value.quantity.get(),
+            default_price_cents: value.default_price_cents.map(|cents| cents.get()),
         }
     }
 }
