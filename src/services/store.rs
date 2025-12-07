@@ -195,6 +195,9 @@ where
         )
         .ok_or_else(|| ServiceError::Form("price unavailable".to_string()))?;
 
+        let default_price_cents =
+            StoreProduct::resolve_price_cents(&product.price_levels, None, default_price_level_id);
+
         let product_currency = product.currency.as_str().to_string();
         match &currency {
             Some(expected) if expected != &product_currency => {
@@ -219,7 +222,7 @@ where
             line_total,
             product_currency.clone(),
             item.quantity,
-            None,
+            default_price_cents,
         )
         .map_err(|_| ServiceError::Internal)?
         .with_product_id(product.id);
