@@ -252,6 +252,14 @@ pub struct StoreOrder {
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the order record.
     pub updated_at: NaiveDateTime,
+    /// Optional shipping address.
+    pub shipping_address: Option<String>,
+    /// Optional consignee.
+    pub consignee: Option<String>,
+    /// Optional delivery notes.
+    pub delivery_notes: Option<String>,
+    /// Optional payer.
+    pub payer: Option<String>,
 }
 
 impl From<Order> for StoreOrder {
@@ -272,6 +280,10 @@ impl From<Order> for StoreOrder {
                 .collect(),
             created_at: value.created_at,
             updated_at: value.updated_at,
+            shipping_address: value.shipping_address.map(|s| s.into_inner()),
+            consignee: value.consignee.map(|c| c.into_inner()),
+            delivery_notes: value.delivery_notes.map(|d| d.into_inner()),
+            payer: value.payer.map(|p| p.into_inner()),
         }
     }
 }
