@@ -632,6 +632,10 @@ mod tests {
                     products: new_order.products.clone(),
                     created_at: sample_timestamp(),
                     updated_at: sample_timestamp(),
+                    shipping_address: None,
+                    consignee: None,
+                    delivery_notes: None,
+                    payer: None,
                 })
             });
 
@@ -810,6 +814,10 @@ mod tests {
             products: vec![OrderProduct::try_new("Item", 500, "USD", 1, None).unwrap()],
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
+            shipping_address: None,
+            consignee: None,
+            delivery_notes: None,
+            payer: None,
         }
     }
 

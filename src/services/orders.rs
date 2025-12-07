@@ -138,6 +138,10 @@ mod tests {
             }],
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
+            shipping_address: None,
+            consignee: None,
+            delivery_notes: None,
+            payer: None,
         }
     }
 

@@ -8,8 +8,9 @@ use crate::domain::order::{
     UpdateOrder as DomainUpdateOrder,
 };
 use crate::domain::types::{
-    CurrencyCode, CustomerId, HubId, OrderId, OrderNotes, OrderReference, PriceCents,
-    ProductDescription, ProductId, ProductName, ProductQuantity, ProductSku, TypeConstraintError,
+    CurrencyCode, CustomerId, HubId, OrderConsignee, OrderDeliveryNotes, OrderId, OrderNotes,
+    OrderPayer, OrderReference, OrderShippingAddress, PriceCents, ProductDescription, ProductId,
+    ProductName, ProductQuantity, ProductSku, TypeConstraintError,
 };
 
 /// Database representation of an order record.
@@ -29,6 +30,10 @@ pub struct Order {
     pub currency: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub shipping_address: Option<String>,
+    pub consignee: Option<String>,
+    pub delivery_notes: Option<String>,
+    pub payer: Option<String>,
 }
 
 /// Database representation of a product snapshot within an order.
@@ -111,6 +116,14 @@ impl TryFrom<(Order, Vec<OrderProduct>)> for DomainOrder {
                 .collect::<Result<Vec<DomainOrderProduct>, Self::Error>>()?,
             created_at: order.created_at,
             updated_at: order.updated_at,
+            shipping_address: order
+                .shipping_address
+                .and_then(|s| OrderShippingAddress::new(s).ok()),
+            consignee: order.consignee.and_then(|c| OrderConsignee::new(c).ok()),
+            delivery_notes: order
+                .delivery_notes
+                .and_then(|d| OrderDeliveryNotes::new(d).ok()),
+            payer: order.payer.and_then(|p| OrderPayer::new(p).ok()),
         })
     }
 }

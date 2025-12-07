@@ -5,8 +5,9 @@ use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::types::{
-    CurrencyCode, CustomerId, HubId, OrderId, OrderNotes, OrderReference, PriceCents,
-    ProductDescription, ProductId, ProductName, ProductQuantity, ProductSku, TypeConstraintError,
+    CurrencyCode, CustomerId, HubId, OrderConsignee, OrderDeliveryNotes, OrderId, OrderNotes,
+    OrderPayer, OrderReference, OrderShippingAddress, PriceCents, ProductDescription, ProductId,
+    ProductName, ProductQuantity, ProductSku, TypeConstraintError,
 };
 
 /// Possible lifecycle states for an order managed by a hub.
@@ -81,6 +82,10 @@ pub struct Order {
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the order record.
     pub updated_at: NaiveDateTime,
+    pub shipping_address: Option<OrderShippingAddress>,
+    pub consignee: Option<OrderConsignee>,
+    pub delivery_notes: Option<OrderDeliveryNotes>,
+    pub payer: Option<OrderPayer>,
 }
 
 /// Payload required to insert a new order for a hub.

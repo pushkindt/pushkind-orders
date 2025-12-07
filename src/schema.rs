@@ -56,6 +56,10 @@ diesel::table! {
         currency -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        shipping_address -> Nullable<Text>,
+        consignee -> Nullable<Text>,
+        delivery_notes -> Nullable<Text>,
+        payer -> Nullable<Text>,
     }
 }
 

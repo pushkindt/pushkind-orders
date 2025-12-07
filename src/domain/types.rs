@@ -248,221 +248,81 @@ impl From<NonEmptyString> for String {
     }
 }
 
-/// Optional user name wrapper enforcing non-empty values.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct UserName(String);
+macro_rules! non_empty_string_newtype {
+    ($name:ident, $doc:expr) => {
+        #[doc = $doc]
+        #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        pub struct $name(String);
 
-impl UserName {
-    /// Constructs a user name that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let name = NonEmptyString::new(value)?;
-        Ok(Self(name.into_inner()))
-    }
+        impl $name {
+            /// Constructs a trimmed, non-empty value.
+            pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+                let inner = NonEmptyString::new(value)?;
+                Ok(Self(inner.into_inner()))
+            }
 
-    /// Borrow the user name.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
+            /// Borrow the value as a string slice.
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
 
-    /// Extract the owned user name.
-    pub fn into_inner(self) -> String {
-        self.0
-    }
+            /// Consume the wrapper and return the owned string.
+            pub fn into_inner(self) -> String {
+                self.0
+            }
+        }
+
+        impl Display for $name {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+
+        impl TryFrom<String> for $name {
+            type Error = TypeConstraintError;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                Self::new(value)
+            }
+        }
+
+        impl TryFrom<&str> for $name {
+            type Error = TypeConstraintError;
+
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                Self::new(value)
+            }
+        }
+
+        impl From<$name> for String {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
+    };
 }
 
-impl Display for UserName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
+non_empty_string_newtype!(
+    UserName,
+    "Optional user name wrapper enforcing non-empty values."
+);
 
-impl TryFrom<String> for UserName {
-    type Error = TypeConstraintError;
+non_empty_string_newtype!(TagName, "Tag name wrapper enforcing non-empty values.");
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
+non_empty_string_newtype!(
+    CustomerName,
+    "Customer name wrapper enforcing non-empty values."
+);
 
-impl TryFrom<&str> for UserName {
-    type Error = TypeConstraintError;
+non_empty_string_newtype!(
+    CategoryName,
+    "Category name wrapper enforcing non-empty values."
+);
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<UserName> for String {
-    fn from(value: UserName) -> Self {
-        value.0
-    }
-}
-
-/// Tag name wrapper enforcing non-empty values.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct TagName(String);
-
-impl TagName {
-    /// Constructs a tag name that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let name = NonEmptyString::new(value)?;
-        Ok(Self(name.into_inner()))
-    }
-
-    /// Borrow the tag name.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// Extract the owned tag name.
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl Display for TagName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for TagName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for TagName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<TagName> for String {
-    fn from(value: TagName) -> Self {
-        value.0
-    }
-}
-
-/// Customer name wrapper enforcing non-empty values.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct CustomerName(String);
-
-impl CustomerName {
-    /// Constructs a customer name that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let name = NonEmptyString::new(value)?;
-        Ok(Self(name.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-/// Category name wrapper enforcing non-empty values.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct CategoryName(String);
-
-impl CategoryName {
-    /// Constructs a category name that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let name = NonEmptyString::new(value)?;
-        Ok(Self(name.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl Display for CategoryName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for CategoryName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for CategoryName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<CategoryName> for String {
-    fn from(value: CategoryName) -> Self {
-        value.0
-    }
-}
-
-/// Product name wrapper enforcing non-empty values.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ProductName(String);
-
-impl ProductName {
-    /// Constructs a product name that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let name = NonEmptyString::new(value)?;
-        Ok(Self(name.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl Display for ProductName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for ProductName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for ProductName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<ProductName> for String {
-    fn from(value: ProductName) -> Self {
-        value.0
-    }
-}
+non_empty_string_newtype!(
+    ProductName,
+    "Product name wrapper enforcing non-empty values."
+);
 
 impl std::ops::Deref for ProductName {
     type Target = str;
@@ -490,101 +350,15 @@ impl PartialEq<ProductName> for &str {
     }
 }
 
-/// Price level name wrapper enforcing non-empty values.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct PriceLevelName(String);
+non_empty_string_newtype!(
+    PriceLevelName,
+    "Price level name wrapper enforcing non-empty values."
+);
 
-impl PriceLevelName {
-    /// Constructs a price level name that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let name = NonEmptyString::new(value)?;
-        Ok(Self(name.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl Display for PriceLevelName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for PriceLevelName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for PriceLevelName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<PriceLevelName> for String {
-    fn from(value: PriceLevelName) -> Self {
-        value.0
-    }
-}
-
-/// Optional SKU wrapper enforcing non-empty values.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ProductSku(String);
-
-impl ProductSku {
-    /// Constructs a SKU that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let sku = NonEmptyString::new(value)?;
-        Ok(Self(sku.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl Display for ProductSku {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for ProductSku {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for ProductSku {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<ProductSku> for String {
-    fn from(value: ProductSku) -> Self {
-        value.0
-    }
-}
+non_empty_string_newtype!(
+    ProductSku,
+    "Optional SKU wrapper enforcing non-empty values."
+);
 
 impl std::ops::Deref for ProductSku {
     type Target = str;
@@ -612,53 +386,7 @@ impl PartialEq<ProductSku> for &str {
     }
 }
 
-/// Units wrapper enforcing non-empty values.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ProductUnits(String);
-
-impl ProductUnits {
-    /// Constructs a unit string that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let units = NonEmptyString::new(value)?;
-        Ok(Self(units.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl Display for ProductUnits {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for ProductUnits {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for ProductUnits {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<ProductUnits> for String {
-    fn from(value: ProductUnits) -> Self {
-        value.0
-    }
-}
+non_empty_string_newtype!(ProductUnits, "Units wrapper enforcing non-empty values.");
 
 impl std::ops::Deref for ProductUnits {
     type Target = str;
@@ -766,77 +494,15 @@ impl PartialEq<CurrencyCode> for &str {
     }
 }
 
-/// Optional descriptive text for categories.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct CategoryDescription(String);
+non_empty_string_newtype!(
+    CategoryDescription,
+    "Optional descriptive text for categories."
+);
 
-impl CategoryDescription {
-    /// Constructs a description that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let description = NonEmptyString::new(value)?;
-        Ok(Self(description.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl TryFrom<String> for CategoryDescription {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for CategoryDescription {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-/// Optional descriptive text for products.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ProductDescription(String);
-
-impl ProductDescription {
-    /// Constructs a description that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let description = NonEmptyString::new(value)?;
-        Ok(Self(description.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl TryFrom<String> for ProductDescription {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for ProductDescription {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
+non_empty_string_newtype!(
+    ProductDescription,
+    "Optional descriptive text for products."
+);
 
 /// Product amount; must be positive.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
@@ -878,69 +544,7 @@ impl From<ProductAmount> for f32 {
     }
 }
 
-/// Validated image URL wrapper.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ImageUrl(String);
-
-impl ImageUrl {
-    /// Constructs an image URL that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let url = NonEmptyString::new(value)?;
-        Ok(Self(url.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl TryFrom<String> for ImageUrl {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for ImageUrl {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl Display for CustomerName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for CustomerName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for CustomerName {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<CustomerName> for String {
-    fn from(value: CustomerName) -> Self {
-        value.0
-    }
-}
+non_empty_string_newtype!(ImageUrl, "Validated image URL wrapper.");
 
 /// Normalizes a phone number string to E.164 format.
 pub fn normalize_phone_to_e164(value: &str) -> Result<String, TypeConstraintError> {
@@ -1094,98 +698,11 @@ impl From<ProductQuantity> for i32 {
     }
 }
 
-/// Optional order reference wrapper.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct OrderReference(String);
+non_empty_string_newtype!(OrderReference, "Optional order reference wrapper.");
 
-impl OrderReference {
-    /// Constructs an order reference that is trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let reference = NonEmptyString::new(value)?;
-        Ok(Self(reference.into_inner()))
-    }
+non_empty_string_newtype!(OrderNotes, "Optional order notes wrapper.");
 
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl Display for OrderReference {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for OrderReference {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for OrderReference {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<OrderReference> for String {
-    fn from(value: OrderReference) -> Self {
-        value.0
-    }
-}
-
-/// Optional order notes wrapper.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct OrderNotes(String);
-
-impl OrderNotes {
-    /// Constructs order notes that are trimmed and non-empty.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let notes = NonEmptyString::new(value)?;
-        Ok(Self(notes.into_inner()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl Display for OrderNotes {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for OrderNotes {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for OrderNotes {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<OrderNotes> for String {
-    fn from(value: OrderNotes) -> Self {
-        value.0
-    }
-}
+non_empty_string_newtype!(OrderShippingAddress, "Order shipping address wrapper.");
+non_empty_string_newtype!(OrderConsignee, "Order consignee wrapper.");
+non_empty_string_newtype!(OrderDeliveryNotes, "Order delivery notes wrapper.");
+non_empty_string_newtype!(OrderPayer, "Order payer wrapper.");
