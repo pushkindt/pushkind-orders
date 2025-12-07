@@ -5,8 +5,9 @@ use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::types::{
-    CurrencyCode, CustomerId, HubId, OrderId, OrderNotes, OrderReference, PriceCents,
-    ProductDescription, ProductId, ProductName, ProductQuantity, ProductSku, TypeConstraintError,
+    CurrencyCode, CustomerId, HubId, OrderConsignee, OrderDeliveryNotes, OrderId, OrderNotes,
+    OrderPayer, OrderReference, OrderShippingAddress, PriceCents, ProductDescription, ProductId,
+    ProductName, ProductQuantity, ProductSku, TypeConstraintError,
 };
 
 /// Possible lifecycle states for an order managed by a hub.
@@ -25,15 +26,17 @@ pub enum OrderStatus {
     Cancelled,
 }
 
-impl From<&str> for OrderStatus {
-    fn from(value: &str) -> Self {
+impl TryFrom<&str> for OrderStatus {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "Draft" => Self::Draft,
-            "Pending" => Self::Pending,
-            "Processing" => Self::Processing,
-            "Completed" => Self::Completed,
-            "Cancelled" => Self::Cancelled,
-            _ => Self::Draft,
+            "Draft" => Ok(Self::Draft),
+            "Pending" => Ok(Self::Pending),
+            "Processing" => Ok(Self::Processing),
+            "Completed" => Ok(Self::Completed),
+            "Cancelled" => Ok(Self::Cancelled),
+            _ => Err(TypeConstraintError::InvalidOrderStatus),
         }
     }
 }
@@ -81,6 +84,14 @@ pub struct Order {
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the order record.
     pub updated_at: NaiveDateTime,
+    /// Optional shipping address associated with the order.
+    pub shipping_address: Option<OrderShippingAddress>,
+    /// Optional consignee information associated with the order.
+    pub consignee: Option<OrderConsignee>,
+    /// Optional delivery notes associated with the order.
+    pub delivery_notes: Option<OrderDeliveryNotes>,
+    /// Optional payer information associated with the order.
+    pub payer: Option<OrderPayer>,
 }
 
 /// Payload required to insert a new order for a hub.
@@ -248,18 +259,18 @@ pub struct UpdateOrder {
     pub status: OrderStatus,
     /// Optional notes update.
     pub notes: Option<OrderNotes>,
-    /// Total amount update.
-    pub total_cents: PriceCents,
-    /// Currency update.
-    pub currency: CurrencyCode,
-    /// Optional customer reference update.
-    pub customer_id: Option<CustomerId>,
     /// Optional external reference update.
     pub reference: Option<OrderReference>,
-    /// Optional product list update.
-    pub products: Option<Vec<OrderProduct>>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
+    /// Optional shipping address.
+    pub shipping_address: Option<OrderShippingAddress>,
+    /// Optional consignee.
+    pub consignee: Option<OrderConsignee>,
+    /// Optional delivery notes.
+    pub delivery_notes: Option<OrderDeliveryNotes>,
+    /// Optional payer.
+    pub payer: Option<OrderPayer>,
 }
 
 /// Query definition used to list orders for a hub.

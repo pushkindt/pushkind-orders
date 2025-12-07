@@ -2,9 +2,11 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
+use crate::domain::order::Order;
 use crate::domain::types::{HubId, OrderId};
 use crate::dto::orders::OrderDetails;
-use crate::repository::{CustomerReader, OrderReader};
+use crate::forms::orders::EditOrderForm;
+use crate::repository::{CustomerReader, OrderReader, OrderWriter};
 use crate::services::{ServiceError, ServiceResult};
 
 /// Loads a single order owned by the authenticated user's hub.
@@ -39,6 +41,31 @@ where
     Ok(OrderDetails { order, customer })
 }
 
+/// Updates editable metadata for an existing order.
+pub fn update_order<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    order_id: i32,
+    form: EditOrderForm,
+) -> ServiceResult<Order>
+where
+    R: OrderWriter + ?Sized,
+{
+    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+
+    let updates = form
+        .into_update_order()
+        .map_err(|err| ServiceError::Form(err.to_string()))?;
+
+    repo.update_order(order_id, hub_id, &updates)
+        .map_err(ServiceError::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,8 +79,9 @@ mod tests {
         customer::Customer,
         order::{Order, OrderProduct, OrderStatus},
     };
-    use crate::repository::mock::{MockCustomerReader, MockOrderReader};
-    use pushkind_common::repository::errors::RepositoryResult;
+    use crate::forms::orders::EditOrderForm;
+    use crate::repository::mock::{MockCustomerReader, MockOrderReader, MockOrderWriter};
+    use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
     #[derive(Default)]
     struct OrderServiceRepo {
@@ -138,6 +166,10 @@ mod tests {
             }],
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
+            shipping_address: None,
+            consignee: None,
+            delivery_notes: None,
+            payer: None,
         }
     }
 
@@ -160,6 +192,19 @@ mod tests {
             name: "Tester".to_string(),
             roles: roles.iter().map(|role| (*role).to_string()).collect(),
             exp: 0,
+        }
+    }
+
+    fn sample_edit_form(status: &str) -> EditOrderForm {
+        EditOrderForm {
+            order_id: 5,
+            status: status.to_string(),
+            reference: Some(" REF ".to_string()),
+            notes: Some(" notes ".to_string()),
+            shipping_address: Some(" Address ".to_string()),
+            consignee: Some(" Recipient ".to_string()),
+            delivery_notes: Some(" Leave by door ".to_string()),
+            payer: Some(" Payer ".to_string()),
         }
     }
 
@@ -243,5 +288,79 @@ mod tests {
         let customer = details.customer.expect("expected customer details");
         assert_eq!(customer.id.get(), 11);
         assert_eq!(customer.hub_id.get(), expected_hub);
+    }
+
+    #[test]
+    fn update_order_requires_role() {
+        let repo = MockOrderWriter::new();
+        let user = user_with_roles(&[]);
+        let form = sample_edit_form("Pending");
+
+        let result = update_order(&repo, &user, 5, form);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn update_order_calls_repository_with_sanitized_payload() {
+        let mut repo = MockOrderWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let expected_hub = user.hub_id;
+        let form = sample_edit_form("Completed");
+
+        repo.expect_update_order()
+            .times(1)
+            .withf(move |id, hub_id, updates| {
+                id.get() == 5
+                    && hub_id.get() == expected_hub
+                    && updates.status == OrderStatus::Completed
+                    && updates.reference.as_ref().map(|value| value.as_str()) == Some("REF")
+                    && updates.notes.as_ref().map(|value| value.as_str()) == Some("notes")
+            })
+            .returning(move |_, _, _| Ok(sample_order(5, expected_hub, None)));
+
+        let result = update_order(&repo, &user, 5, form);
+
+        let order = match result {
+            Ok(order) => order,
+            Err(err) => panic!("expected update to succeed: {err}"),
+        };
+
+        assert_eq!(order.id.get(), 5);
+        assert_eq!(order.hub_id.get(), expected_hub);
+    }
+
+    #[test]
+    fn update_order_returns_not_found_when_missing() {
+        let mut repo = MockOrderWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = sample_edit_form("Processing");
+
+        repo.expect_update_order()
+            .returning(|_, _, _| Err(RepositoryError::NotFound));
+
+        let result = update_order(&repo, &user, 5, form);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
+    }
+
+    #[test]
+    fn update_order_propagates_form_errors() {
+        let repo = MockOrderWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = EditOrderForm {
+            order_id: 5,
+            status: "Unknown".to_string(),
+            reference: None,
+            notes: None,
+            shipping_address: None,
+            consignee: None,
+            delivery_notes: None,
+            payer: None,
+        };
+
+        let result = update_order(&repo, &user, 5, form);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
     }
 }

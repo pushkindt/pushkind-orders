@@ -8,8 +8,9 @@ use crate::domain::order::{
     UpdateOrder as DomainUpdateOrder,
 };
 use crate::domain::types::{
-    CurrencyCode, CustomerId, HubId, OrderId, OrderNotes, OrderReference, PriceCents,
-    ProductDescription, ProductId, ProductName, ProductQuantity, ProductSku, TypeConstraintError,
+    CurrencyCode, CustomerId, HubId, OrderConsignee, OrderDeliveryNotes, OrderId, OrderNotes,
+    OrderPayer, OrderReference, OrderShippingAddress, PriceCents, ProductDescription, ProductId,
+    ProductName, ProductQuantity, ProductSku, TypeConstraintError,
 };
 
 /// Database representation of an order record.
@@ -29,6 +30,10 @@ pub struct Order {
     pub currency: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub shipping_address: Option<String>,
+    pub consignee: Option<String>,
+    pub delivery_notes: Option<String>,
+    pub payer: Option<String>,
 }
 
 /// Database representation of a product snapshot within an order.
@@ -85,11 +90,12 @@ pub struct NewOrderProduct<'a> {
 pub struct UpdateOrder<'a> {
     pub status: &'a str,
     pub notes: Option<&'a str>,
-    pub total_cents: i32,
-    pub currency: &'a str,
-    pub customer_id: Option<i32>,
     pub reference: Option<&'a str>,
     pub updated_at: NaiveDateTime,
+    pub shipping_address: Option<&'a str>,
+    pub consignee: Option<&'a str>,
+    pub delivery_notes: Option<&'a str>,
+    pub payer: Option<&'a str>,
 }
 
 impl TryFrom<(Order, Vec<OrderProduct>)> for DomainOrder {
@@ -101,7 +107,7 @@ impl TryFrom<(Order, Vec<OrderProduct>)> for DomainOrder {
             hub_id: HubId::new(order.hub_id)?,
             customer_id: order.customer_id.map(CustomerId::new).transpose()?,
             reference: order.reference.and_then(|r| OrderReference::new(r).ok()),
-            status: order.status.as_str().into(),
+            status: order.status.as_str().try_into()?,
             notes: order.notes.and_then(|n| OrderNotes::new(n).ok()),
             total_cents: PriceCents::new(order.total_cents)?,
             currency: CurrencyCode::new(order.currency)?,
@@ -111,6 +117,14 @@ impl TryFrom<(Order, Vec<OrderProduct>)> for DomainOrder {
                 .collect::<Result<Vec<DomainOrderProduct>, Self::Error>>()?,
             created_at: order.created_at,
             updated_at: order.updated_at,
+            shipping_address: order
+                .shipping_address
+                .and_then(|s| OrderShippingAddress::new(s).ok()),
+            consignee: order.consignee.and_then(|c| OrderConsignee::new(c).ok()),
+            delivery_notes: order
+                .delivery_notes
+                .and_then(|d| OrderDeliveryNotes::new(d).ok()),
+            payer: order.payer.and_then(|p| OrderPayer::new(p).ok()),
         })
     }
 }
@@ -169,11 +183,12 @@ impl<'a> From<&'a DomainUpdateOrder> for UpdateOrder<'a> {
         Self {
             status: value.status.into(),
             notes: value.notes.as_ref().map(|n| n.as_str()),
-            total_cents: value.total_cents.get(),
-            currency: value.currency.as_str(),
-            customer_id: value.customer_id.map(|id| id.get()),
             reference: value.reference.as_ref().map(|r| r.as_str()),
             updated_at: value.updated_at,
+            shipping_address: value.shipping_address.as_ref().map(|s| s.as_str()),
+            consignee: value.consignee.as_ref().map(|c| c.as_str()),
+            delivery_notes: value.delivery_notes.as_ref().map(|d| d.as_str()),
+            payer: value.payer.as_ref().map(|p| p.as_str()),
         }
     }
 }

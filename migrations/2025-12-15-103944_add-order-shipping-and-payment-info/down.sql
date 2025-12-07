@@ -1,0 +1,4 @@
+ALTER TABLE orders DROP COLUMN IF EXISTS payer;
+ALTER TABLE orders DROP COLUMN IF EXISTS delivery_notes;
+ALTER TABLE orders DROP COLUMN IF EXISTS consignee;
+ALTER TABLE orders DROP COLUMN IF EXISTS shipping_address;

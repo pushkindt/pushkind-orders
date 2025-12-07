@@ -704,31 +704,21 @@ fn test_order_repository_crud() {
         .expect("failed to search missing");
     assert_eq!(total_none, 0);
 
-    let product_updates = vec![
-        product_snapshot
-            .clone()
-            .with_description(ProductDescription::new("Sliced apple").unwrap()),
-    ];
     let updates = UpdateOrder {
         status: OrderStatus::Processing,
         notes: Some(OrderNotes::new("Pack immediately").unwrap()),
-        total_cents: order.total_cents,
-        currency: order.currency.clone(),
-        customer_id: None,
         reference: order.reference.clone(),
-        products: Some(product_updates.clone()),
         updated_at: chrono::Utc::now().naive_utc(),
+        shipping_address: None,
+        consignee: None,
+        delivery_notes: None,
+        payer: None,
     };
 
     let updated = repo
         .update_order(order.id, HubId::new(1).unwrap(), &updates)
         .expect("failed to update order");
     assert_eq!(updated.status, OrderStatus::Processing);
-    assert_eq!(updated.products.len(), 1);
-    assert_eq!(
-        updated.products[0].description.as_ref().map(|d| d.as_str()),
-        Some("Sliced apple")
-    );
 
     let mut cross_hub_updates = updates.clone();
     cross_hub_updates.status = OrderStatus::Completed;
