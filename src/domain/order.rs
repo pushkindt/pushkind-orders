@@ -121,6 +121,8 @@ pub struct OrderProduct {
     pub currency: CurrencyCode,
     /// Quantity of the product ordered.
     pub quantity: ProductQuantity,
+    /// Default price represented in the smallest currency unit.
+    pub default_price_cents: Option<PriceCents>,
 }
 
 impl OrderProduct {
@@ -130,6 +132,7 @@ impl OrderProduct {
         price_cents: PriceCents,
         currency: CurrencyCode,
         quantity: ProductQuantity,
+        default_price_cents: Option<PriceCents>,
     ) -> Self {
         Self {
             product_id: None,
@@ -139,6 +142,7 @@ impl OrderProduct {
             price_cents,
             currency,
             quantity,
+            default_price_cents,
         }
     }
 
@@ -148,12 +152,14 @@ impl OrderProduct {
         price_cents: i32,
         currency: impl Into<String>,
         quantity: i32,
+        default_price_cents: Option<i32>,
     ) -> Result<Self, TypeConstraintError> {
         Ok(Self::new(
             ProductName::new(name)?,
             PriceCents::new(price_cents)?,
             CurrencyCode::new(currency)?,
             ProductQuantity::new(quantity)?,
+            default_price_cents.map(PriceCents::new).transpose()?,
         ))
     }
 

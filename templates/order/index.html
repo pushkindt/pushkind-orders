@@ -79,7 +79,7 @@
                         <thead class="table-light">
                             <tr>
                                 <th scope="col">Название</th>
-                                <th scope="col" class="text-nowrap">SKU</th>
+                                <th scope="col" class="text-nowrap">Цена</th>
                                 <th scope="col" class="text-end">Кол-во</th>
                                 <th scope="col" class="text-end">Сумма</th>
                             </tr>
@@ -89,13 +89,25 @@
                                 <tr>
                                     <td>
                                         <div class="fw-semibold">{{ product.name }}</div>
+                                        {% if product.sku %}
+                                            <span class="text-muted">{{ product.sku }}</span>
+                                        {% endif %}
                                     </td>
                                     <td class="text-muted">
-                                        {% if product.sku %}
-                                            {{ product.sku }}
-                                        {% else %}
-                                            <span class="text-muted">—</span>
-                                        {% endif %}
+                                        <div>
+                                            Клиент:
+                                            <span data-price-cents="{{ product.price_cents / product.quantity }}"
+                                                  data-price-currency="{{ product.currency }}"></span>
+                                        </div>
+                                        <div>
+                                            Базовая:
+                                            {% if product.default_price_cents %}
+                                                <span data-price-cents="{{ product.default_price_cents }}"
+                                                      data-price-currency="{{ product.currency }}"></span>
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </div>
                                     </td>
                                     <td class="text-end">
                                         {{ product.quantity }}

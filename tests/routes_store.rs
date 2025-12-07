@@ -554,7 +554,7 @@ async fn list_store_orders_returns_orders_for_customer() {
         )
         .expect("create customer");
 
-    let product = OrderProduct::try_new("Coffee", 500, "USD", 1)
+    let product = OrderProduct::try_new("Coffee", 500, "USD", 1, None)
         .unwrap()
         .with_product_id(ProductId::new(1).unwrap());
     let new_order = NewOrder::try_new(1, 500, "USD")

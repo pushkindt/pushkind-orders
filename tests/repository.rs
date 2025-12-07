@@ -644,7 +644,7 @@ fn test_order_repository_crud() {
     let test_db = common::TestDb::new("test_order_repository_crud.db");
     let repo = DieselRepository::new(test_db.pool());
 
-    let product_snapshot = OrderProduct::try_new("Apple", 150, "USD", 2)
+    let product_snapshot = OrderProduct::try_new("Apple", 150, "USD", 2, None)
         .unwrap()
         .with_sku(ProductSku::new("APL-1").unwrap())
         .with_description(ProductDescription::new("Fresh apple").unwrap());

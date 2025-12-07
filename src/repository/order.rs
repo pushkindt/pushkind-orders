@@ -40,7 +40,10 @@ impl OrderReader for DieselRepository {
             .order(order_products::id.asc())
             .load::<DbOrderProduct>(&mut conn)?;
 
-        Ok(Some(DomainOrder::from((order, products))))
+        Ok(Some(
+            DomainOrder::try_from((order, products))
+                .map_err(|e| RepositoryError::Unexpected(e.to_string()))?,
+        ))
     }
 
     fn list_orders(&self, query: OrderListQuery) -> RepositoryResult<(usize, Vec<DomainOrder>)> {
@@ -137,9 +140,10 @@ impl OrderReader for DieselRepository {
             .map(|order| {
                 let order_id = order.id;
                 let products = products_by_order.remove(&order_id).unwrap_or_default();
-                DomainOrder::from((order, products))
+                DomainOrder::try_from((order, products))
+                    .map_err(|e| RepositoryError::Unexpected(e.to_string()))
             })
-            .collect();
+            .collect::<Result<Vec<DomainOrder>, RepositoryError>>()?;
 
         Ok((total, orders))
     }
@@ -177,7 +181,8 @@ impl OrderWriter for DieselRepository {
                 .order(order_products::id.asc())
                 .load::<DbOrderProduct>(conn)?;
 
-            Ok(DomainOrder::from((created, products)))
+            DomainOrder::try_from((created, products))
+                .map_err(|e| RepositoryError::Unexpected(e.to_string()))
         })
     }
 
@@ -226,7 +231,8 @@ impl OrderWriter for DieselRepository {
                 .order(order_products::id.asc())
                 .load::<DbOrderProduct>(conn)?;
 
-            Ok(DomainOrder::from((updated, products)))
+            DomainOrder::try_from((updated, products))
+                .map_err(|e| RepositoryError::Unexpected(e.to_string()))
         })
     }
 
