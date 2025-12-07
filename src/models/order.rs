@@ -90,11 +90,12 @@ pub struct NewOrderProduct<'a> {
 pub struct UpdateOrder<'a> {
     pub status: &'a str,
     pub notes: Option<&'a str>,
-    pub total_cents: i32,
-    pub currency: &'a str,
-    pub customer_id: Option<i32>,
     pub reference: Option<&'a str>,
     pub updated_at: NaiveDateTime,
+    pub shipping_address: Option<&'a str>,
+    pub consignee: Option<&'a str>,
+    pub delivery_notes: Option<&'a str>,
+    pub payer: Option<&'a str>,
 }
 
 impl TryFrom<(Order, Vec<OrderProduct>)> for DomainOrder {
@@ -182,11 +183,12 @@ impl<'a> From<&'a DomainUpdateOrder> for UpdateOrder<'a> {
         Self {
             status: value.status.into(),
             notes: value.notes.as_ref().map(|n| n.as_str()),
-            total_cents: value.total_cents.get(),
-            currency: value.currency.as_str(),
-            customer_id: value.customer_id.map(|id| id.get()),
             reference: value.reference.as_ref().map(|r| r.as_str()),
             updated_at: value.updated_at,
+            shipping_address: value.shipping_address.as_ref().map(|s| s.as_str()),
+            consignee: value.consignee.as_ref().map(|c| c.as_str()),
+            delivery_notes: value.delivery_notes.as_ref().map(|d| d.as_str()),
+            payer: value.payer.as_ref().map(|p| p.as_str()),
         }
     }
 }

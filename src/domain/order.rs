@@ -82,9 +82,13 @@ pub struct Order {
     pub created_at: NaiveDateTime,
     /// Timestamp for the last update to the order record.
     pub updated_at: NaiveDateTime,
+    /// Optional shipping address associated with the order.
     pub shipping_address: Option<OrderShippingAddress>,
+    /// Optional consignee information associated with the order.
     pub consignee: Option<OrderConsignee>,
+    /// Optional delivery notes associated with the order.
     pub delivery_notes: Option<OrderDeliveryNotes>,
+    /// Optional payer information associated with the order.
     pub payer: Option<OrderPayer>,
 }
 
@@ -253,18 +257,18 @@ pub struct UpdateOrder {
     pub status: OrderStatus,
     /// Optional notes update.
     pub notes: Option<OrderNotes>,
-    /// Total amount update.
-    pub total_cents: PriceCents,
-    /// Currency update.
-    pub currency: CurrencyCode,
-    /// Optional customer reference update.
-    pub customer_id: Option<CustomerId>,
     /// Optional external reference update.
     pub reference: Option<OrderReference>,
-    /// Optional product list update.
-    pub products: Option<Vec<OrderProduct>>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
+    /// Optional shipping address.
+    pub shipping_address: Option<OrderShippingAddress>,
+    /// Optional consignee.
+    pub consignee: Option<OrderConsignee>,
+    /// Optional delivery notes.
+    pub delivery_notes: Option<OrderDeliveryNotes>,
+    /// Optional payer.
+    pub payer: Option<OrderPayer>,
 }
 
 /// Query definition used to list orders for a hub.

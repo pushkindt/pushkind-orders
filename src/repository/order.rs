@@ -208,24 +208,6 @@ impl OrderWriter for DieselRepository {
                 .set(&db_updates)
                 .get_result::<DbOrder>(conn)?;
 
-            if let Some(products) = updates.products.as_ref() {
-                diesel::delete(
-                    order_products::table.filter(order_products::order_id.eq(order_id_raw)),
-                )
-                .execute(conn)?;
-
-                if !products.is_empty() {
-                    let payload: Vec<DbNewOrderProduct> = products
-                        .iter()
-                        .map(|product| DbNewOrderProduct::from_domain(order_id_raw, product))
-                        .collect();
-
-                    diesel::insert_into(order_products::table)
-                        .values(&payload)
-                        .execute(conn)?;
-                }
-            }
-
             let products = order_products::table
                 .filter(order_products::order_id.eq(order_id_raw))
                 .order(order_products::id.asc())

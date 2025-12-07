@@ -9,7 +9,24 @@
             <p class="text-muted text-uppercase small mb-1">Заказ</p>
             <h1 class="h3 mb-0">#{{ order.id }}{% if order.reference %}<span class="text-muted ms-2">{{ order.reference }}</span>{% endif %}</h1>
         </div>
-        <a class="btn btn-outline-secondary" href="/"><i class="bi bi-arrow-left me-2"></i>К списку заказов</a>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-primary d-flex align-items-center gap-1"
+                    type="button"
+                    data-bs-toggle="modal"
+                    data-bs-target="#editOrderModal"
+                    data-order-id="{{ order.id }}"
+                    data-order-status="{{ order.status }}"
+                    data-order-notes="{{ order.notes | default(value='') }}"
+                    data-order-reference="{{ order.reference | default(value='') }}"
+                    data-order-shipping-address="{{ order.shipping_address | default(value='') }}"
+                    data-order-consignee="{{ order.consignee | default(value='') }}"
+                    data-order-delivery-notes="{{ order.delivery_notes | default(value='') }}"
+                    data-order-payer="{{ order.payer | default(value='') }}">
+                <i class="bi bi-pencil"></i>
+                Редактировать
+            </button>
+            <a class="btn btn-outline-secondary" href="/"><i class="bi bi-arrow-left me-2"></i>К списку заказов</a>
+        </div>
     </div>
 
     <div class="row g-3 mt-2">
@@ -128,6 +145,8 @@
         </div>
     </div>
 </div>
+
+{% include 'order/edit_order_modal.html' %}
 
 {% endblock %}
 
