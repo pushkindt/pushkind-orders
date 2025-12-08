@@ -10,18 +10,18 @@ use rand::Rng;
 use crate::domain::{
     category::CategoryTreeQuery,
     customer::{Customer, NewCustomer},
-    order::{NewOrder, Order, OrderListQuery, OrderProduct, OrderStatus},
+    order::{NewOrder, Order, OrderListQuery, OrderProduct, OrderStatus, UpdateOrder},
     price_level::PriceLevelListQuery,
     store_otp::NewStoreOtp,
     tag::TagListQuery,
-    types::{CategoryId, HubId},
+    types::{CategoryId, HubId, OrderId},
 };
 pub use crate::dto::store::{
     StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreOtpAcceptResponse,
     StoreOtpVerifyResponse, StoreProduct, StoreProductFilters, StoreTag,
 };
 use crate::forms::store::{
-    StoreOrderLinePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload,
+    StoreOrderLinePayload, StoreOrderUpdateValues, StoreOtpRequestPayload, StoreOtpVerifyPayload,
     validate_store_order_lines,
 };
 use crate::repository::{
@@ -271,6 +271,59 @@ where
     Ok(orders.into_iter().map(StoreOrder::from).collect())
 }
 
+/// Apply storefront-provided metadata to an existing customer order.
+pub fn update_store_order<R>(
+    repo: &R,
+    hub_id: i32,
+    order_id: i32,
+    customer: &Customer,
+    values: StoreOrderUpdateValues,
+) -> ServiceResult<StoreOrder>
+where
+    R: OrderReader + OrderWriter + ?Sized,
+{
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
+
+    let order = repo
+        .get_order_by_id(order_id, hub_id)
+        .map_err(ServiceError::from)?
+        .ok_or(ServiceError::NotFound)?;
+
+    if order.customer_id != Some(customer.id) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    let shipping_address = merge_updates(values.shipping_address, order.shipping_address.clone());
+    let consignee = merge_updates(values.consignee, order.consignee.clone());
+    let delivery_notes = merge_updates(values.delivery_notes, order.delivery_notes.clone());
+    let payer = merge_updates(values.payer, order.payer.clone());
+
+    let updates = UpdateOrder {
+        status: order.status,
+        notes: order.notes.clone(),
+        reference: order.reference.clone(),
+        updated_at: Utc::now().naive_utc(),
+        shipping_address,
+        consignee,
+        delivery_notes,
+        payer,
+    };
+
+    let updated_order = repo
+        .update_order(order_id, hub_id, &updates)
+        .map_err(ServiceError::from)?;
+
+    Ok(StoreOrder::from(updated_order))
+}
+
+fn merge_updates<T>(incoming: Option<Option<T>>, existing: Option<T>) -> Option<T> {
+    match incoming {
+        None => existing,
+        Some(value) => value,
+    }
+}
+
 /// Load categories available to a storefront for the provided hub.
 pub fn load_store_categories<R>(
     repo: &R,
@@ -393,8 +446,9 @@ where
 mod tests {
     use super::*;
     use crate::domain::types::{
-        CategoryId, CategoryName, CurrencyCode, CustomerId, CustomerName, HubId, ImageUrl, OrderId,
-        PriceCents, PriceLevelId, PriceLevelName, ProductDescription, ProductId, ProductName,
+        CategoryId, CategoryName, CurrencyCode, CustomerId, CustomerName, HubId, ImageUrl,
+        OrderConsignee, OrderDeliveryNotes, OrderId, OrderPayer, OrderShippingAddress, PriceCents,
+        PriceLevelId, PriceLevelName, ProductDescription, ProductId, ProductName,
         ProductPriceLevelRateId, ProductSku, ProductUnits, TagId, TagName,
     };
     use crate::domain::{
@@ -410,7 +464,8 @@ mod tests {
     };
     use crate::dto::store::{StoreCategoryFilters, StoreProductFilters};
     use crate::forms::store::{
-        StoreOrderLinePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload,
+        StoreOrderLinePayload, StoreOrderUpdateValues, StoreOtpRequestPayload,
+        StoreOtpVerifyPayload,
     };
     use crate::repository::mock::{
         MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockOrderReader,
@@ -801,6 +856,49 @@ mod tests {
         }
     }
 
+    struct MockUpdateStoreOrderRepo {
+        order_reader: MockOrderReader,
+        order_writer: MockOrderWriter,
+    }
+
+    impl MockUpdateStoreOrderRepo {
+        fn new() -> Self {
+            Self {
+                order_reader: MockOrderReader::new(),
+                order_writer: MockOrderWriter::new(),
+            }
+        }
+    }
+
+    impl OrderReader for MockUpdateStoreOrderRepo {
+        fn get_order_by_id(&self, id: OrderId, hub_id: HubId) -> RepositoryResult<Option<Order>> {
+            self.order_reader.get_order_by_id(id, hub_id)
+        }
+
+        fn list_orders(&self, query: OrderListQuery) -> RepositoryResult<(usize, Vec<Order>)> {
+            self.order_reader.list_orders(query)
+        }
+    }
+
+    impl OrderWriter for MockUpdateStoreOrderRepo {
+        fn create_order(&self, new_order: &NewOrder) -> RepositoryResult<Order> {
+            self.order_writer.create_order(new_order)
+        }
+
+        fn update_order(
+            &self,
+            order_id: OrderId,
+            hub_id: HubId,
+            updates: &UpdateOrder,
+        ) -> RepositoryResult<Order> {
+            self.order_writer.update_order(order_id, hub_id, updates)
+        }
+
+        fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {
+            self.order_writer.delete_order(order_id, hub_id)
+        }
+    }
+
     fn sample_order(id: i32, hub_id: i32, customer_id: i32) -> Order {
         Order {
             id: OrderId::new(id).unwrap(),
@@ -819,6 +917,116 @@ mod tests {
             delivery_notes: None,
             payer: None,
         }
+    }
+
+    #[test]
+    fn update_store_order_applies_request_values() {
+        let mut repo = MockUpdateStoreOrderRepo::new();
+        let customer = sample_customer();
+
+        let mut existing = sample_order(5, customer.hub_id.get(), customer.id.get());
+        existing.shipping_address = Some(OrderShippingAddress::new("Old address").unwrap());
+        existing.consignee = Some(OrderConsignee::new("Recipient").unwrap());
+        existing.delivery_notes = Some(OrderDeliveryNotes::new("Keep notes").unwrap());
+        existing.payer = Some(OrderPayer::new("Old payer").unwrap());
+
+        let order_clone = existing.clone();
+        repo.order_reader
+            .expect_get_order_by_id()
+            .return_once(move |_, _| Ok(Some(order_clone.clone())));
+
+        let mut updated = existing.clone();
+        updated.shipping_address = Some(OrderShippingAddress::new("New address").unwrap());
+        updated.consignee = None;
+        updated.payer = Some(OrderPayer::new("New payer").unwrap());
+
+        let updated_clone = updated.clone();
+        repo.order_writer
+            .expect_update_order()
+            .returning(move |order_id, hub_id, updates| {
+                assert_eq!(order_id, updated_clone.id);
+                assert_eq!(hub_id, updated_clone.hub_id);
+                assert_eq!(
+                    updates
+                        .shipping_address
+                        .as_ref()
+                        .map(|value| value.as_str()),
+                    Some("New address")
+                );
+                assert_eq!(updates.consignee, None);
+                assert_eq!(
+                    updates.delivery_notes.as_ref().map(|value| value.as_str()),
+                    Some("Keep notes")
+                );
+                assert_eq!(
+                    updates.payer.as_ref().map(|value| value.as_str()),
+                    Some("New payer")
+                );
+                Ok(updated_clone.clone())
+            });
+
+        let values = StoreOrderUpdateValues {
+            shipping_address: Some(Some(OrderShippingAddress::new("New address").unwrap())),
+            consignee: Some(None),
+            delivery_notes: None,
+            payer: Some(Some(OrderPayer::new("New payer").unwrap())),
+        };
+
+        let response = update_store_order(
+            &repo,
+            existing.hub_id.get(),
+            existing.id.get(),
+            &customer,
+            values,
+        )
+        .expect("expected update");
+
+        assert_eq!(response.shipping_address.as_deref(), Some("New address"));
+        assert_eq!(response.consignee, None);
+        assert_eq!(response.delivery_notes.as_deref(), Some("Keep notes"));
+        assert_eq!(response.payer.as_deref(), Some("New payer"));
+    }
+
+    #[test]
+    fn update_store_order_rejects_unauthorized_customer() {
+        let mut repo = MockUpdateStoreOrderRepo::new();
+        let customer = sample_customer();
+        let order = sample_order(6, customer.hub_id.get(), customer.id.get() + 1);
+        let order_id = order.id;
+
+        repo.order_reader
+            .expect_get_order_by_id()
+            .return_once(move |_, _| Ok(Some(order)));
+        repo.order_writer.expect_update_order().never();
+
+        let values = StoreOrderUpdateValues::default();
+
+        let result = update_store_order(
+            &repo,
+            customer.hub_id.get(),
+            order_id.get(),
+            &customer,
+            values,
+        );
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn update_store_order_rejects_missing_order() {
+        let mut repo = MockUpdateStoreOrderRepo::new();
+        let customer = sample_customer();
+
+        repo.order_reader
+            .expect_get_order_by_id()
+            .return_once(|_, _| Ok(None));
+        repo.order_writer.expect_update_order().never();
+
+        let values = StoreOrderUpdateValues::default();
+
+        let result = update_store_order(&repo, customer.hub_id.get(), 10, &customer, values);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
     }
 
     #[test]

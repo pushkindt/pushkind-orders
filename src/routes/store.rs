@@ -1,21 +1,23 @@
 use std::sync::Arc;
 
 use actix_session::Session;
-use actix_web::{HttpResponse, Responder, get, post, web};
+use actix_web::{HttpResponse, Responder, get, patch, post, web};
 use log::error;
 use pushkind_common::zmq::ZmqSender;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::dto::store::{StoreCategoryFilters, StoreOrder, StoreProductFilters};
-use crate::forms::store::{StoreOrderLinePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload};
+use crate::forms::store::{
+    StoreOrderLinePayload, StoreOrderUpdatePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload,
+};
 use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
 use crate::routes::store_session::{get_store_customer_for_hub, set_store_customer};
 use crate::services::ServiceError;
 use crate::services::store::{
     create_store_order, list_store_orders, load_store_categories, load_store_product,
-    load_store_products, load_store_tags, request_store_otp, verify_store_otp,
+    load_store_products, load_store_tags, request_store_otp, update_store_order, verify_store_otp,
 };
 
 #[derive(Debug, Deserialize)]
@@ -57,6 +59,12 @@ struct StoreCategoriesQuery {
 #[serde(rename_all = "camelCase")]
 struct StoreOrdersQuery {
     page: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StoreOrderPath {
+    hub_id: String,
+    order_id: String,
 }
 
 #[get("/{hub_id}/products")]
@@ -326,6 +334,56 @@ pub async fn list_store_orders_handler(
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
         Err(err) => {
             error!("Failed to list storefront orders for hub {hub_id}: {err}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[patch("/{hub_id}/orders/{order_id}")]
+/// Apply editable metadata to an authenticated customer's order.
+pub async fn update_store_order_handler(
+    path: web::Path<StoreOrderPath>,
+    payload: web::Json<StoreOrderUpdatePayload>,
+    repo: web::Data<DieselRepository>,
+    session: Session,
+) -> impl Responder {
+    let path = path.into_inner();
+
+    let hub_id = match path.hub_id.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+
+    let order_id = match path.order_id.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+
+    let store_customer = match get_store_customer_for_hub(&session, hub_id) {
+        Ok(Some(customer)) => customer,
+        Ok(None) => return HttpResponse::Unauthorized().finish(),
+        Err(err) => {
+            error!("Failed to read store session for hub {hub_id}: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let values = match payload.into_inner().into_values() {
+        Ok(values) => values,
+        Err(err) => {
+            return HttpResponse::UnprocessableEntity().json(json!({ "error": err.to_string() }));
+        }
+    };
+
+    match update_store_order(repo.get_ref(), hub_id, order_id, &store_customer, values) {
+        Ok(order) => HttpResponse::Ok().json(order),
+        Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
+        Err(ServiceError::NotFound) => HttpResponse::NotFound().finish(),
+        Err(ServiceError::Form(message)) => {
+            HttpResponse::UnprocessableEntity().json(json!({ "error": message }))
+        }
+        Err(err) => {
+            error!("Failed to update storefront order {order_id} for hub {hub_id}: {err}");
             HttpResponse::InternalServerError().finish()
         }
     }

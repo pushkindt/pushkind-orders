@@ -31,7 +31,7 @@ use crate::routes::products::{add_product, edit_product, show_products, upload_p
 use crate::routes::store::{
     create_store_order_handler, get_store_product, list_store_categories,
     list_store_orders_handler, list_store_products, list_store_tags, request_store_auth_otp,
-    verify_store_auth_otp,
+    update_store_order_handler, verify_store_auth_otp,
 };
 use crate::routes::store_session::get_store_session;
 use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
@@ -109,6 +109,7 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
                     .service(get_store_product)
                     .service(list_store_categories)
                     .service(list_store_orders_handler)
+                    .service(update_store_order_handler)
                     .service(list_store_tags)
                     .service(request_store_auth_otp)
                     .service(verify_store_auth_otp)
