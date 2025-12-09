@@ -40,7 +40,7 @@ async fn set_session_customer(session: Session, customer: web::Data<Customer>) -
 
 #[actix_web::test]
 async fn store_endpoints_return_data() {
-    let test_db = common::TestDb::new("routes_store_endpoints_return_data.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let _category = repo
@@ -112,7 +112,7 @@ async fn store_endpoints_return_data() {
 
 #[actix_web::test]
 async fn store_products_respect_query_parameters() {
-    let test_db = common::TestDb::new("routes_store_query_params.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let beverages = repo
@@ -208,7 +208,7 @@ async fn store_products_respect_query_parameters() {
 
 #[actix_web::test]
 async fn store_categories_respect_parent_query_parameter() {
-    let test_db = common::TestDb::new("routes_store_category_query.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let beverages = repo
@@ -259,7 +259,7 @@ async fn store_categories_respect_parent_query_parameter() {
 
 #[actix_web::test]
 async fn store_routes_reject_invalid_hub_id() {
-    let test_db = common::TestDb::new("routes_store_invalid_hub_id.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let app_repo = repo.clone();
@@ -301,7 +301,7 @@ async fn store_routes_reject_invalid_hub_id() {
 
 #[actix_web::test]
 async fn store_product_returns_not_found_for_unknown_id() {
-    let test_db = common::TestDb::new("routes_store_product_not_found.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let app_repo = repo.clone();
@@ -325,7 +325,7 @@ async fn store_product_returns_not_found_for_unknown_id() {
 
 #[actix_web::test]
 async fn create_store_order_requires_authentication() {
-    let test_db = common::TestDb::new("routes_store_order_requires_auth.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
     let price_level = repo
         .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
@@ -373,7 +373,7 @@ async fn create_store_order_requires_authentication() {
 
 #[actix_web::test]
 async fn create_store_order_validates_payload() {
-    let test_db = common::TestDb::new("routes_store_order_validates_payload.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
     let price_level = repo
         .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
@@ -442,7 +442,7 @@ async fn create_store_order_validates_payload() {
 
 #[actix_web::test]
 async fn create_store_order_creates_order() {
-    let test_db = common::TestDb::new("routes_store_order_creates.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
     let price_level = repo
         .create_price_level(&NewPriceLevel::try_new(1, "Default", true).unwrap())
@@ -517,7 +517,7 @@ async fn create_store_order_creates_order() {
 
 #[actix_web::test]
 async fn list_store_orders_requires_authentication() {
-    let test_db = common::TestDb::new("routes_store_orders_requires_auth.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let key = Key::generate();
@@ -546,7 +546,7 @@ async fn list_store_orders_requires_authentication() {
 
 #[actix_web::test]
 async fn list_store_orders_returns_orders_for_customer() {
-    let test_db = common::TestDb::new("routes_store_orders_returns_data.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
     let customer = repo
         .create_customer(
@@ -612,7 +612,7 @@ async fn list_store_orders_returns_orders_for_customer() {
 
 #[actix_web::test]
 async fn list_store_orders_returns_empty_results() {
-    let test_db = common::TestDb::new("routes_store_orders_empty_results.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
     let customer = repo
         .create_customer(
