@@ -4,18 +4,8 @@ use diesel::prelude::*;
 use pushkind_common::repository::errors::RepositoryResult;
 
 use crate::domain::store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp};
-use crate::domain::types::TypeConstraintError;
 use crate::models::store_otp::{NewStoreOtp as DbNewStoreOtp, StoreOtp as DbStoreOtp};
 use crate::repository::{DieselRepository, StoreOtpRepository};
-
-/// Convert a type constraint error into a repository error.
-fn map_type_error(
-    err: TypeConstraintError,
-) -> pushkind_common::repository::errors::RepositoryError {
-    pushkind_common::repository::errors::RepositoryError::Unexpected(format!(
-        "Invalid store OTP data: {err}"
-    ))
-}
 
 impl StoreOtpRepository for DieselRepository {
     fn get_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<Option<DomainStoreOtp>> {
@@ -28,10 +18,7 @@ impl StoreOtpRepository for DieselRepository {
             .first::<DbStoreOtp>(&mut conn)
             .optional()?;
 
-        record
-            .map(DomainStoreOtp::try_from)
-            .transpose()
-            .map_err(map_type_error)
+        Ok(record.map(DomainStoreOtp::try_from).transpose()?)
     }
 
     fn upsert_store_otp(&self, new_otp: &DomainNewStoreOtp) -> RepositoryResult<DomainStoreOtp> {
@@ -52,7 +39,7 @@ impl StoreOtpRepository for DieselRepository {
             .returning(DbStoreOtp::as_returning())
             .get_result::<DbStoreOtp>(&mut conn)?;
 
-        DomainStoreOtp::try_from(stored).map_err(map_type_error)
+        Ok(DomainStoreOtp::try_from(stored)?)
     }
 
     fn delete_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<()> {

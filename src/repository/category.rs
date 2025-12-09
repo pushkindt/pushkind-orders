@@ -9,16 +9,10 @@ use crate::domain::category::{
     Category as DomainCategory, CategoryTreeQuery, NewCategory as DomainNewCategory,
     UpdateCategory as DomainUpdateCategory,
 };
-use crate::domain::types::TypeConstraintError;
 use crate::models::category::{
     Category as DbCategory, NewCategory as DbNewCategory, UpdateCategory,
 };
 use crate::repository::{CategoryReader, CategoryWriter, DieselRepository};
-
-/// Convert a type constraint error into a repository error.
-fn map_type_error(err: TypeConstraintError) -> RepositoryError {
-    RepositoryError::Unexpected(format!("Invalid category data: {err}"))
-}
 
 impl CategoryReader for DieselRepository {
     fn list_categories(
@@ -65,8 +59,7 @@ impl CategoryReader for DieselRepository {
         let categories = categories
             .into_iter()
             .map(DomainCategory::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(map_type_error)?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok((total, categories))
     }
@@ -86,10 +79,7 @@ impl CategoryReader for DieselRepository {
             .first::<DbCategory>(&mut conn)
             .optional()?;
 
-        let category = category
-            .map(DomainCategory::try_from)
-            .transpose()
-            .map_err(map_type_error)?;
+        let category = category.map(DomainCategory::try_from).transpose()?;
 
         Ok(category)
     }
@@ -115,10 +105,7 @@ impl CategoryReader for DieselRepository {
         }
 
         let category = query.first::<DbCategory>(&mut conn).optional()?;
-        let category = category
-            .map(DomainCategory::try_from)
-            .transpose()
-            .map_err(map_type_error)?;
+        let category = category.map(DomainCategory::try_from).transpose()?;
         Ok(category)
     }
 }
@@ -142,7 +129,7 @@ impl CategoryWriter for DieselRepository {
             .values(&insertable)
             .get_result::<DbCategory>(&mut conn)?;
 
-        DomainCategory::try_from(created).map_err(map_type_error)
+        Ok(DomainCategory::try_from(created)?)
     }
 
     fn update_category(
@@ -165,7 +152,7 @@ impl CategoryWriter for DieselRepository {
             .set(&db_updates)
             .get_result::<DbCategory>(&mut conn)?;
 
-        DomainCategory::try_from(updated).map_err(map_type_error)
+        Ok(DomainCategory::try_from(updated)?)
     }
 
     fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()> {

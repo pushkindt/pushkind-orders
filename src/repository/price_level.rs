@@ -8,18 +8,12 @@ use crate::{
         NewPriceLevel as DomainNewPriceLevel, PriceLevel as DomainPriceLevel, PriceLevelListQuery,
         UpdatePriceLevel as DomainUpdatePriceLevel,
     },
-    domain::types::TypeConstraintError,
     models::price_level::{
         NewPriceLevel as DbNewPriceLevel, PriceLevel as DbPriceLevel,
         UpdatePriceLevel as DbUpdatePriceLevel,
     },
     repository::{DieselRepository, PriceLevelReader, PriceLevelWriter},
 };
-
-/// Convert a type constraint error into a repository error.
-fn map_type_error(err: TypeConstraintError) -> RepositoryError {
-    RepositoryError::Unexpected(format!("Invalid price level data: {err}"))
-}
 
 impl PriceLevelReader for DieselRepository {
     fn get_price_level_by_id(
@@ -36,10 +30,7 @@ impl PriceLevelReader for DieselRepository {
             .first::<DbPriceLevel>(&mut conn)
             .optional()?;
 
-        price_level
-            .map(DomainPriceLevel::try_from)
-            .transpose()
-            .map_err(map_type_error)
+        Ok(price_level.map(DomainPriceLevel::try_from).transpose()?)
     }
 
     fn list_price_levels(
@@ -85,8 +76,7 @@ impl PriceLevelReader for DieselRepository {
             db_price_levels
                 .into_iter()
                 .map(DomainPriceLevel::try_from)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(map_type_error)?,
+                .collect::<Result<Vec<_>, _>>()?,
         ))
     }
 }
@@ -116,7 +106,7 @@ impl PriceLevelWriter for DieselRepository {
                 .get_result::<DbPriceLevel>(conn)
         })?;
 
-        DomainPriceLevel::try_from(created).map_err(map_type_error)
+        Ok(DomainPriceLevel::try_from(created)?)
     }
 
     fn update_price_level(
@@ -153,7 +143,7 @@ impl PriceLevelWriter for DieselRepository {
             Ok(updated)
         })?;
 
-        DomainPriceLevel::try_from(updated).map_err(map_type_error)
+        Ok(DomainPriceLevel::try_from(updated)?)
     }
 
     fn delete_price_level(&self, price_level_id: i32, hub_id: i32) -> RepositoryResult<()> {

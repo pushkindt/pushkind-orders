@@ -6,14 +6,8 @@ use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 use crate::domain::tag::{
     NewTag as DomainNewTag, Tag as DomainTag, TagListQuery, UpdateTag as DomainUpdateTag,
 };
-use crate::domain::types::TypeConstraintError;
 use crate::models::tag::{NewTag as DbNewTag, Tag as DbTag, UpdateTag as DbUpdateTag};
 use crate::repository::{DieselRepository, TagReader, TagWriter};
-
-/// Convert a type constraint error into a repository error.
-fn map_type_error(err: TypeConstraintError) -> RepositoryError {
-    RepositoryError::Unexpected(format!("Invalid tag data: {err}"))
-}
 
 impl TagReader for DieselRepository {
     fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<DomainTag>)> {
@@ -48,8 +42,7 @@ impl TagReader for DieselRepository {
         let tags = db_tags
             .into_iter()
             .map(DomainTag::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(map_type_error)?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok((total, tags))
     }
@@ -66,7 +59,7 @@ impl TagWriter for DieselRepository {
             .values(&insertable)
             .get_result::<DbTag>(&mut conn)?;
 
-        DomainTag::try_from(created).map_err(map_type_error)
+        Ok(DomainTag::try_from(created)?)
     }
 
     fn update_tag(
@@ -88,7 +81,7 @@ impl TagWriter for DieselRepository {
             .set(&db_updates)
             .get_result::<DbTag>(&mut conn)?;
 
-        DomainTag::try_from(updated).map_err(map_type_error)
+        Ok(DomainTag::try_from(updated)?)
     }
 
     fn delete_tag(&self, tag_id: i32, hub_id: i32) -> RepositoryResult<()> {
