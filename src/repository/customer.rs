@@ -6,15 +6,9 @@ use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
     domain::customer::{Customer as DomainCustomer, NewCustomer as DomainNewCustomer},
-    domain::types::TypeConstraintError,
     models::customer::{Customer as DbCustomer, NewCustomer as DbNewCustomer},
     repository::{CustomerListQuery, CustomerReader, CustomerWriter, DieselRepository},
 };
-
-/// Convert a type constraint error into a repository error.
-fn map_type_error(err: TypeConstraintError) -> RepositoryError {
-    RepositoryError::Unexpected(format!("Invalid customer data: {err}"))
-}
 
 impl CustomerReader for DieselRepository {
     fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainCustomer>> {
@@ -27,10 +21,7 @@ impl CustomerReader for DieselRepository {
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
-        customer
-            .map(DomainCustomer::try_from)
-            .transpose()
-            .map_err(map_type_error)
+        Ok(customer.map(DomainCustomer::try_from).transpose()?)
     }
 
     fn get_customer_by_email(
@@ -49,10 +40,7 @@ impl CustomerReader for DieselRepository {
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
-        customer
-            .map(DomainCustomer::try_from)
-            .transpose()
-            .map_err(map_type_error)
+        Ok(customer.map(DomainCustomer::try_from).transpose()?)
     }
 
     fn get_customer_by_phone(
@@ -71,10 +59,7 @@ impl CustomerReader for DieselRepository {
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
-        customer
-            .map(DomainCustomer::try_from)
-            .transpose()
-            .map_err(map_type_error)
+        Ok(customer.map(DomainCustomer::try_from).transpose()?)
     }
 
     fn list_customers(
@@ -125,8 +110,7 @@ impl CustomerReader for DieselRepository {
         let customers = db_customers
             .into_iter()
             .map(DomainCustomer::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(map_type_error)?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok((total, customers))
     }
@@ -151,7 +135,7 @@ impl CustomerWriter for DieselRepository {
             .values(&db_new)
             .get_result::<DbCustomer>(&mut conn)?;
 
-        DomainCustomer::try_from(created).map_err(map_type_error)
+        Ok(DomainCustomer::try_from(created)?)
     }
 
     fn assign_price_level_to_customers(

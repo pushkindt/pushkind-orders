@@ -9,7 +9,7 @@ mod common;
 
 #[test]
 fn create_product_stores_price_levels() {
-    let test_db = common::TestDb::new("service_create_product_stores_price_levels.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     repo.create_price_level(&NewPriceLevel::try_new(1, "Retail", false).unwrap())
@@ -60,7 +60,7 @@ fn create_product_stores_price_levels() {
 
 #[test]
 fn create_product_requires_service_role() {
-    let test_db = common::TestDb::new("service_create_product_requires_role.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let user = AuthenticatedUser {

@@ -27,7 +27,7 @@ mod common;
 
 #[test]
 fn test_user_repository_crud() {
-    let test_db = common::TestDb::new("test_user_repository_crud.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let alice_new =
@@ -112,7 +112,7 @@ fn test_user_repository_crud() {
 
 #[test]
 fn test_customer_repository_crud() {
-    let test_db = common::TestDb::new("test_customer_repository_crud.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let vip_level = repo
@@ -248,7 +248,7 @@ fn test_customer_repository_crud() {
 
 #[test]
 fn test_product_repository_crud() {
-    let test_db = common::TestDb::new("test_product_repository_crud.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let mut conn = test_db.pool().get().expect("obtain connection");
@@ -389,7 +389,7 @@ fn test_product_repository_crud() {
 
 #[test]
 fn test_replace_product_price_levels() {
-    let test_db = common::TestDb::new("test_replace_product_price_levels.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let retail_level = repo
@@ -438,7 +438,7 @@ fn test_replace_product_price_levels() {
 
 #[test]
 fn test_price_level_repository_crud() {
-    let test_db = common::TestDb::new("test_price_level_repository_crud.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let bronze_new = NewPriceLevel::new(
@@ -531,7 +531,7 @@ fn test_price_level_repository_crud() {
 
 #[test]
 fn updating_price_level_default_resets_previous_default() {
-    let test_db = common::TestDb::new("updating_price_level_default_resets_previous_default.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let original_default = repo
@@ -578,7 +578,7 @@ fn deleting_price_level_removes_product_rates() {
     use diesel::prelude::*;
     use pushkind_orders::schema::product_price_levels::dsl as product_rates;
 
-    let test_db = common::TestDb::new("test_price_level_delete_cascade.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let product = repo
@@ -641,7 +641,7 @@ fn deleting_price_level_removes_product_rates() {
 
 #[test]
 fn test_order_repository_crud() {
-    let test_db = common::TestDb::new("test_order_repository_crud.db");
+    let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
 
     let product_snapshot = OrderProduct::try_new("Apple", 150, "USD", 2, None)

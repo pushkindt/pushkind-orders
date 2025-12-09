@@ -2,9 +2,10 @@
 
 use pushkind_common::db::{DbConnection, DbPool};
 use pushkind_common::pagination::Pagination;
-use pushkind_common::repository::errors::RepositoryResult;
+use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::domain::customer::CustomerListQuery;
+use crate::domain::types::TypeConstraintError;
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
     customer::{Customer, NewCustomer},
@@ -283,4 +284,10 @@ pub trait UserWriter {
     ) -> RepositoryResult<User>;
     /// Delete a user record.
     fn delete_user(&self, user_id: i32, hub_id: i32) -> RepositoryResult<()>;
+}
+
+impl From<TypeConstraintError> for RepositoryError {
+    fn from(err: TypeConstraintError) -> Self {
+        RepositoryError::ValidationError(err.to_string())
+    }
 }
