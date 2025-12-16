@@ -10,13 +10,13 @@ use super::{
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
     customer::{Customer, NewCustomer},
-    order::{NewOrder, Order, OrderListQuery, UpdateOrder},
+    order::{NewOrder, Order, OrderListQuery, OrderProductApprovalUpdate, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
     store_otp::{NewStoreOtp, StoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
-    types::{HubId, ImageUrl, OrderId},
+    types::{HubId, ImageUrl, OrderId, PriceCents},
     user::{NewUser, UpdateUser, User},
 };
 use pushkind_common::repository::errors::RepositoryResult;
@@ -97,6 +97,14 @@ mock! {
     impl OrderWriter for OrderWriter {
         fn create_order(&self, new_order: &NewOrder) -> RepositoryResult<Order>;
         fn update_order(&self, order_id: OrderId, hub_id: HubId, updates: &UpdateOrder) -> RepositoryResult<Order>;
+        fn update_order_product_approvals(
+            &self,
+            order_id: OrderId,
+            hub_id: HubId,
+            updates: &[OrderProductApprovalUpdate],
+            new_total_cents: PriceCents,
+            updated_at: chrono::NaiveDateTime,
+        ) -> RepositoryResult<Order>;
         fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()>;
     }
 }

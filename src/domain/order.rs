@@ -10,6 +10,17 @@ use crate::domain::types::{
     ProductName, ProductQuantity, ProductSku, TypeConstraintError,
 };
 
+/// Update payload for adjusting an approved quantity and price snapshot.
+#[derive(Debug, Clone)]
+pub struct OrderProductApprovalUpdate {
+    /// Identifier of the product being adjusted.
+    pub product_id: ProductId,
+    /// Approved quantity for fulfillment.
+    pub approved_quantity: ProductQuantity,
+    /// Line total in the smallest currency unit for the approved quantity.
+    pub price_cents: PriceCents,
+}
+
 /// Possible lifecycle states for an order managed by a hub.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OrderStatus {
