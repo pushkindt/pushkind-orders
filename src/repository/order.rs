@@ -2,15 +2,16 @@
 
 use std::collections::HashMap;
 
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
     domain::order::{
         NewOrder as DomainNewOrder, Order as DomainOrder, OrderListQuery,
-        UpdateOrder as DomainUpdateOrder,
+        OrderProductApprovalUpdate, UpdateOrder as DomainUpdateOrder,
     },
-    domain::types::{HubId, OrderId},
+    domain::types::{HubId, OrderId, PriceCents},
     models::order::{
         NewOrder as DbNewOrder, NewOrderProduct as DbNewOrderProduct, Order as DbOrder,
         OrderProduct as DbOrderProduct, UpdateOrder as DbUpdateOrder,
@@ -214,6 +215,60 @@ impl OrderWriter for DieselRepository {
                 .load::<DbOrderProduct>(conn)?;
 
             DomainOrder::try_from((updated, products))
+                .map_err(|e| RepositoryError::Unexpected(e.to_string()))
+        })
+    }
+
+    fn update_order_product_approvals(
+        &self,
+        order_id: OrderId,
+        hub_id: HubId,
+        updates: &[OrderProductApprovalUpdate],
+        new_total_cents: PriceCents,
+        updated_at: NaiveDateTime,
+    ) -> RepositoryResult<DomainOrder> {
+        use crate::schema::{order_products, orders};
+
+        let mut conn = self.conn()?;
+
+        conn.transaction::<DomainOrder, RepositoryError, _>(|conn| {
+            let order_id_raw = order_id.get();
+
+            for update in updates {
+                let target = order_products::table
+                    .filter(order_products::order_id.eq(order_id_raw))
+                    .filter(order_products::product_id.eq(update.product_id.get()));
+
+                let affected = diesel::update(target)
+                    .set((
+                        order_products::approved_quantity.eq(Some(update.approved_quantity.get())),
+                        order_products::price_cents.eq(update.price_cents.get()),
+                        order_products::updated_at.eq(updated_at),
+                    ))
+                    .execute(conn)?;
+
+                if affected == 0 {
+                    return Err(RepositoryError::NotFound);
+                }
+            }
+
+            let target_order = orders::table
+                .filter(orders::id.eq(order_id_raw))
+                .filter(orders::hub_id.eq(hub_id.get()));
+
+            let updated_order = diesel::update(target_order)
+                .set((
+                    orders::total_cents.eq(new_total_cents.get()),
+                    orders::updated_at.eq(updated_at),
+                ))
+                .get_result::<DbOrder>(conn)?;
+
+            let products = order_products::table
+                .filter(order_products::order_id.eq(order_id_raw))
+                .order(order_products::id.asc())
+                .load::<DbOrderProduct>(conn)?;
+
+            DomainOrder::try_from((updated_order, products))
                 .map_err(|e| RepositoryError::Unexpected(e.to_string()))
         })
     }

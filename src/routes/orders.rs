@@ -3,8 +3,10 @@ use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
+use serde_json::json;
 use tera::Tera;
 
+use crate::dto::orders::OrderProductApprovalPayload;
 use crate::forms::orders::EditOrderForm;
 use crate::repository::DieselRepository;
 use crate::services::{ServiceError, orders as order_service};
@@ -92,6 +94,35 @@ pub async fn edit_order(
             log::error!("Failed to update order {order_id}: {err}");
             FlashMessage::error("Не удалось обновить заказ.").send();
             redirect(order_path.as_str())
+        }
+    }
+}
+
+#[post("/orders/{order_id}/products/approvals")]
+/// Update approved quantities for order products and return refreshed order details.
+pub async fn update_order_product_approvals_handler(
+    path: web::Path<i32>,
+    payload: web::Json<Vec<OrderProductApprovalPayload>>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+) -> impl Responder {
+    let order_id = path.into_inner();
+
+    match order_service::update_order_product_approvals(
+        repo.get_ref(),
+        &user,
+        order_id,
+        payload.into_inner(),
+    ) {
+        Ok(details) => HttpResponse::Ok().json(details),
+        Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
+        Err(ServiceError::Form(message)) => {
+            HttpResponse::UnprocessableEntity().json(json!({ "error": message }))
+        }
+        Err(ServiceError::NotFound) => HttpResponse::NotFound().finish(),
+        Err(err) => {
+            log::error!("Failed to update order products for {order_id}: {err}");
+            HttpResponse::InternalServerError().finish()
         }
     }
 }
