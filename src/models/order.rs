@@ -53,6 +53,7 @@ pub struct OrderProduct {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub default_price_cents: Option<i32>,
+    pub approved_quantity: Option<i32>,
 }
 
 /// Payload for inserting a new order record.
