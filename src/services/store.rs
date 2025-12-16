@@ -545,6 +545,23 @@ mod tests {
             self.order_writer.update_order(order_id, hub_id, updates)
         }
 
+        fn update_order_product_approvals(
+            &self,
+            order_id: OrderId,
+            hub_id: HubId,
+            updates: &[crate::domain::order::OrderProductApprovalUpdate],
+            new_total_cents: PriceCents,
+            updated_at: NaiveDateTime,
+        ) -> RepositoryResult<Order> {
+            self.order_writer.update_order_product_approvals(
+                order_id,
+                hub_id,
+                updates,
+                new_total_cents,
+                updated_at,
+            )
+        }
+
         fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {
             self.order_writer.delete_order(order_id, hub_id)
         }
@@ -902,6 +919,23 @@ mod tests {
             updates: &UpdateOrder,
         ) -> RepositoryResult<Order> {
             self.order_writer.update_order(order_id, hub_id, updates)
+        }
+
+        fn update_order_product_approvals(
+            &self,
+            order_id: OrderId,
+            hub_id: HubId,
+            updates: &[crate::domain::order::OrderProductApprovalUpdate],
+            new_total_cents: PriceCents,
+            updated_at: NaiveDateTime,
+        ) -> RepositoryResult<Order> {
+            self.order_writer.update_order_product_approvals(
+                order_id,
+                hub_id,
+                updates,
+                new_total_cents,
+                updated_at,
+            )
         }
 
         fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {

@@ -6,7 +6,7 @@ use pushkind_common::pagination::Pagination;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::domain::customer::CustomerListQuery;
-use crate::domain::types::TypeConstraintError;
+use crate::domain::types::{PriceCents, TypeConstraintError};
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
     customer::{Customer, NewCustomer},

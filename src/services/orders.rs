@@ -129,17 +129,16 @@ where
             .checked_add(line_total)
             .ok_or(ServiceError::Internal)?;
 
-        if let Some(product_id) = product.product_id {
-            if let Some(updated_quantity) = approvals_map.get(&product_id) {
-                matched.insert(product_id);
-                let price_cents =
-                    PriceCents::new(line_total).map_err(|_| ServiceError::Internal)?;
-                updates.push(OrderProductApprovalUpdate {
-                    product_id,
-                    approved_quantity: *updated_quantity,
-                    price_cents,
-                });
-            }
+        if let Some(product_id) = product.product_id
+            && let Some(updated_quantity) = approvals_map.get(&product_id)
+        {
+            matched.insert(product_id);
+            let price_cents = PriceCents::new(line_total).map_err(|_| ServiceError::Internal)?;
+            updates.push(OrderProductApprovalUpdate {
+                product_id,
+                approved_quantity: *updated_quantity,
+                price_cents,
+            });
         }
     }
 
