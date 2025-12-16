@@ -162,6 +162,7 @@ mod tests {
                 price_cents: PriceCents::new(1500).unwrap(),
                 currency: CurrencyCode::new("RUB").unwrap(),
                 quantity: ProductQuantity::new(1).unwrap(),
+                approved_quantity: Some(ProductQuantity::new(1).unwrap()),
                 default_price_cents: None,
             }],
             created_at: fixed_datetime(),
