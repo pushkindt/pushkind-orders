@@ -1,15 +1,16 @@
 //! Repository traits and Diesel-backed implementation for data persistence.
 
+use chrono::NaiveDateTime;
 use pushkind_common::db::{DbConnection, DbPool};
 use pushkind_common::pagination::Pagination;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::domain::customer::CustomerListQuery;
-use crate::domain::types::TypeConstraintError;
+use crate::domain::types::{PriceCents, TypeConstraintError};
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
     customer::{Customer, NewCustomer},
-    order::{NewOrder, Order, OrderListQuery, UpdateOrder},
+    order::{NewOrder, Order, OrderListQuery, OrderProductApprovalUpdate, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
@@ -174,6 +175,15 @@ pub trait OrderWriter {
         order_id: OrderId,
         hub_id: HubId,
         updates: &UpdateOrder,
+    ) -> RepositoryResult<Order>;
+    /// Update approved quantities for order products and the order total.
+    fn update_order_product_approvals(
+        &self,
+        order_id: OrderId,
+        hub_id: HubId,
+        updates: &[OrderProductApprovalUpdate],
+        new_total_cents: PriceCents,
+        updated_at: NaiveDateTime,
     ) -> RepositoryResult<Order>;
     /// Delete an order record.
     fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()>;

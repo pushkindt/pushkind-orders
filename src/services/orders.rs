@@ -1,10 +1,13 @@
+use std::collections::{HashMap, HashSet};
+
+use chrono::Utc;
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::check_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::order::Order;
-use crate::domain::types::{HubId, OrderId};
-use crate::dto::orders::OrderDetails;
+use crate::domain::order::{Order, OrderProductApprovalUpdate};
+use crate::domain::types::{HubId, OrderId, PriceCents, ProductId, ProductQuantity};
+use crate::dto::orders::{OrderDetails, OrderProductApprovalPayload};
 use crate::forms::orders::EditOrderForm;
 use crate::repository::{CustomerReader, OrderReader, OrderWriter};
 use crate::services::{ServiceError, ServiceResult};
@@ -66,6 +69,102 @@ where
         .map_err(ServiceError::from)
 }
 
+/// Updates approved quantities for order products and recalculates the order total.
+pub fn update_order_product_approvals<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    order_id: i32,
+    approvals: Vec<OrderProductApprovalPayload>,
+) -> ServiceResult<OrderDetails>
+where
+    R: OrderReader + OrderWriter + CustomerReader + ?Sized,
+{
+    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
+        return Err(ServiceError::Unauthorized);
+    }
+
+    if approvals.is_empty() {
+        return Err(ServiceError::Form(
+            "Не выбраны позиции для обновления.".to_string(),
+        ));
+    }
+
+    let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+
+    let mut approvals_map: HashMap<ProductId, ProductQuantity> = HashMap::new();
+    for payload in approvals {
+        let product_id = ProductId::new(payload.product_id)
+            .map_err(|_| ServiceError::Form("Неверный товар в запросе.".to_string()))?;
+        let approved_quantity = ProductQuantity::new(payload.approved_quantity)
+            .map_err(|_| ServiceError::Form("Количество должно быть положительным.".to_string()))?;
+        approvals_map.insert(product_id, approved_quantity);
+    }
+
+    let order = repo
+        .get_order_by_id(order_id, hub_id)
+        .map_err(ServiceError::from)?
+        .ok_or(ServiceError::NotFound)?;
+
+    let mut updates: Vec<OrderProductApprovalUpdate> = Vec::new();
+    let mut matched: HashSet<ProductId> = HashSet::new();
+    let mut total_cents: i32 = 0;
+
+    for product in &order.products {
+        let approved_quantity = match product.product_id.and_then(|id| approvals_map.get(&id)) {
+            Some(value) => *value,
+            None => product.approved_quantity.unwrap_or(product.quantity),
+        };
+
+        let current_quantity = product.approved_quantity.unwrap_or(product.quantity);
+
+        if product.price_cents.get() % current_quantity.get() != 0 {
+            return Err(ServiceError::Internal);
+        }
+
+        let unit_price = product.price_cents.get() / current_quantity.get();
+        let line_total = unit_price
+            .checked_mul(approved_quantity.get())
+            .ok_or(ServiceError::Internal)?;
+
+        total_cents = total_cents
+            .checked_add(line_total)
+            .ok_or(ServiceError::Internal)?;
+
+        if let Some(product_id) = product.product_id
+            && let Some(updated_quantity) = approvals_map.get(&product_id)
+        {
+            matched.insert(product_id);
+            let price_cents = PriceCents::new(line_total).map_err(|_| ServiceError::Internal)?;
+            updates.push(OrderProductApprovalUpdate {
+                product_id,
+                approved_quantity: *updated_quantity,
+                price_cents,
+            });
+        }
+    }
+
+    if matched.len() != approvals_map.len() {
+        return Err(ServiceError::NotFound);
+    }
+
+    let total_cents = PriceCents::new(total_cents).map_err(|_| ServiceError::Internal)?;
+    let updated_at = Utc::now().naive_utc();
+
+    let order = repo
+        .update_order_product_approvals(order_id, hub_id, &updates, total_cents, updated_at)
+        .map_err(ServiceError::from)?;
+
+    let customer = match order.customer_id {
+        Some(customer_id) => repo
+            .get_customer_by_id(customer_id.get(), hub_id.get())
+            .map_err(ServiceError::from)?,
+        None => None,
+    };
+
+    Ok(OrderDetails { order, customer })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +186,7 @@ mod tests {
     struct OrderServiceRepo {
         orders: MockOrderReader,
         customers: MockCustomerReader,
+        order_writer: MockOrderWriter,
     }
 
     impl OrderServiceRepo {
@@ -137,6 +237,45 @@ mod tests {
         }
     }
 
+    impl OrderWriter for OrderServiceRepo {
+        fn create_order(
+            &self,
+            _new_order: &crate::domain::order::NewOrder,
+        ) -> RepositoryResult<Order> {
+            self.order_writer.create_order(_new_order)
+        }
+
+        fn update_order(
+            &self,
+            order_id: OrderId,
+            hub_id: HubId,
+            updates: &crate::domain::order::UpdateOrder,
+        ) -> RepositoryResult<Order> {
+            self.order_writer.update_order(order_id, hub_id, updates)
+        }
+
+        fn update_order_product_approvals(
+            &self,
+            order_id: OrderId,
+            hub_id: HubId,
+            updates: &[crate::domain::order::OrderProductApprovalUpdate],
+            new_total_cents: PriceCents,
+            updated_at: NaiveDateTime,
+        ) -> RepositoryResult<Order> {
+            self.order_writer.update_order_product_approvals(
+                order_id,
+                hub_id,
+                updates,
+                new_total_cents,
+                updated_at,
+            )
+        }
+
+        fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {
+            self.order_writer.delete_order(order_id, hub_id)
+        }
+    }
+
     fn fixed_datetime() -> NaiveDateTime {
         match NaiveDate::from_ymd_opt(2024, 1, 1) {
             Some(date) => date.and_hms_opt(0, 0, 0).unwrap_or_default(),
@@ -162,6 +301,7 @@ mod tests {
                 price_cents: PriceCents::new(1500).unwrap(),
                 currency: CurrencyCode::new("RUB").unwrap(),
                 quantity: ProductQuantity::new(1).unwrap(),
+                approved_quantity: Some(ProductQuantity::new(1).unwrap()),
                 default_price_cents: None,
             }],
             created_at: fixed_datetime(),
@@ -362,5 +502,191 @@ mod tests {
         let result = update_order(&repo, &user, 5, form);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
+    }
+
+    #[test]
+    fn update_order_product_approvals_rejects_missing_role() {
+        let repo = OrderServiceRepo::new();
+        let user = user_with_roles(&[]);
+
+        let result = update_order_product_approvals(
+            &repo,
+            &user,
+            1,
+            vec![OrderProductApprovalPayload {
+                product_id: 10,
+                approved_quantity: 2,
+            }],
+        );
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn update_order_product_approvals_updates_totals_and_returns_details() {
+        let mut repo = OrderServiceRepo::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        let order = sample_order(1, 7, Some(3));
+        let updated_order = Order {
+            total_cents: PriceCents::new(3000).unwrap(),
+            products: vec![OrderProduct {
+                approved_quantity: Some(ProductQuantity::new(2).unwrap()),
+                price_cents: PriceCents::new(3000).unwrap(),
+                ..order.products[0].clone()
+            }],
+            updated_at: fixed_datetime(),
+            ..order.clone()
+        };
+
+        repo.orders
+            .expect_get_order_by_id()
+            .returning(move |id, hub_id| {
+                assert_eq!(id.get(), 1);
+                assert_eq!(hub_id.get(), 7);
+                Ok(Some(order.clone()))
+            });
+
+        repo.order_writer
+            .expect_update_order_product_approvals()
+            .returning(move |order_id, hub_id, updates, total_cents, _| {
+                assert_eq!(order_id.get(), 1);
+                assert_eq!(hub_id.get(), 7);
+                assert_eq!(updates.len(), 1);
+                assert_eq!(updates[0].product_id.get(), 10);
+                assert_eq!(updates[0].approved_quantity.get(), 2);
+                assert_eq!(updates[0].price_cents.get(), 3000);
+                assert_eq!(total_cents.get(), 3000);
+                Ok(updated_order.clone())
+            });
+
+        repo.customers
+            .expect_get_customer_by_id()
+            .returning(|id, hub_id| {
+                assert_eq!(id, 3);
+                assert_eq!(hub_id, 7);
+                Ok(Some(sample_customer(id, hub_id)))
+            });
+
+        let result = update_order_product_approvals(
+            &repo,
+            &user,
+            1,
+            vec![OrderProductApprovalPayload {
+                product_id: 10,
+                approved_quantity: 2,
+            }],
+        )
+        .expect("expected successful update");
+
+        assert_eq!(result.order.total_cents.get(), 3000);
+        assert_eq!(result.order.products[0].approved_quantity.unwrap().get(), 2);
+        assert_eq!(result.order.products[0].price_cents.get(), 3000);
+        assert!(result.customer.is_some());
+    }
+
+    #[test]
+    fn update_order_product_approvals_uses_current_approved_quantity_for_unit_price() {
+        let mut repo = OrderServiceRepo::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        let order = Order {
+            id: OrderId::new(1).unwrap(),
+            hub_id: HubId::new(7).unwrap(),
+            customer_id: None,
+            reference: None,
+            status: OrderStatus::Pending,
+            notes: None,
+            total_cents: PriceCents::new(500).unwrap(),
+            currency: CurrencyCode::new("RUB").unwrap(),
+            products: vec![OrderProduct {
+                product_id: Some(ProductId::new(10).unwrap()),
+                name: ProductName::new("Sample").unwrap(),
+                sku: None,
+                description: None,
+                price_cents: PriceCents::new(500).unwrap(),
+                currency: CurrencyCode::new("RUB").unwrap(),
+                quantity: ProductQuantity::new(10).unwrap(),
+                approved_quantity: Some(ProductQuantity::new(5).unwrap()),
+                default_price_cents: None,
+            }],
+            created_at: fixed_datetime(),
+            updated_at: fixed_datetime(),
+            shipping_address: None,
+            consignee: None,
+            delivery_notes: None,
+            payer: None,
+        };
+
+        let updated_order = Order {
+            total_cents: PriceCents::new(300).unwrap(),
+            products: vec![OrderProduct {
+                approved_quantity: Some(ProductQuantity::new(3).unwrap()),
+                price_cents: PriceCents::new(300).unwrap(),
+                ..order.products[0].clone()
+            }],
+            updated_at: fixed_datetime(),
+            ..order.clone()
+        };
+
+        repo.orders
+            .expect_get_order_by_id()
+            .returning(move |id, hub_id| {
+                assert_eq!(id.get(), 1);
+                assert_eq!(hub_id.get(), 7);
+                Ok(Some(order.clone()))
+            });
+
+        repo.order_writer
+            .expect_update_order_product_approvals()
+            .returning(move |order_id, hub_id, updates, total_cents, _| {
+                assert_eq!(order_id.get(), 1);
+                assert_eq!(hub_id.get(), 7);
+                assert_eq!(updates.len(), 1);
+                assert_eq!(updates[0].product_id.get(), 10);
+                assert_eq!(updates[0].approved_quantity.get(), 3);
+                assert_eq!(updates[0].price_cents.get(), 300);
+                assert_eq!(total_cents.get(), 300);
+                Ok(updated_order.clone())
+            });
+
+        let result = update_order_product_approvals(
+            &repo,
+            &user,
+            1,
+            vec![OrderProductApprovalPayload {
+                product_id: 10,
+                approved_quantity: 3,
+            }],
+        )
+        .expect("expected successful update");
+
+        assert_eq!(result.order.total_cents.get(), 300);
+        assert_eq!(result.order.products[0].approved_quantity.unwrap().get(), 3);
+        assert_eq!(result.order.products[0].price_cents.get(), 300);
+        assert!(result.customer.is_none());
+    }
+
+    #[test]
+    fn update_order_product_approvals_errors_for_unknown_line() {
+        let mut repo = OrderServiceRepo::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let order = sample_order(1, 7, None);
+
+        repo.orders
+            .expect_get_order_by_id()
+            .returning(move |_, _| Ok(Some(order.clone())));
+
+        let result = update_order_product_approvals(
+            &repo,
+            &user,
+            1,
+            vec![OrderProductApprovalPayload {
+                product_id: 99,
+                approved_quantity: 1,
+            }],
+        );
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
     }
 }

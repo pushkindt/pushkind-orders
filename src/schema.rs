@@ -41,6 +41,7 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         default_price_cents -> Nullable<Integer>,
+        approved_quantity -> Nullable<Integer>,
     }
 }
 

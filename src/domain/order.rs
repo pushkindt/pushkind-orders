@@ -10,6 +10,17 @@ use crate::domain::types::{
     ProductName, ProductQuantity, ProductSku, TypeConstraintError,
 };
 
+/// Update payload for adjusting an approved quantity and price snapshot.
+#[derive(Debug, Clone)]
+pub struct OrderProductApprovalUpdate {
+    /// Identifier of the product being adjusted.
+    pub product_id: ProductId,
+    /// Approved quantity for fulfillment.
+    pub approved_quantity: ProductQuantity,
+    /// Line total in the smallest currency unit for the approved quantity.
+    pub price_cents: PriceCents,
+}
+
 /// Possible lifecycle states for an order managed by a hub.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OrderStatus {
@@ -132,6 +143,8 @@ pub struct OrderProduct {
     pub currency: CurrencyCode,
     /// Quantity of the product ordered.
     pub quantity: ProductQuantity,
+    /// Quantity of the product approved for fulfillment.
+    pub approved_quantity: Option<ProductQuantity>,
     /// Default price represented in the smallest currency unit.
     pub default_price_cents: Option<PriceCents>,
 }
@@ -145,6 +158,7 @@ impl OrderProduct {
         quantity: ProductQuantity,
         default_price_cents: Option<PriceCents>,
     ) -> Self {
+        let approved_quantity = Some(quantity);
         Self {
             product_id: None,
             name,
@@ -153,6 +167,7 @@ impl OrderProduct {
             price_cents,
             currency,
             quantity,
+            approved_quantity,
             default_price_cents,
         }
     }
@@ -189,6 +204,12 @@ impl OrderProduct {
     /// Capture the description value alongside the snapshot.
     pub fn with_description(mut self, description: ProductDescription) -> Self {
         self.description = Some(description);
+        self
+    }
+
+    /// Override the approved quantity for the ordered product.
+    pub fn with_approved_quantity(mut self, approved_quantity: ProductQuantity) -> Self {
+        self.approved_quantity = Some(approved_quantity);
         self
     }
 }
@@ -327,5 +348,28 @@ impl OrderListQuery {
     pub fn paginate(mut self, page: usize, per_page: usize) -> Self {
         self.pagination = Some(Pagination { page, per_page });
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn order_product_defaults_approved_quantity_to_ordered_quantity() {
+        let product = OrderProduct::try_new("Item", 500, "USD", 2, None).unwrap();
+
+        assert_eq!(product.quantity.get(), 2);
+        assert_eq!(product.approved_quantity.unwrap().get(), 2);
+    }
+
+    #[test]
+    fn order_product_allows_overriding_approved_quantity() {
+        let product = OrderProduct::try_new("Item", 500, "USD", 2, None)
+            .unwrap()
+            .with_approved_quantity(ProductQuantity::new(1).unwrap());
+
+        assert_eq!(product.quantity.get(), 2);
+        assert_eq!(product.approved_quantity.unwrap().get(), 1);
     }
 }

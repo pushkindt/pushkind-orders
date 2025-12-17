@@ -306,6 +306,8 @@ pub struct StoreOrderProduct {
     pub currency: String,
     /// Quantity of the product ordered.
     pub quantity: i32,
+    /// Quantity approved by the operator, if available.
+    pub approved_quantity: Option<i32>,
 }
 
 impl From<OrderProduct> for StoreOrderProduct {
@@ -318,6 +320,7 @@ impl From<OrderProduct> for StoreOrderProduct {
             price_cents: value.price_cents.get(),
             currency: value.currency.into_inner(),
             quantity: value.quantity.get(),
+            approved_quantity: value.approved_quantity.map(|qty| qty.get()),
         }
     }
 }

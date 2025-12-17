@@ -14,7 +14,7 @@ use crate::domain::{
     price_level::PriceLevelListQuery,
     store_otp::NewStoreOtp,
     tag::TagListQuery,
-    types::{CategoryId, HubId, OrderId},
+    types::{CategoryId, HubId, OrderId, ProductQuantity},
 };
 pub use crate::dto::store::{
     StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreOtpAcceptResponse,
@@ -209,8 +209,11 @@ where
             _ => {}
         }
 
+        let approved_quantity = ProductQuantity::new(item.quantity)
+            .map_err(|_| ServiceError::Form("quantity must be positive".to_string()))?;
+
         let line_total = price_cents
-            .checked_mul(item.quantity)
+            .checked_mul(approved_quantity.get())
             .ok_or_else(|| ServiceError::Form("invalid order total".to_string()))?;
 
         total_cents = total_cents
@@ -221,11 +224,12 @@ where
             product.name.as_str(),
             line_total,
             product_currency.clone(),
-            item.quantity,
+            approved_quantity.get(),
             default_price_cents,
         )
         .map_err(|_| ServiceError::Internal)?
-        .with_product_id(product.id);
+        .with_product_id(product.id)
+        .with_approved_quantity(approved_quantity);
 
         if let Some(sku) = &product.sku {
             order_product = order_product.with_sku(sku.clone());
@@ -541,6 +545,23 @@ mod tests {
             self.order_writer.update_order(order_id, hub_id, updates)
         }
 
+        fn update_order_product_approvals(
+            &self,
+            order_id: OrderId,
+            hub_id: HubId,
+            updates: &[crate::domain::order::OrderProductApprovalUpdate],
+            new_total_cents: PriceCents,
+            updated_at: NaiveDateTime,
+        ) -> RepositoryResult<Order> {
+            self.order_writer.update_order_product_approvals(
+                order_id,
+                hub_id,
+                updates,
+                new_total_cents,
+                updated_at,
+            )
+        }
+
         fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {
             self.order_writer.delete_order(order_id, hub_id)
         }
@@ -671,6 +692,12 @@ mod tests {
                 assert_eq!(new_order.products.len(), 2);
                 assert_eq!(new_order.products[0].product_id.map(|id| id.get()), Some(1));
                 assert_eq!(new_order.products[0].price_cents.get(), 1000);
+                assert_eq!(
+                    new_order.products[0]
+                        .approved_quantity
+                        .map(|quantity| quantity.get()),
+                    Some(2)
+                );
                 true
             })
             .returning(|new_order| {
@@ -892,6 +919,23 @@ mod tests {
             updates: &UpdateOrder,
         ) -> RepositoryResult<Order> {
             self.order_writer.update_order(order_id, hub_id, updates)
+        }
+
+        fn update_order_product_approvals(
+            &self,
+            order_id: OrderId,
+            hub_id: HubId,
+            updates: &[crate::domain::order::OrderProductApprovalUpdate],
+            new_total_cents: PriceCents,
+            updated_at: NaiveDateTime,
+        ) -> RepositoryResult<Order> {
+            self.order_writer.update_order_product_approvals(
+                order_id,
+                hub_id,
+                updates,
+                new_total_cents,
+                updated_at,
+            )
         }
 
         fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {

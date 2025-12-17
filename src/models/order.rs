@@ -53,6 +53,7 @@ pub struct OrderProduct {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub default_price_cents: Option<i32>,
+    pub approved_quantity: Option<i32>,
 }
 
 /// Payload for inserting a new order record.
@@ -81,6 +82,7 @@ pub struct NewOrderProduct<'a> {
     pub currency: &'a str,
     pub quantity: i32,
     pub default_price_cents: Option<i32>,
+    pub approved_quantity: Option<i32>,
 }
 
 /// Payload for updating an existing order record.
@@ -132,6 +134,7 @@ impl TryFrom<(Order, Vec<OrderProduct>)> for DomainOrder {
 impl TryFrom<&OrderProduct> for DomainOrderProduct {
     type Error = TypeConstraintError;
     fn try_from(value: &OrderProduct) -> Result<Self, Self::Error> {
+        let quantity = ProductQuantity::new(value.quantity)?;
         Ok(Self {
             product_id: value.product_id.map(ProductId::new).transpose()?,
             name: ProductName::new(value.name.clone())?,
@@ -142,7 +145,12 @@ impl TryFrom<&OrderProduct> for DomainOrderProduct {
                 .and_then(|d| ProductDescription::new(d).ok()),
             price_cents: PriceCents::new(value.price_cents)?,
             currency: CurrencyCode::new(value.currency.clone())?,
-            quantity: ProductQuantity::new(value.quantity)?,
+            quantity,
+            approved_quantity: value
+                .approved_quantity
+                .map(ProductQuantity::new)
+                .transpose()?
+                .or(Some(quantity)),
             default_price_cents: value.default_price_cents.map(PriceCents::new).transpose()?,
         })
     }
@@ -174,6 +182,7 @@ impl<'a> NewOrderProduct<'a> {
             currency: value.currency.as_str(),
             quantity: value.quantity.get(),
             default_price_cents: value.default_price_cents.map(|cents| cents.get()),
+            approved_quantity: Some(value.approved_quantity.unwrap_or(value.quantity).get()),
         }
     }
 }
