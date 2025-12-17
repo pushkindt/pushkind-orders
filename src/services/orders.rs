@@ -116,11 +116,13 @@ where
             None => product.approved_quantity.unwrap_or(product.quantity),
         };
 
-        if product.price_cents.get() % product.quantity.get() != 0 {
+        let current_quantity = product.approved_quantity.unwrap_or(product.quantity);
+
+        if product.price_cents.get() % current_quantity.get() != 0 {
             return Err(ServiceError::Internal);
         }
 
-        let unit_price = product.price_cents.get() / product.quantity.get();
+        let unit_price = product.price_cents.get() / current_quantity.get();
         let line_total = unit_price
             .checked_mul(approved_quantity.get())
             .ok_or(ServiceError::Internal)?;
@@ -581,6 +583,88 @@ mod tests {
         assert_eq!(result.order.products[0].approved_quantity.unwrap().get(), 2);
         assert_eq!(result.order.products[0].price_cents.get(), 3000);
         assert!(result.customer.is_some());
+    }
+
+    #[test]
+    fn update_order_product_approvals_uses_current_approved_quantity_for_unit_price() {
+        let mut repo = OrderServiceRepo::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        let order = Order {
+            id: OrderId::new(1).unwrap(),
+            hub_id: HubId::new(7).unwrap(),
+            customer_id: None,
+            reference: None,
+            status: OrderStatus::Pending,
+            notes: None,
+            total_cents: PriceCents::new(500).unwrap(),
+            currency: CurrencyCode::new("RUB").unwrap(),
+            products: vec![OrderProduct {
+                product_id: Some(ProductId::new(10).unwrap()),
+                name: ProductName::new("Sample").unwrap(),
+                sku: None,
+                description: None,
+                price_cents: PriceCents::new(500).unwrap(),
+                currency: CurrencyCode::new("RUB").unwrap(),
+                quantity: ProductQuantity::new(10).unwrap(),
+                approved_quantity: Some(ProductQuantity::new(5).unwrap()),
+                default_price_cents: None,
+            }],
+            created_at: fixed_datetime(),
+            updated_at: fixed_datetime(),
+            shipping_address: None,
+            consignee: None,
+            delivery_notes: None,
+            payer: None,
+        };
+
+        let updated_order = Order {
+            total_cents: PriceCents::new(300).unwrap(),
+            products: vec![OrderProduct {
+                approved_quantity: Some(ProductQuantity::new(3).unwrap()),
+                price_cents: PriceCents::new(300).unwrap(),
+                ..order.products[0].clone()
+            }],
+            updated_at: fixed_datetime(),
+            ..order.clone()
+        };
+
+        repo.orders
+            .expect_get_order_by_id()
+            .returning(move |id, hub_id| {
+                assert_eq!(id.get(), 1);
+                assert_eq!(hub_id.get(), 7);
+                Ok(Some(order.clone()))
+            });
+
+        repo.order_writer
+            .expect_update_order_product_approvals()
+            .returning(move |order_id, hub_id, updates, total_cents, _| {
+                assert_eq!(order_id.get(), 1);
+                assert_eq!(hub_id.get(), 7);
+                assert_eq!(updates.len(), 1);
+                assert_eq!(updates[0].product_id.get(), 10);
+                assert_eq!(updates[0].approved_quantity.get(), 3);
+                assert_eq!(updates[0].price_cents.get(), 300);
+                assert_eq!(total_cents.get(), 300);
+                Ok(updated_order.clone())
+            });
+
+        let result = update_order_product_approvals(
+            &repo,
+            &user,
+            1,
+            vec![OrderProductApprovalPayload {
+                product_id: 10,
+                approved_quantity: 3,
+            }],
+        )
+        .expect("expected successful update");
+
+        assert_eq!(result.order.total_cents.get(), 300);
+        assert_eq!(result.order.products[0].approved_quantity.unwrap().get(), 3);
+        assert_eq!(result.order.products[0].price_cents.get(), 300);
+        assert!(result.customer.is_none());
     }
 
     #[test]
