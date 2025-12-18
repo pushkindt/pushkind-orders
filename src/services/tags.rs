@@ -1,6 +1,6 @@
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
-use pushkind_common::routes::check_role;
+use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::tag::{Tag, TagListQuery};
@@ -18,9 +18,7 @@ pub fn load_tags<R>(
 where
     R: TagReader + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let TagQuery { search, page } = query;
     let page = page.unwrap_or(1);
@@ -45,9 +43,7 @@ pub fn create_tag<R>(repo: &R, user: &AuthenticatedUser, form: AddTagForm) -> Se
 where
     R: TagWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let new_tag = form
         .into_new_tag(user.hub_id)
@@ -61,9 +57,7 @@ pub fn modify_tag<R>(repo: &R, user: &AuthenticatedUser, form: EditTagForm) -> S
 where
     R: TagWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let tag_id = form.tag_id;
     let update = form
@@ -79,9 +73,7 @@ pub fn remove_tag<R>(repo: &R, user: &AuthenticatedUser, tag_id: i32) -> Service
 where
     R: TagWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     repo.delete_tag(tag_id, user.hub_id)
         .map_err(ServiceError::from)

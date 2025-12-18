@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::routes::check_role;
+use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::order::{Order, OrderProductApprovalUpdate};
@@ -21,9 +21,7 @@ pub fn load_order_details<R>(
 where
     R: OrderReader + CustomerReader + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
     let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
@@ -54,9 +52,7 @@ pub fn update_order<R>(
 where
     R: OrderWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
     let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
@@ -79,9 +75,7 @@ pub fn update_order_product_approvals<R>(
 where
     R: OrderReader + OrderWriter + CustomerReader + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     if approvals.is_empty() {
         return Err(ServiceError::Form(
