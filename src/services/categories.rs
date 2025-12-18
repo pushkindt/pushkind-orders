@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::routes::check_role;
+use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::category::{Category, CategoryTreeNode, CategoryTreeQuery, NewCategory};
@@ -16,9 +16,7 @@ pub fn load_categories<R>(repo: &R, user: &AuthenticatedUser) -> ServiceResult<C
 where
     R: CategoryReader + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
 
@@ -45,9 +43,7 @@ pub fn create_category<R>(
 where
     R: CategoryWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let new_category = form
         .into_new_category(user.hub_id)
@@ -66,9 +62,7 @@ pub fn modify_category<R>(
 where
     R: CategoryReader + CategoryWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let category_id = form.category_id;
 
@@ -85,9 +79,7 @@ pub fn remove_category<R>(repo: &R, user: &AuthenticatedUser, category_id: i32) 
 where
     R: CategoryWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     repo.delete_category(category_id, user.hub_id)
         .map_err(ServiceError::from)

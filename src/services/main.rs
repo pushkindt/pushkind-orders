@@ -1,6 +1,6 @@
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
-use pushkind_common::routes::check_role;
+use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::order::OrderListQuery;
@@ -18,9 +18,7 @@ pub fn load_index_page<R>(
 where
     R: OrderReader + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let page = query.page.unwrap_or(1);
     let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;

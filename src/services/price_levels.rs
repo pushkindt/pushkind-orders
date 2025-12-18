@@ -1,5 +1,5 @@
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::routes::check_role;
+use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::customer::{CustomerListQuery, NewCustomer};
@@ -23,9 +23,7 @@ pub fn load_price_levels<R>(
 where
     R: PriceLevelReader + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
     let mut list_query = PriceLevelListQuery::new(hub_id);
@@ -52,9 +50,7 @@ pub fn load_client_price_level_assignments<R>(
 where
     R: PriceLevelReader + CustomerReader + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
 
@@ -92,9 +88,7 @@ pub fn create_price_level<R>(
 where
     R: PriceLevelWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let new_price_level = form
         .into_new_price_level(user.hub_id)
@@ -114,9 +108,7 @@ pub fn update_price_level<R>(
 where
     R: PriceLevelWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let updates = form
         .into_update_price_level()
@@ -135,9 +127,7 @@ pub fn remove_price_level<R>(
 where
     R: PriceLevelWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     repo.delete_price_level(price_level_id, user.hub_id)
         .map_err(ServiceError::from)
@@ -152,9 +142,7 @@ pub fn assign_price_level_to_client<R>(
 where
     R: CustomerReader + CustomerWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let assignment = payload
         .into_assignment_request()

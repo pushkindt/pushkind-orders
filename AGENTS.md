@@ -89,7 +89,7 @@ cargo fmt --all -- --check
 - Render templates with Tera contexts that only expose sanitized data. Use the
   existing component templates under `templates/` for shared UI.
 - For REST APIs, return JSON responses using DTOs from `src/dto`.
-- Respect the authorization checks via `pushkind_common::routes::check_role` and
+- Respect the authorization checks via `pushkind_common::routes::ensure_role` and
   the `SERVICE_ACCESS_ROLE` constant for hub user routes.
 - Store API routes use separate session management; check for authenticated
   customers using `get_store_customer_for_hub` from `src/routes/store_session.rs`.

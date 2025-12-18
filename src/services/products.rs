@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
-use pushkind_common::routes::check_role;
+use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::{
@@ -32,9 +32,7 @@ pub fn load_products_page<R>(
 where
     R: ProductReader + PriceLevelReader + CategoryReader + TagReader + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let ProductsQuery {
         search,
@@ -105,9 +103,7 @@ pub fn create_product<R>(
 where
     R: ProductWriter + PriceLevelReader + CategoryReader + CategoryWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let price_levels = fetch_all_price_levels(repo, user.hub_id)?;
 
@@ -127,9 +123,7 @@ pub fn import_products<R>(
 where
     R: ProductWriter + PriceLevelReader + CategoryReader + CategoryWriter + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let price_levels = fetch_all_price_levels(repo, user.hub_id)?;
 
@@ -156,9 +150,7 @@ pub fn update_product<R>(
 where
     R: ProductReader + ProductWriter + PriceLevelReader + ?Sized,
 {
-    if !check_role(SERVICE_ACCESS_ROLE, &user.roles) {
-        return Err(ServiceError::Unauthorized);
-    }
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let product = repo.get_product_by_id(product_id, user.hub_id)?;
 
