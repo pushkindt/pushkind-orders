@@ -75,8 +75,7 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    repo.delete_tag(tag_id, user.hub_id)
-        .map_err(ServiceError::from)
+    Ok(repo.delete_tag(tag_id, user.hub_id)?)
 }
 
 #[cfg(test)]
