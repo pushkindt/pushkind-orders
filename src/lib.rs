@@ -38,6 +38,7 @@ use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
 
 pub mod domain;
 pub mod dto;
+pub mod error_conversions;
 pub mod forms;
 pub mod models;
 pub mod repository;
