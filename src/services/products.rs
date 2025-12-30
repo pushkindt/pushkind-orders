@@ -11,7 +11,7 @@ use crate::domain::{
     product::{Product, ProductListQuery},
     product_price_level::NewProductPriceLevelRate,
     tag::TagListQuery,
-    types::{HubId, PriceCents, PriceLevelId, ProductId},
+    types::{HubId, PriceCents, PriceLevelId, ProductId, TagId},
 };
 use crate::dto::products::{ProductView, ProductsPageData, ProductsQuery};
 use crate::forms::products::{
@@ -152,7 +152,9 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let product = repo.get_product_by_id(product_id, user.hub_id)?;
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let product_id = ProductId::new(product_id).map_err(|_| ServiceError::Internal)?;
+    let product = repo.get_product_by_id(product_id, hub_id)?;
 
     if product.is_none() {
         return Err(ServiceError::Form(
@@ -177,23 +179,28 @@ where
         .into_iter()
         .map(|rate| {
             NewProductPriceLevelRate::new(
-                ProductId::new(product_id).unwrap(),
+                product_id,
                 PriceLevelId::new(rate.price_level_id).unwrap(),
                 PriceCents::new(rate.price_cents).unwrap(),
             )
         })
         .collect();
 
-    repo.replace_product_price_levels(product_id, user.hub_id, &price_level_rates)
+    let tag_ids = tag_ids
+        .into_iter()
+        .map(|id| TagId::new(id).map_err(|_| ServiceError::Internal))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    repo.replace_product_price_levels(product_id, hub_id, &price_level_rates)
         .map_err(ServiceError::from)?;
 
-    repo.replace_product_tags(product_id, user.hub_id, &tag_ids)
+    repo.replace_product_tags(product_id, hub_id, &tag_ids)
         .map_err(ServiceError::from)?;
 
-    repo.replace_product_images(product_id, user.hub_id, &image_urls)
+    repo.replace_product_images(product_id, hub_id, &image_urls)
         .map_err(ServiceError::from)?;
 
-    repo.update_product(product_id, user.hub_id, &updates)
+    repo.update_product(product_id, hub_id, &updates)
         .map_err(ServiceError::from)
 }
 
@@ -216,6 +223,7 @@ fn persist_new_product<R>(
 where
     R: ProductWriter + CategoryReader + CategoryWriter + ?Sized,
 {
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
     let NewProductUpload {
         mut product,
         price_levels,
@@ -231,9 +239,9 @@ where
 
     let mut created = repo.create_product(&product).map_err(ServiceError::from)?;
 
-    if let Err(err) = repo.replace_product_images(created.id.get(), hub_id, &image_urls) {
+    if let Err(err) = repo.replace_product_images(created.id, hub_id, &image_urls) {
         log::error!("Failed to attach images to product {}: {err}", created.id);
-        if let Err(delete_err) = repo.delete_product(created.id.get(), hub_id) {
+        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
             log::error!(
                 "Failed to roll back product {} after image error: {delete_err}",
                 created.id
@@ -246,11 +254,16 @@ where
         created.image_urls = image_urls.clone();
     }
 
+    let tag_ids = tag_ids
+        .into_iter()
+        .map(|id| TagId::new(id).map_err(|_| ServiceError::Internal))
+        .collect::<Result<Vec<_>, _>>()?;
+
     if !tag_ids.is_empty()
-        && let Err(err) = repo.replace_product_tags(created.id.get(), hub_id, &tag_ids)
+        && let Err(err) = repo.replace_product_tags(created.id, hub_id, &tag_ids)
     {
         log::error!("Failed to attach tags to product {}: {err}", created.id);
-        if let Err(delete_err) = repo.delete_product(created.id.get(), hub_id) {
+        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
             log::error!(
                 "Failed to roll back product {} after tag error: {delete_err}",
                 created.id
@@ -274,12 +287,12 @@ where
         })
         .collect();
 
-    if let Err(err) = repo.replace_product_price_levels(created.id.get(), hub_id, &rates) {
+    if let Err(err) = repo.replace_product_price_levels(created.id, hub_id, &rates) {
         log::error!(
             "Failed to attach price levels to product {}: {err}",
             created.id
         );
-        if let Err(delete_err) = repo.delete_product(created.id.get(), hub_id) {
+        if let Err(delete_err) = repo.delete_product(created.id, hub_id) {
             log::error!(
                 "Failed to roll back product {} after price level error: {delete_err}",
                 created.id
@@ -664,7 +677,7 @@ mod tests {
             .expect_replace_product_images()
             .times(1)
             .withf(move |product_id, scope_hub, urls| {
-                assert_eq!((*product_id, *scope_hub), (101, hub_id));
+                assert_eq!((product_id.get(), scope_hub.get()), (101, hub_id));
                 assert_eq!(
                     urls.iter().map(|url| url.as_str()).collect::<Vec<_>>(),
                     &["https://example.com/a.png", "https://example.com/b.png"]
@@ -677,8 +690,10 @@ mod tests {
             .expect_replace_product_tags()
             .times(1)
             .withf(move |product_id, scope_hub, tags| {
-                assert_eq!((*product_id, *scope_hub), (101, hub_id));
-                assert_eq!(tags, &[3, 5]);
+                assert_eq!((product_id.get(), scope_hub.get()), (101, hub_id));
+                assert_eq!(tags.len(), 2);
+                assert_eq!(tags[0].get(), 3);
+                assert_eq!(tags[1].get(), 5);
                 true
             })
             .returning(|_, _, _| Ok(()));
@@ -688,8 +703,8 @@ mod tests {
             .expect_replace_product_price_levels()
             .times(1)
             .withf(move |product_id, scope_hub, rates| {
-                assert_eq!(*product_id, 101);
-                assert_eq!(*scope_hub, expected_hub);
+                assert_eq!(product_id.get(), 101);
+                assert_eq!(scope_hub.get(), expected_hub);
                 assert_eq!(rates.len(), 1);
                 assert_eq!(rates[0].price_level_id.get(), 10);
                 assert_eq!(rates[0].price_cents.get(), 1234);
@@ -751,7 +766,7 @@ mod tests {
             .expect_replace_product_images()
             .times(1)
             .withf(move |product_id, scope_hub, urls| {
-                assert_eq!((*product_id, *scope_hub), (7, hub_id));
+                assert_eq!((product_id.get(), scope_hub.get()), (7, hub_id));
                 assert!(urls.is_empty());
                 true
             })
@@ -766,8 +781,8 @@ mod tests {
             .expect_delete_product()
             .times(1)
             .withf(move |product_id, scope_hub| {
-                assert_eq!(*product_id, 7);
-                assert_eq!(*scope_hub, expected_hub_id);
+                assert_eq!(product_id.get(), 7);
+                assert_eq!(scope_hub.get(), expected_hub_id);
                 true
             })
             .returning(|_, _| Ok(()));
@@ -811,7 +826,7 @@ mod tests {
             .expect_replace_product_images()
             .times(1)
             .withf(move |product_id, scope_hub, urls| {
-                assert_eq!((*product_id, *scope_hub), (11, hub_id));
+                assert_eq!((product_id.get(), scope_hub.get()), (11, hub_id));
                 assert!(urls.is_empty());
                 true
             })
@@ -827,8 +842,8 @@ mod tests {
             .expect_delete_product()
             .times(1)
             .withf(move |product_id, scope_hub| {
-                assert_eq!(*product_id, 11);
-                assert_eq!(*scope_hub, expected_hub_id);
+                assert_eq!(product_id.get(), 11);
+                assert_eq!(scope_hub.get(), expected_hub_id);
                 true
             })
             .returning(|_, _| Ok(()));
@@ -894,12 +909,12 @@ mod tests {
                 let mut idx = image_counter_clone.lock().unwrap();
                 match *idx {
                     0 => {
-                        assert_eq!(product_id, 1);
-                        assert_eq!(scope_hub, hub_id);
+                        assert_eq!(product_id.get(), 1);
+                        assert_eq!(scope_hub.get(), hub_id);
                     }
                     1 => {
-                        assert_eq!(product_id, 2);
-                        assert_eq!(scope_hub, hub_id);
+                        assert_eq!(product_id.get(), 2);
+                        assert_eq!(scope_hub.get(), hub_id);
                     }
                     _ => panic!("unexpected additional image call"),
                 }
@@ -918,8 +933,8 @@ mod tests {
                 let mut idx = rate_counter_clone.lock().unwrap();
                 match *idx {
                     0 => {
-                        assert_eq!(product_id, 1);
-                        assert_eq!(scope_hub, hub_id);
+                        assert_eq!(product_id.get(), 1);
+                        assert_eq!(scope_hub.get(), hub_id);
                         assert_eq!(rates.len(), 2);
                         assert_eq!(rates[0].price_level_id.get(), 1);
                         assert_eq!(rates[0].price_cents.get(), 1234);
@@ -927,8 +942,8 @@ mod tests {
                         assert_eq!(rates[1].price_cents.get(), 990);
                     }
                     1 => {
-                        assert_eq!(product_id, 2);
-                        assert_eq!(scope_hub, hub_id);
+                        assert_eq!(product_id.get(), 2);
+                        assert_eq!(scope_hub.get(), hub_id);
                         assert_eq!(rates.len(), 1);
                         assert_eq!(rates[0].price_level_id.get(), 1);
                         assert_eq!(rates[0].price_cents.get(), 750);
@@ -1012,7 +1027,7 @@ Banana,USD,7.50,
         repo.product_reader
             .expect_get_product_by_id()
             .times(1)
-            .withf(move |id, hub| *id == product_id && *hub == hub_id)
+            .withf(move |id, hub| id.get() == product_id && hub.get() == hub_id)
             .returning(|_, _| Ok(None));
 
         let form = EditProductForm {
@@ -1083,7 +1098,7 @@ Banana,USD,7.50,
         repo.product_reader
             .expect_get_product_by_id()
             .times(1)
-            .withf(move |id, hub| *id == product_id && *hub == hub_id)
+            .withf(move |id, hub| id.get() == product_id && hub.get() == hub_id)
             .returning(move |_, _| Ok(Some(reader_product.clone())));
 
         let price_levels_response = price_level_rows.clone();
@@ -1097,7 +1112,7 @@ Banana,USD,7.50,
             .expect_update_product()
             .times(1)
             .withf(move |id, hub, updates| {
-                assert_eq!((*id, *hub), (product_id, hub_id));
+                assert_eq!((id.get(), hub.get()), (product_id, hub_id));
                 assert_eq!(updates.name.as_str(), "Espresso Deluxe");
                 assert_eq!(updates.currency.as_str(), "EUR");
                 assert!(updates.sku.is_none());
@@ -1130,7 +1145,7 @@ Banana,USD,7.50,
             .expect_replace_product_price_levels()
             .times(1)
             .withf(move |id, hub, rates| {
-                assert_eq!((*id, *hub), (product_id, hub_id));
+                assert_eq!((id.get(), hub.get()), (product_id, hub_id));
                 assert_eq!(rates.len(), 2);
                 assert_eq!(rates[0].price_level_id.get(), 31);
                 assert_eq!(rates[0].price_cents.get(), 4250);
@@ -1146,7 +1161,7 @@ Banana,USD,7.50,
             .expect_replace_product_images()
             .times(1)
             .withf(move |id, hub, urls| {
-                assert_eq!((*id, *hub), (product_id, hub_id));
+                assert_eq!((id.get(), hub.get()), (product_id, hub_id));
                 assert_eq!(urls, &expected_images);
                 true
             })
@@ -1156,8 +1171,10 @@ Banana,USD,7.50,
             .expect_replace_product_tags()
             .times(1)
             .withf(move |id, hub, tags| {
-                assert_eq!((*id, *hub), (product_id, hub_id));
-                assert_eq!(tags, &[42, 99]);
+                assert_eq!((id.get(), hub.get()), (product_id, hub_id));
+                assert_eq!(tags.len(), 2);
+                assert_eq!(tags[0].get(), 42);
+                assert_eq!(tags[1].get(), 99);
                 true
             })
             .returning(|_, _, _| Ok(()));
@@ -1224,7 +1241,11 @@ Banana,USD,7.50,
     }
 
     impl ProductReader for FakeRepo {
-        fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Product>> {
+        fn get_product_by_id(
+            &self,
+            id: ProductId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Product>> {
             self.product_reader.get_product_by_id(id, hub_id)
         }
 
@@ -1239,8 +1260,8 @@ Banana,USD,7.50,
     impl PriceLevelReader for FakeRepo {
         fn get_price_level_by_id(
             &self,
-            id: i32,
-            hub_id: i32,
+            id: PriceLevelId,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<PriceLevel>> {
             self.price_level_reader.get_price_level_by_id(id, hub_id)
         }
@@ -1263,17 +1284,17 @@ Banana,USD,7.50,
 
         fn get_category_by_id(
             &self,
-            category_id: i32,
-            hub_id: i32,
+            category_id: CategoryId,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Category>> {
             self.category_reader.get_category_by_id(category_id, hub_id)
         }
 
         fn get_category_by_name_and_parent(
             &self,
-            name: &str,
-            parent_id: Option<i32>,
-            hub_id: i32,
+            name: &CategoryName,
+            parent_id: Option<CategoryId>,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Category>> {
             self.category_reader
                 .get_category_by_name_and_parent(name, parent_id, hub_id)
@@ -1287,15 +1308,15 @@ Banana,USD,7.50,
 
         fn update_category(
             &self,
-            category_id: i32,
-            hub_id: i32,
+            category_id: CategoryId,
+            hub_id: HubId,
             updates: &UpdateCategory,
         ) -> RepositoryResult<Category> {
             self.category_writer
                 .update_category(category_id, hub_id, updates)
         }
 
-        fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()> {
+        fn delete_category(&self, category_id: CategoryId, hub_id: HubId) -> RepositoryResult<()> {
             self.category_writer.delete_category(category_id, hub_id)
         }
     }
@@ -1316,22 +1337,22 @@ Banana,USD,7.50,
 
         fn update_product(
             &self,
-            product_id: i32,
-            hub_id: i32,
+            product_id: ProductId,
+            hub_id: HubId,
             updates: &crate::domain::product::UpdateProduct,
         ) -> RepositoryResult<Product> {
             self.product_writer
                 .update_product(product_id, hub_id, updates)
         }
 
-        fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()> {
+        fn delete_product(&self, product_id: ProductId, hub_id: HubId) -> RepositoryResult<()> {
             self.product_writer.delete_product(product_id, hub_id)
         }
 
         fn replace_product_price_levels(
             &self,
-            product_id: i32,
-            hub_id: i32,
+            product_id: ProductId,
+            hub_id: HubId,
             rates: &[NewProductPriceLevelRate],
         ) -> RepositoryResult<()> {
             self.product_writer
@@ -1340,9 +1361,9 @@ Banana,USD,7.50,
 
         fn replace_product_tags(
             &self,
-            product_id: i32,
-            hub_id: i32,
-            tag_ids: &[i32],
+            product_id: ProductId,
+            hub_id: HubId,
+            tag_ids: &[TagId],
         ) -> RepositoryResult<()> {
             self.product_writer
                 .replace_product_tags(product_id, hub_id, tag_ids)
@@ -1350,8 +1371,8 @@ Banana,USD,7.50,
 
         fn replace_product_images(
             &self,
-            product_id: i32,
-            hub_id: i32,
+            product_id: ProductId,
+            hub_id: HubId,
             image_urls: &[ImageUrl],
         ) -> RepositoryResult<()> {
             self.product_writer

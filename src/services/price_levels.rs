@@ -114,7 +114,10 @@ where
         .into_update_price_level()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    repo.update_price_level(price_level_id, user.hub_id, &updates)
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let price_level_id = PriceLevelId::new(price_level_id).map_err(|_| ServiceError::Internal)?;
+
+    repo.update_price_level(price_level_id, hub_id, &updates)
         .map_err(ServiceError::from)
 }
 
@@ -129,7 +132,10 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    repo.delete_price_level(price_level_id, user.hub_id)
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let price_level_id = PriceLevelId::new(price_level_id).map_err(|_| ServiceError::Internal)?;
+
+    repo.delete_price_level(price_level_id, hub_id)
         .map_err(ServiceError::from)
 }
 
@@ -148,8 +154,12 @@ where
         .into_assignment_request()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let phone = crate::domain::types::PhoneNumber::new(assignment.phone.clone())
+        .map_err(|_| ServiceError::Internal)?;
+
     let customer = match repo
-        .get_customer_by_phone(&assignment.phone, user.hub_id)
+        .get_customer_by_phone(&phone, hub_id)
         .map_err(ServiceError::from)?
     {
         Some(existing) => existing,
@@ -179,9 +189,12 @@ where
     };
 
     repo.assign_price_level_to_customers(
-        user.hub_id,
-        &[customer.id.into()],
-        assignment.price_level_id,
+        hub_id,
+        &[customer.id],
+        assignment
+            .price_level_id
+            .map(|id| PriceLevelId::new(id).map_err(|_| ServiceError::Internal))
+            .transpose()?,
     )
     .map_err(ServiceError::from)
 }
@@ -216,22 +229,26 @@ mod tests {
     }
 
     impl CustomerReader for CombinedCustomerRepo {
-        fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Customer>> {
+        fn get_customer_by_id(
+            &self,
+            id: CustomerId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Customer>> {
             self.reader.get_customer_by_id(id, hub_id)
         }
 
         fn get_customer_by_email(
             &self,
-            email: &str,
-            hub_id: i32,
+            email: &UserEmail,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.reader.get_customer_by_email(email, hub_id)
         }
 
         fn get_customer_by_phone(
             &self,
-            phone: &str,
-            hub_id: i32,
+            phone: &PhoneNumber,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.reader.get_customer_by_phone(phone, hub_id)
         }
@@ -251,9 +268,9 @@ mod tests {
 
         fn assign_price_level_to_customers(
             &self,
-            hub_id: i32,
-            customer_ids: &[i32],
-            price_level_id: Option<i32>,
+            hub_id: HubId,
+            customer_ids: &[CustomerId],
+            price_level_id: Option<PriceLevelId>,
         ) -> RepositoryResult<()> {
             self.writer
                 .assign_price_level_to_customers(hub_id, customer_ids, price_level_id)
@@ -435,8 +452,8 @@ mod tests {
         repo.expect_update_price_level()
             .times(1)
             .withf(move |id, hub, updates| {
-                *id == 7
-                    && *hub == expected_hub
+                id.get() == 7
+                    && hub.get() == expected_hub
                     && updates.name.as_str() == "Retail Plus"
                     && updates.is_default
             })
@@ -503,22 +520,26 @@ mod tests {
     }
 
     impl CustomerReader for ClientAssignmentRepo {
-        fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Customer>> {
+        fn get_customer_by_id(
+            &self,
+            id: CustomerId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Customer>> {
             self.customer_reader.get_customer_by_id(id, hub_id)
         }
 
         fn get_customer_by_email(
             &self,
-            email: &str,
-            hub_id: i32,
+            email: &UserEmail,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.customer_reader.get_customer_by_email(email, hub_id)
         }
 
         fn get_customer_by_phone(
             &self,
-            phone: &str,
-            hub_id: i32,
+            phone: &PhoneNumber,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.customer_reader.get_customer_by_phone(phone, hub_id)
         }
@@ -534,8 +555,8 @@ mod tests {
     impl PriceLevelReader for ClientAssignmentRepo {
         fn get_price_level_by_id(
             &self,
-            id: i32,
-            hub_id: i32,
+            id: PriceLevelId,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<PriceLevel>> {
             self.price_level_reader.get_price_level_by_id(id, hub_id)
         }
@@ -644,14 +665,19 @@ mod tests {
         reader
             .expect_get_customer_by_phone()
             .times(1)
-            .withf(move |phone, query_hub_id| *query_hub_id == hub_id && phone == "+15550007")
+            .withf(move |phone, query_hub_id| {
+                query_hub_id.get() == hub_id && phone.as_str() == "+15550007"
+            })
             .returning(move |_, _| Ok(Some(sample_customer(expected_customer_id, hub_id, None))));
 
         writer
             .expect_assign_price_level_to_customers()
             .times(1)
             .withf(move |target_hub, ids, price_level_id| {
-                *target_hub == hub_id && ids == [expected_customer_id] && price_level_id == &Some(8)
+                target_hub.get() == hub_id
+                    && ids.len() == 1
+                    && ids[0].get() == expected_customer_id
+                    && price_level_id.map(|id| id.get()) == Some(8)
             })
             .returning(|_, _, _| Ok(()));
 
@@ -685,14 +711,19 @@ mod tests {
         reader
             .expect_get_customer_by_phone()
             .times(1)
-            .withf(move |phone, query_hub_id| *query_hub_id == hub_id && phone == "+1999555")
+            .withf(move |phone, query_hub_id| {
+                query_hub_id.get() == hub_id && phone.as_str() == "+1999555"
+            })
             .returning(move |_, _| Ok(Some(expected_customer.clone())));
 
         writer
             .expect_assign_price_level_to_customers()
             .times(1)
             .withf(move |target_hub, ids, price_level_id| {
-                *target_hub == hub_id && ids == [expected_customer_id] && price_level_id.is_none()
+                target_hub.get() == hub_id
+                    && ids.len() == 1
+                    && ids[0].get() == expected_customer_id
+                    && price_level_id.is_none()
             })
             .returning(|_, _, _| Ok(()));
 
@@ -746,7 +777,10 @@ mod tests {
             .expect_assign_price_level_to_customers()
             .times(1)
             .withf(move |target_hub, ids, price_level_id| {
-                *target_hub == hub_id && ids == [expected_customer_id] && price_level_id == &Some(1)
+                target_hub.get() == hub_id
+                    && ids.len() == 1
+                    && ids[0].get() == expected_customer_id
+                    && price_level_id.map(|id| id.get()) == Some(1)
             })
             .return_once(|_, _, _| Ok(()));
 
@@ -803,7 +837,7 @@ mod tests {
 
         repo.expect_delete_price_level()
             .times(1)
-            .withf(|id, hub| *id == 99 && *hub == 42)
+            .withf(|id, hub| id.get() == 99 && hub.get() == 42)
             .return_once(|_, _| Err(RepositoryError::NotFound));
 
         let result = remove_price_level(&repo, &user, 99);
@@ -818,7 +852,7 @@ mod tests {
 
         repo.expect_delete_price_level()
             .times(1)
-            .withf(|id, hub| *id == 7 && *hub == 42)
+            .withf(|id, hub| id.get() == 7 && hub.get() == 42)
             .return_once(|_, _| Ok(()));
 
         remove_price_level(&repo, &user, 7).expect("expected success");

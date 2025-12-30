@@ -4,17 +4,22 @@ use diesel::prelude::*;
 use pushkind_common::repository::errors::RepositoryResult;
 
 use crate::domain::store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp};
+use crate::domain::types::{HubId, PhoneNumber};
 use crate::models::store_otp::{NewStoreOtp as DbNewStoreOtp, StoreOtp as DbStoreOtp};
 use crate::repository::{DieselRepository, StoreOtpRepository};
 
 impl StoreOtpRepository for DieselRepository {
-    fn get_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<Option<DomainStoreOtp>> {
+    fn get_store_otp(
+        &self,
+        hub_id: HubId,
+        phone: &PhoneNumber,
+    ) -> RepositoryResult<Option<DomainStoreOtp>> {
         use crate::schema::store_otps;
 
         let mut conn = self.conn()?;
         let record = store_otps::table
-            .filter(store_otps::hub_id.eq(hub_id))
-            .filter(store_otps::phone.eq(phone))
+            .filter(store_otps::hub_id.eq(hub_id.get()))
+            .filter(store_otps::phone.eq(phone.as_str()))
             .first::<DbStoreOtp>(&mut conn)
             .optional()?;
 
@@ -42,14 +47,14 @@ impl StoreOtpRepository for DieselRepository {
         Ok(DomainStoreOtp::try_from(stored)?)
     }
 
-    fn delete_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<()> {
+    fn delete_store_otp(&self, hub_id: HubId, phone: &PhoneNumber) -> RepositoryResult<()> {
         use crate::schema::store_otps;
 
         let mut conn = self.conn()?;
         diesel::delete(
             store_otps::table
-                .filter(store_otps::hub_id.eq(hub_id))
-                .filter(store_otps::phone.eq(phone)),
+                .filter(store_otps::hub_id.eq(hub_id.get()))
+                .filter(store_otps::phone.eq(phone.as_str())),
         )
         .execute(&mut conn)?;
 

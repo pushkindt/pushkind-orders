@@ -8,6 +8,7 @@ use crate::{
         NewPriceLevel as DomainNewPriceLevel, PriceLevel as DomainPriceLevel, PriceLevelListQuery,
         UpdatePriceLevel as DomainUpdatePriceLevel,
     },
+    domain::types::{HubId, PriceLevelId},
     models::price_level::{
         NewPriceLevel as DbNewPriceLevel, PriceLevel as DbPriceLevel,
         UpdatePriceLevel as DbUpdatePriceLevel,
@@ -18,15 +19,15 @@ use crate::{
 impl PriceLevelReader for DieselRepository {
     fn get_price_level_by_id(
         &self,
-        id: i32,
-        hub_id: i32,
+        id: PriceLevelId,
+        hub_id: HubId,
     ) -> RepositoryResult<Option<DomainPriceLevel>> {
         use crate::schema::price_levels;
 
         let mut conn = self.conn()?;
         let price_level = price_levels::table
-            .filter(price_levels::id.eq(id))
-            .filter(price_levels::hub_id.eq(hub_id))
+            .filter(price_levels::id.eq(id.get()))
+            .filter(price_levels::hub_id.eq(hub_id.get()))
             .first::<DbPriceLevel>(&mut conn)
             .optional()?;
 
@@ -111,8 +112,8 @@ impl PriceLevelWriter for DieselRepository {
 
     fn update_price_level(
         &self,
-        price_level_id: i32,
-        hub_id: i32,
+        price_level_id: PriceLevelId,
+        hub_id: HubId,
         updates: &DomainUpdatePriceLevel,
     ) -> RepositoryResult<DomainPriceLevel> {
         use crate::schema::price_levels;
@@ -123,8 +124,8 @@ impl PriceLevelWriter for DieselRepository {
             let db_updates = DbUpdatePriceLevel::from(updates);
 
             let target = price_levels::table
-                .filter(price_levels::id.eq(price_level_id))
-                .filter(price_levels::hub_id.eq(hub_id));
+                .filter(price_levels::id.eq(price_level_id.get()))
+                .filter(price_levels::hub_id.eq(hub_id.get()));
 
             let updated = diesel::update(target)
                 .set(&db_updates)
@@ -133,8 +134,8 @@ impl PriceLevelWriter for DieselRepository {
             if updates.is_default {
                 diesel::update(
                     price_levels::table
-                        .filter(price_levels::hub_id.eq(hub_id))
-                        .filter(price_levels::id.ne(price_level_id)),
+                        .filter(price_levels::hub_id.eq(hub_id.get()))
+                        .filter(price_levels::id.ne(price_level_id.get())),
                 )
                 .set(price_levels::is_default.eq(false))
                 .execute(conn)?;
@@ -146,14 +147,18 @@ impl PriceLevelWriter for DieselRepository {
         Ok(DomainPriceLevel::try_from(updated)?)
     }
 
-    fn delete_price_level(&self, price_level_id: i32, hub_id: i32) -> RepositoryResult<()> {
+    fn delete_price_level(
+        &self,
+        price_level_id: PriceLevelId,
+        hub_id: HubId,
+    ) -> RepositoryResult<()> {
         use crate::schema::price_levels;
 
         let mut conn = self.conn()?;
 
         let target = price_levels::table
-            .filter(price_levels::id.eq(price_level_id))
-            .filter(price_levels::hub_id.eq(hub_id));
+            .filter(price_levels::id.eq(price_level_id.get()))
+            .filter(price_levels::hub_id.eq(hub_id.get()));
 
         let deleted = diesel::delete(target).execute(&mut conn)?;
         if deleted == 0 {

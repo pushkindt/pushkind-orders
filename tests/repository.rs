@@ -9,8 +9,9 @@ use pushkind_orders::domain::{
     product::{NewProduct, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
     types::{
-        CategoryId, CategoryName, CurrencyCode, HubId, OrderNotes, OrderReference, PriceCents,
-        PriceLevelName, ProductDescription, ProductName, ProductSku,
+        CategoryId, CategoryName, CurrencyCode, CustomerId, HubId, OrderNotes, OrderReference,
+        PhoneNumber, PriceCents, PriceLevelName, ProductDescription, ProductName, ProductSku,
+        UserEmail,
     },
     user::{NewUser, UpdateUser},
 };
@@ -42,38 +43,42 @@ fn test_user_repository_crud() {
     assert_eq!(alice.name.as_str(), "Alice");
     assert_eq!(alice.email.as_str(), "alice@example.com");
 
+    let hub_id = HubId::new(1).expect("valid hub id");
     let fetched = repo
-        .get_user_by_id(alice.id.get(), 1)
+        .get_user_by_id(alice.id, hub_id)
         .expect("failed to fetch user")
         .expect("expected Alice to exist");
     assert_eq!(fetched.id, alice.id);
 
     assert!(
-        repo.get_user_by_id(alice.id.get(), 2)
+        repo.get_user_by_id(alice.id, HubId::new(2).expect("valid hub id"))
             .expect("failed to fetch scoped user")
             .is_none()
     );
 
     let fetched_by_email = repo
-        .get_user_by_email("alice@example.com", 1)
+        .get_user_by_email(&alice.email, hub_id)
         .expect("failed to fetch by email")
         .expect("expected Alice via email");
     assert_eq!(fetched_by_email.id, alice.id);
 
     assert!(
-        repo.get_user_by_email("alice@example.com", 2)
-            .expect("failed to fetch by email scoped")
-            .is_none()
+        repo.get_user_by_email(
+            &UserEmail::new("alice@example.com").expect("valid email"),
+            HubId::new(2).expect("valid hub id"),
+        )
+        .expect("failed to fetch by email scoped")
+        .is_none()
     );
 
     let (total_all, users_all) = repo
-        .list_users(UserListQuery::new(1))
+        .list_users(UserListQuery::new(hub_id))
         .expect("failed to list users");
     assert_eq!(total_all, 2);
     assert_eq!(users_all.len(), 2);
 
     let (total_filtered, users_filtered) = repo
-        .list_users(UserListQuery::new(1).search("bob"))
+        .list_users(UserListQuery::new(hub_id).search("bob"))
         .expect("failed to search users");
     assert_eq!(total_filtered, 1);
     assert_eq!(users_filtered[0].id, bob.id);
@@ -81,30 +86,30 @@ fn test_user_repository_crud() {
     let updates = UpdateUser::try_new("Alicia".to_string()).expect("failed to build update");
 
     let updated = repo
-        .update_user(alice.id.get(), 1, &updates)
+        .update_user(alice.id, hub_id, &updates)
         .expect("failed to update user");
     assert_eq!(updated.name.as_str(), "Alicia");
 
     let err = repo
-        .update_user(alice.id.get(), 2, &updates)
+        .update_user(alice.id, HubId::new(2).expect("valid hub id"), &updates)
         .expect_err("expected cross-hub update to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 
     let err = repo
-        .delete_user(alice.id.get(), 2)
+        .delete_user(alice.id, HubId::new(2).expect("valid hub id"))
         .expect_err("expected cross-hub delete to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 
-    repo.delete_user(alice.id.get(), 1)
+    repo.delete_user(alice.id, hub_id)
         .expect("failed to delete user");
     assert!(
-        repo.get_user_by_id(alice.id.get(), 1)
+        repo.get_user_by_id(alice.id, hub_id)
             .expect("failed to fetch after delete")
             .is_none()
     );
 
     let (total_after, users_after) = repo
-        .list_users(UserListQuery::new(1))
+        .list_users(UserListQuery::new(hub_id))
         .expect("failed to list after delete");
     assert_eq!(total_after, 1);
     assert_eq!(users_after[0].id, bob.id);
@@ -147,45 +152,52 @@ fn test_customer_repository_crud() {
     assert_eq!(bob.price_level_id, None);
     assert_eq!(carla.hub_id.get(), 2);
 
+    let hub_id = HubId::new(1).expect("valid hub id");
     let fetched = repo
-        .get_customer_by_id(alice.id.into(), 1)
+        .get_customer_by_id(alice.id, hub_id)
         .expect("failed to fetch customer")
         .expect("expected Alice to exist");
     assert_eq!(fetched.id, alice.id);
     assert_eq!(fetched.phone.as_str(), "+15551234");
 
     assert!(
-        repo.get_customer_by_id(alice.id.into(), 2)
+        repo.get_customer_by_id(alice.id, HubId::new(2).expect("valid hub id"))
             .expect("failed to fetch scoped customer")
             .is_none()
     );
 
     let fetched_by_email = repo
-        .get_customer_by_email("ALICE@example.com", 1)
+        .get_customer_by_email(
+            &UserEmail::new("ALICE@example.com").expect("valid email"),
+            hub_id,
+        )
         .expect("failed to fetch by email")
         .expect("expected Alice via email");
     assert_eq!(fetched_by_email.id, alice.id);
 
     let fetched_by_phone = repo
-        .get_customer_by_phone("+15551234", 1)
+        .get_customer_by_phone(&PhoneNumber::new("+15551234").expect("valid phone"), hub_id)
         .expect("failed to fetch by phone")
         .expect("expected Alice via contact");
     assert_eq!(fetched_by_phone.id, alice.id);
 
     assert!(
-        repo.get_customer_by_phone("+999", 1)
+        repo.get_customer_by_phone(&PhoneNumber::new("+15559999").expect("valid phone"), hub_id,)
             .expect("failed to fetch missing phone")
             .is_none()
     );
 
     assert!(
-        repo.get_customer_by_phone("+15551234", 2)
-            .expect("failed to fetch scoped phone")
-            .is_none()
+        repo.get_customer_by_phone(
+            &PhoneNumber::new("+15551234").expect("valid phone"),
+            HubId::new(2).expect("valid hub id"),
+        )
+        .expect("failed to fetch scoped phone")
+        .is_none()
     );
 
     let fetched_bob_by_phone = repo
-        .get_customer_by_phone("+15550000", 1)
+        .get_customer_by_phone(&PhoneNumber::new("+15550000").expect("valid phone"), hub_id)
         .expect("failed to fetch bob by phone")
         .expect("expected Bob via phone");
     assert_eq!(fetched_bob_by_phone.id, bob.id);
@@ -206,7 +218,7 @@ fn test_customer_repository_crud() {
     assert_eq!(total_filtered, 1);
     assert_eq!(customers_filtered[0].id, bob.id);
 
-    repo.assign_price_level_to_customers(1, &[alice.id.into()], Some(vip_level.id.get()))
+    repo.assign_price_level_to_customers(hub_id, &[alice.id], Some(vip_level.id))
         .expect("failed to assign price level");
 
     let (total_vip, vip_customers) = repo
@@ -221,27 +233,35 @@ fn test_customer_repository_crud() {
     assert_eq!(vip_customers[0].price_level_id, Some(vip_level.id));
 
     let updated = repo
-        .get_customer_by_id(alice.id.into(), 1)
+        .get_customer_by_id(alice.id, hub_id)
         .expect("failed to fetch after assignment")
         .expect("expected Alice after assignment");
     assert_eq!(updated.price_level_id, Some(vip_level.id));
 
-    repo.assign_price_level_to_customers(1, &[alice.id.into()], None)
+    repo.assign_price_level_to_customers(hub_id, &[alice.id], None)
         .expect("failed to clear price level");
 
     let cleared = repo
-        .get_customer_by_id(alice.id.into(), 1)
+        .get_customer_by_id(alice.id, hub_id)
         .expect("failed to fetch after clearing")
         .expect("expected Alice after clearing");
     assert_eq!(cleared.price_level_id, None);
 
     let err = repo
-        .assign_price_level_to_customers(1, &[9999], Some(vip_level.id.get()))
+        .assign_price_level_to_customers(
+            hub_id,
+            &[CustomerId::new(9999).expect("valid id")],
+            Some(vip_level.id),
+        )
         .expect_err("expected assigning missing customer to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 
     let err = repo
-        .assign_price_level_to_customers(2, &[carla.id.into()], Some(vip_level.id.get()))
+        .assign_price_level_to_customers(
+            HubId::new(2).expect("valid hub id"),
+            &[carla.id],
+            Some(vip_level.id),
+        )
         .expect_err("expected cross-hub price level to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 }
@@ -290,15 +310,16 @@ fn test_product_repository_crud() {
         .expect_err("expected missing category");
     assert!(matches!(err, RepositoryError::NotFound));
 
+    let hub_id = HubId::new(1).expect("valid hub id");
     let fetched = repo
-        .get_product_by_id(apple.id.get(), 1)
+        .get_product_by_id(apple.id, hub_id)
         .expect("failed to fetch by id")
         .expect("expected apple product");
     assert_eq!(fetched.id, apple.id);
     assert!(fetched.price_levels.is_empty());
 
     assert!(
-        repo.get_product_by_id(apple.id.get(), 2)
+        repo.get_product_by_id(apple.id, HubId::new(2).expect("valid hub id"))
             .expect("failed to fetch cross-hub")
             .is_none()
     );
@@ -338,7 +359,7 @@ fn test_product_repository_crud() {
     );
 
     let updated = repo
-        .update_product(apple.id.get(), 1, &updates)
+        .update_product(apple.id, hub_id, &updates)
         .expect("failed to update product");
     assert!(updated.is_archived);
     assert_eq!(updated.name, "Apple Premium");
@@ -351,7 +372,7 @@ fn test_product_repository_crud() {
     );
 
     let err = repo
-        .update_product(apple.id.get(), 2, &updates)
+        .update_product(apple.id, HubId::new(2).expect("valid hub id"), &updates)
         .expect_err("expected cross-hub update failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
@@ -368,14 +389,14 @@ fn test_product_repository_crud() {
     assert_eq!(products_with_archived.len(), 2);
 
     let err = repo
-        .delete_product(apple.id.get(), 2)
+        .delete_product(apple.id, HubId::new(2).expect("valid hub id"))
         .expect_err("expected cross-hub delete failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
-    repo.delete_product(apple.id.get(), 1)
+    repo.delete_product(apple.id, hub_id)
         .expect("failed to delete product");
     assert!(
-        repo.get_product_by_id(apple.id.get(), 1)
+        repo.get_product_by_id(apple.id, hub_id)
             .expect("failed to fetch after delete")
             .is_none()
     );
@@ -391,6 +412,7 @@ fn test_product_repository_crud() {
 fn test_replace_product_price_levels() {
     let test_db = common::TestDb::new();
     let repo = DieselRepository::new(test_db.pool());
+    let hub_id = HubId::new(1).expect("valid hub id");
 
     let retail_level = repo
         .create_price_level(&NewPriceLevel::try_new(1, "Retail", false).unwrap())
@@ -412,11 +434,11 @@ fn test_replace_product_price_levels() {
         ),
     ];
 
-    repo.replace_product_price_levels(product.id.get(), 1, &rates)
+    repo.replace_product_price_levels(product.id, hub_id, &rates)
         .expect("failed to replace product price levels");
 
     let mut fetched = repo
-        .get_product_by_id(product.id.get(), 1)
+        .get_product_by_id(product.id, hub_id)
         .expect("failed to fetch product")
         .expect("product should exist");
 
@@ -431,7 +453,7 @@ fn test_replace_product_price_levels() {
     assert_eq!(fetched.price_levels[1].price_cents.get(), 990);
 
     let err = repo
-        .replace_product_price_levels(product.id.get(), 2, &rates)
+        .replace_product_price_levels(product.id, HubId::new(2).expect("valid hub id"), &rates)
         .expect_err("expected cross-hub update to fail");
     assert!(matches!(err, RepositoryError::NotFound));
 }
@@ -471,14 +493,14 @@ fn test_price_level_repository_crud() {
     );
 
     let fetched = repo
-        .get_price_level_by_id(bronze.id.get(), 1)
+        .get_price_level_by_id(bronze.id, HubId::new(1).expect("valid hub id"))
         .expect("failed to fetch by id")
         .expect("expected bronze price level");
     assert_eq!(fetched.id, bronze.id);
     assert_eq!(fetched.name.as_str(), "Bronze");
 
     assert!(
-        repo.get_price_level_by_id(bronze.id.get(), 2)
+        repo.get_price_level_by_id(bronze.id, HubId::new(2).expect("valid hub id"))
             .expect("failed to fetch cross-hub")
             .is_none()
     );
@@ -498,26 +520,30 @@ fn test_price_level_repository_crud() {
     let updates = UpdatePriceLevel::new(PriceLevelName::new("Gold").unwrap(), false);
 
     let updated = repo
-        .update_price_level(bronze.id.get(), 1, &updates)
+        .update_price_level(bronze.id, HubId::new(1).expect("valid hub id"), &updates)
         .expect("failed to update price level");
     assert_eq!(updated.name.as_str(), "Gold");
 
     let cross_hub_updates = UpdatePriceLevel::new(PriceLevelName::new("Intruder").unwrap(), false);
 
     let err = repo
-        .update_price_level(bronze.id.get(), 2, &cross_hub_updates)
+        .update_price_level(
+            bronze.id,
+            HubId::new(2).expect("valid hub id"),
+            &cross_hub_updates,
+        )
         .expect_err("expected cross-hub update failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
     let err = repo
-        .delete_price_level(bronze.id.get(), 2)
+        .delete_price_level(bronze.id, HubId::new(2).expect("valid hub id"))
         .expect_err("expected cross-hub delete failure");
     assert!(matches!(err, RepositoryError::NotFound));
 
-    repo.delete_price_level(bronze.id.get(), 1)
+    repo.delete_price_level(bronze.id, HubId::new(1).expect("valid hub id"))
         .expect("failed to delete price level");
     assert!(
-        repo.get_price_level_by_id(bronze.id.get(), 1)
+        repo.get_price_level_by_id(bronze.id, HubId::new(1).expect("valid hub id"))
             .expect("failed to fetch after delete")
             .is_none()
     );
@@ -557,13 +583,13 @@ fn updating_price_level_default_resets_previous_default() {
     };
 
     let updated = repo
-        .update_price_level(secondary.id.get(), 1, &updates)
+        .update_price_level(secondary.id, HubId::new(1).expect("valid hub id"), &updates)
         .expect("failed to promote second level to default");
 
     assert!(updated.is_default, "expected updated level to be default");
 
     let demoted = repo
-        .get_price_level_by_id(original_default.id.get(), 1)
+        .get_price_level_by_id(original_default.id, HubId::new(1).expect("valid hub id"))
         .expect("failed to fetch original default")
         .expect("expected original level to exist after update");
 
@@ -613,7 +639,7 @@ fn deleting_price_level_removes_product_rates() {
         assert_eq!(existing, 1);
     }
 
-    repo.delete_price_level(price_level.id.get(), 1)
+    repo.delete_price_level(price_level.id, HubId::new(1).expect("valid hub id"))
         .expect("failed to delete price level");
 
     {
@@ -630,7 +656,7 @@ fn deleting_price_level_removes_product_rates() {
     }
 
     let updated_product = repo
-        .get_product_by_id(product.id.get(), 1)
+        .get_product_by_id(product.id, HubId::new(1).expect("valid hub id"))
         .expect("failed to fetch product after cascade")
         .expect("product should still exist");
     assert!(

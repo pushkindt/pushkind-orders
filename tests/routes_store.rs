@@ -56,7 +56,7 @@ async fn store_endpoints_return_data() {
     let product = repo
         .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
-    repo.replace_product_tags(product.id.get(), 1, &[tag.id.get()])
+    repo.replace_product_tags(product.id, HubId::new(1).unwrap(), &[tag.id])
         .expect("attach tag");
 
     let app_repo = repo.clone();
@@ -334,8 +334,8 @@ async fn create_store_order_requires_authentication() {
         .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
     repo.replace_product_price_levels(
-        product.id.get(),
-        1,
+        product.id,
+        HubId::new(1).unwrap(),
         &[NewProductPriceLevelRate::new(
             product.id,
             price_level.id,
@@ -382,8 +382,8 @@ async fn create_store_order_validates_payload() {
         .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
     repo.replace_product_price_levels(
-        product.id.get(),
-        1,
+        product.id,
+        HubId::new(1).unwrap(),
         &[NewProductPriceLevelRate::new(
             product.id,
             price_level.id,
@@ -451,8 +451,8 @@ async fn create_store_order_creates_order() {
         .create_product(&NewProduct::try_new(1, "Coffee", "USD").unwrap())
         .expect("create product");
     repo.replace_product_price_levels(
-        product.id.get(),
-        1,
+        product.id,
+        HubId::new(1).unwrap(),
         &[NewProductPriceLevelRate::new(
             product.id,
             price_level.id,
