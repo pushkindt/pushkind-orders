@@ -502,11 +502,6 @@ non_empty_string_newtype!(
     "Optional descriptive text for categories."
 );
 
-non_empty_string_newtype!(
-    ProductDescription,
-    "Optional descriptive text for products."
-);
-
 /// Product amount; must be positive.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct ProductAmount(f32);
@@ -709,3 +704,44 @@ non_empty_string_newtype!(OrderShippingAddress, "Order shipping address wrapper.
 non_empty_string_newtype!(OrderConsignee, "Order consignee wrapper.");
 non_empty_string_newtype!(OrderDeliveryNotes, "Order delivery notes wrapper.");
 non_empty_string_newtype!(OrderPayer, "Order payer wrapper.");
+
+macro_rules! html_string_newtype {
+    ($name:ident, $doc:expr) => {
+        #[doc = $doc]
+        #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+        pub struct $name(String);
+
+        impl $name {
+            pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+                let sanitized = ammonia::clean(&value.into());
+                let inner = NonEmptyString::new(sanitized)?;
+                Ok(Self(inner.into_inner()))
+            }
+
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+
+            pub fn into_inner(self) -> String {
+                self.0
+            }
+        }
+
+        impl Display for $name {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+
+        impl From<$name> for String {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
+    };
+}
+
+html_string_newtype!(
+    ProductDescription,
+    "Task description wrapper for optional HTML content."
+);
