@@ -101,8 +101,11 @@ pub struct StoreProduct {
     pub units: Option<String>,
     /// ISO 4217 currency code associated with the product.
     pub currency: String,
-    /// Price in smallest currency unit for the hub default price level, when configured.
+    /// Price in smallest currency unit for the hub customer price level, when configured
+    /// otherwize for default hub price level.
     pub price_cents: Option<i32>,
+    /// Default price level in smallest currency unit.
+    pub base_price_cents: Option<i32>,
     /// Tags attached to the product.
     pub tags: Vec<StoreTag>,
     /// Image URLs attached to the product.
@@ -167,6 +170,15 @@ impl StoreProduct {
             default_price_level_id,
         );
 
+        let base_price_cents =
+            Self::resolve_price_cents(&price_levels, None, default_price_level_id);
+
+        // If price_cents is equal to base_price_cents, we set base_price_cents to None to avoid redundancy.
+        let base_price_cents = match (price_cents, base_price_cents) {
+            (Some(price), Some(base)) if price == base => None,
+            _ => base_price_cents,
+        };
+
         Self {
             id: id.get(),
             category_id: category_id.map(|id| id.get()),
@@ -176,6 +188,7 @@ impl StoreProduct {
             units: units.map(|units| units.as_str().to_string()),
             currency: currency.as_str().to_string(),
             price_cents,
+            base_price_cents,
             tags: tags.into_iter().map(StoreTag::from).collect(),
             image_urls: image_urls.into_iter().map(|url| url.into_inner()).collect(),
             updated_at,
