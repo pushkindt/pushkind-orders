@@ -14,7 +14,7 @@ use crate::domain::{
     price_level::PriceLevelListQuery,
     store_otp::NewStoreOtp,
     tag::TagListQuery,
-    types::{CategoryId, HubId, OrderId, ProductQuantity},
+    types::{CategoryId, HubId, OrderId, PhoneNumber, ProductId, ProductQuantity},
 };
 pub use crate::dto::store::{
     StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreOtpAcceptResponse,
@@ -49,11 +49,13 @@ where
     let request = payload
         .into_request()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let phone = PhoneNumber::new(request.phone.clone()).map_err(|_| ServiceError::Internal)?;
 
     let now = Utc::now().naive_utc();
 
     if let Some(existing) = repo
-        .get_store_otp(hub_id, &request.phone)
+        .get_store_otp(hub_id, &phone)
         .map_err(ServiceError::from)?
         && existing.last_sent_at + Duration::minutes(OTP_THROTTLE_MINUTES) > now
     {
@@ -63,7 +65,7 @@ where
     let code = format!("{:06}", rand::rng().random_range(0..1_000_000));
     let expires_at = now + Duration::minutes(OTP_EXPIRY_MINUTES);
     let otp_payload =
-        NewStoreOtp::try_new(hub_id, request.phone.clone(), code.clone(), expires_at, now)
+        NewStoreOtp::try_new(hub_id.get(), phone.as_str(), code.clone(), expires_at, now)
             .map_err(|err| ServiceError::Form(err.to_string()))?;
 
     repo.upsert_store_otp(&otp_payload)
@@ -71,7 +73,7 @@ where
 
     let zmq_message = ZMQSendSmsMessage {
         sender_id: sms_sender.to_string(),
-        phone_number: request.phone.clone(),
+        phone_number: phone.as_str().to_string(),
         message: format!("Your OTP is {code}"),
     };
 
@@ -79,7 +81,7 @@ where
 
     info!(
         "Storefront OTP request accepted for hub {hub_id} and phone {}",
-        request.phone
+        phone.as_str()
     );
 
     Ok(StoreOtpAcceptResponse { success: true })
@@ -97,11 +99,13 @@ where
     let request = payload
         .into_request()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let phone = PhoneNumber::new(request.phone.clone()).map_err(|_| ServiceError::Internal)?;
 
     let now = Utc::now().naive_utc();
 
     let record = repo
-        .get_store_otp(hub_id, &request.phone)
+        .get_store_otp(hub_id, &phone)
         .map_err(ServiceError::from)?
         .ok_or_else(|| ServiceError::Form(OTP_INVALID_MESSAGE.to_string()))?;
 
@@ -113,18 +117,17 @@ where
         return Err(ServiceError::Form(OTP_INVALID_MESSAGE.to_string()));
     }
 
-    repo.delete_store_otp(hub_id, &request.phone)
+    repo.delete_store_otp(hub_id, &phone)
         .map_err(ServiceError::from)?;
 
     let customer = match repo
-        .get_customer_by_phone(&request.phone, hub_id)
+        .get_customer_by_phone(&phone, hub_id)
         .map_err(ServiceError::from)?
     {
         Some(customer) => customer,
         None => {
-            let new_customer =
-                NewCustomer::try_new(hub_id, request.phone.clone(), request.phone.clone())
-                    .map_err(|_| ServiceError::Internal)?;
+            let new_customer = NewCustomer::try_new(hub_id.get(), phone.as_str(), phone.as_str())
+                .map_err(|_| ServiceError::Internal)?;
 
             repo.create_customer(&new_customer)
                 .map_err(ServiceError::from)?
@@ -133,7 +136,8 @@ where
 
     info!(
         "Storefront OTP verification for hub {hub_id} with phone {} and code {}",
-        request.phone, request.otp
+        phone.as_str(),
+        request.otp
     );
 
     Ok(StoreOtpVerifyResponse {
@@ -167,10 +171,11 @@ pub fn create_store_order<R>(
 where
     R: ProductReader + PriceLevelReader + OrderWriter + ?Sized,
 {
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
     let items =
         validate_store_order_lines(payloads).map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
+    let default_price_level_id = resolve_default_price_level_id(repo, hub_id.get())?;
     let customer_price_level_id = customer.price_level_id.map(|id| id.get());
 
     let mut currency: Option<String> = None;
@@ -182,8 +187,10 @@ where
             return Err(ServiceError::Form("quantity must be positive".to_string()));
         }
 
+        let product_id = ProductId::new(item.product_id)
+            .map_err(|_| ServiceError::Form("product not found".to_string()))?;
         let product = repo
-            .get_product_by_id(item.product_id, hub_id)
+            .get_product_by_id(product_id, hub_id)
             .map_err(ServiceError::from)?
             .filter(|product| !product.is_archived)
             .ok_or_else(|| ServiceError::Form("product not found".to_string()))?;
@@ -244,7 +251,7 @@ where
 
     let currency = currency.unwrap_or_default();
 
-    let new_order = NewOrder::try_new(hub_id, total_cents, currency)
+    let new_order = NewOrder::try_new(hub_id.get(), total_cents, currency)
         .map_err(|_| ServiceError::Internal)?
         .with_customer_id(customer.id)
         .with_status(OrderStatus::Pending)
@@ -397,6 +404,9 @@ pub fn load_store_product<R>(
 where
     R: ProductReader + PriceLevelReader + ?Sized,
 {
+    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let product_id = ProductId::new(product_id).map_err(|_| ServiceError::Internal)?;
+
     let product = repo
         .get_product_by_id(product_id, hub_id)
         .map_err(ServiceError::from)?;
@@ -406,7 +416,7 @@ where
         _ => return Ok(None),
     };
 
-    let default_price_level_id = resolve_default_price_level_id(repo, hub_id)?;
+    let default_price_level_id = resolve_default_price_level_id(repo, hub_id.get())?;
     let customer_price_level_id =
         store_customer.and_then(|customer| customer.price_level_id.map(|id| id.get()));
 
@@ -441,7 +451,7 @@ pub fn load_store_session_customer<R>(
 where
     R: CustomerReader + ?Sized,
 {
-    repo.get_customer_by_id(session_customer.id.into(), session_customer.hub_id.into())
+    repo.get_customer_by_id(session_customer.id, session_customer.hub_id)
         .map_err(ServiceError::from)?
         .ok_or(ServiceError::Unauthorized)
 }
@@ -464,7 +474,7 @@ mod tests {
         product_price_level::ProductPriceLevelRate,
         store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
         tag::Tag,
-        types::{OtpCode, PhoneNumber},
+        types::{OtpCode, PhoneNumber, UserEmail},
     };
     use crate::dto::store::{StoreCategoryFilters, StoreProductFilters};
     use crate::forms::store::{
@@ -502,7 +512,11 @@ mod tests {
     }
 
     impl ProductReader for MockStoreOrderRepo {
-        fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Product>> {
+        fn get_product_by_id(
+            &self,
+            id: ProductId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Product>> {
             self.product_reader.get_product_by_id(id, hub_id)
         }
 
@@ -517,8 +531,8 @@ mod tests {
     impl PriceLevelReader for MockStoreOrderRepo {
         fn get_price_level_by_id(
             &self,
-            id: i32,
-            hub_id: i32,
+            id: PriceLevelId,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<PriceLevel>> {
             self.price_level_reader.get_price_level_by_id(id, hub_id)
         }
@@ -674,9 +688,9 @@ mod tests {
 
         repo.product_reader
             .expect_get_product_by_id()
-            .returning(|product_id, hub_id| match product_id {
-                1 => Ok(Some(sample_product(1, hub_id, 2, 500, "USD"))),
-                2 => Ok(Some(sample_product(2, hub_id, 2, 300, "USD"))),
+            .returning(|product_id, hub_id| match product_id.get() {
+                1 => Ok(Some(sample_product(1, hub_id.get(), 2, 500, "USD"))),
+                2 => Ok(Some(sample_product(2, hub_id.get(), 2, 300, "USD"))),
                 _ => Ok(None),
             });
 
@@ -786,7 +800,13 @@ mod tests {
         repo.product_reader
             .expect_get_product_by_id()
             .returning(|product_id, hub_id| {
-                Ok(Some(sample_product(product_id, hub_id, 99, 500, "USD")))
+                Ok(Some(sample_product(
+                    product_id.get(),
+                    hub_id.get(),
+                    99,
+                    500,
+                    "USD",
+                )))
             });
 
         let payload = vec![StoreOrderLinePayload {
@@ -817,9 +837,9 @@ mod tests {
 
         repo.product_reader
             .expect_get_product_by_id()
-            .returning(|product_id, hub_id| match product_id {
-                1 => Ok(Some(sample_product(1, hub_id, 1, 500, "USD"))),
-                2 => Ok(Some(sample_product(2, hub_id, 1, 300, "EUR"))),
+            .returning(|product_id, hub_id| match product_id.get() {
+                1 => Ok(Some(sample_product(1, hub_id.get(), 1, 500, "USD"))),
+                2 => Ok(Some(sample_product(2, hub_id.get(), 1, 300, "EUR"))),
                 _ => Ok(None),
             });
 
@@ -1126,22 +1146,26 @@ mod tests {
     }
 
     impl CustomerReader for MockOtpRequestRepo {
-        fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Customer>> {
+        fn get_customer_by_id(
+            &self,
+            id: CustomerId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Customer>> {
             self.customer_reader.get_customer_by_id(id, hub_id)
         }
 
         fn get_customer_by_email(
             &self,
-            email: &str,
-            hub_id: i32,
+            email: &UserEmail,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.customer_reader.get_customer_by_email(email, hub_id)
         }
 
         fn get_customer_by_phone(
             &self,
-            phone: &str,
-            hub_id: i32,
+            phone: &PhoneNumber,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.customer_reader.get_customer_by_phone(phone, hub_id)
         }
@@ -1164,9 +1188,9 @@ mod tests {
 
         fn assign_price_level_to_customers(
             &self,
-            hub_id: i32,
-            customer_ids: &[i32],
-            price_level_id: Option<i32>,
+            hub_id: HubId,
+            customer_ids: &[CustomerId],
+            price_level_id: Option<PriceLevelId>,
         ) -> RepositoryResult<()> {
             self.customer_writer.assign_price_level_to_customers(
                 hub_id,
@@ -1179,8 +1203,8 @@ mod tests {
     impl StoreOtpRepository for MockOtpRequestRepo {
         fn get_store_otp(
             &self,
-            hub_id: i32,
-            phone: &str,
+            hub_id: HubId,
+            phone: &PhoneNumber,
         ) -> RepositoryResult<Option<DomainStoreOtp>> {
             self.otp_repository.get_store_otp(hub_id, phone)
         }
@@ -1192,7 +1216,7 @@ mod tests {
             self.otp_repository.upsert_store_otp(new_otp)
         }
 
-        fn delete_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<()> {
+        fn delete_store_otp(&self, hub_id: HubId, phone: &PhoneNumber) -> RepositoryResult<()> {
             self.otp_repository.delete_store_otp(hub_id, phone)
         }
     }
@@ -1216,7 +1240,7 @@ mod tests {
         let return_sample = expected.clone();
         repo.expect_get_customer_by_id()
             .withf(move |id, hub_id| {
-                *id == match_sample.id.get() && *hub_id == match_sample.hub_id.get()
+                id.get() == match_sample.id.get() && hub_id.get() == match_sample.hub_id.get()
             })
             .return_once(move |_, _| Ok(Some(return_sample)));
 
@@ -1297,7 +1321,7 @@ mod tests {
 
         let mut repo = MockStoreOtpRepository::new();
         repo.expect_get_store_otp()
-            .withf(|hub_id, phone| *hub_id == 99 && phone == "+15551234")
+            .withf(|hub_id, phone| hub_id.get() == 99 && phone.as_str() == "+15551234")
             .return_once(|_, _| Ok(None));
         repo.expect_upsert_store_otp()
             .withf(|new_otp| {
@@ -1384,7 +1408,7 @@ mod tests {
             });
         repo.otp_repository
             .expect_delete_store_otp()
-            .withf(|hub_id, phone| *hub_id == 1 && phone == "+15551234")
+            .withf(|hub_id, phone| hub_id.get() == 1 && phone.as_str() == "+15551234")
             .return_once(|_, _| Ok(()));
         repo.otp_repository.expect_upsert_store_otp().never();
         repo.customer_reader
@@ -1419,7 +1443,7 @@ mod tests {
             });
         repo.otp_repository
             .expect_delete_store_otp()
-            .withf(|hub_id, phone| *hub_id == 1 && phone == "+15551234")
+            .withf(|hub_id, phone| hub_id.get() == 1 && phone.as_str() == "+15551234")
             .return_once(|_, _| Ok(()));
         repo.otp_repository.expect_upsert_store_otp().never();
         repo.customer_reader
@@ -1523,7 +1547,11 @@ mod tests {
     }
 
     impl ProductReader for MockStoreProductRepo {
-        fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Product>> {
+        fn get_product_by_id(
+            &self,
+            id: ProductId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Product>> {
             self.product_reader.get_product_by_id(id, hub_id)
         }
 
@@ -1538,8 +1566,8 @@ mod tests {
     impl PriceLevelReader for MockStoreProductRepo {
         fn get_price_level_by_id(
             &self,
-            id: i32,
-            hub_id: i32,
+            id: PriceLevelId,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<PriceLevel>> {
             self.price_level_reader.get_price_level_by_id(id, hub_id)
         }
@@ -1927,7 +1955,7 @@ mod tests {
 
         product_reader
             .expect_get_product_by_id()
-            .withf(|id, hub_id| *id == 7 && *hub_id == 1)
+            .withf(|id, hub_id| id.get() == 7 && hub_id.get() == 1)
             .return_once(move |_, _| Ok(Some(product.clone())));
 
         let mut price_level_reader = MockPriceLevelReader::new();
@@ -2008,7 +2036,7 @@ mod tests {
 
         product_reader
             .expect_get_product_by_id()
-            .withf(|id, hub_id| *id == 7 && *hub_id == 1)
+            .withf(|id, hub_id| id.get() == 7 && hub_id.get() == 1)
             .return_once(move |_, _| Ok(Some(product.clone())));
 
         let mut price_level_reader = MockPriceLevelReader::new();
@@ -2076,7 +2104,7 @@ mod tests {
 
         product_reader
             .expect_get_product_by_id()
-            .withf(|id, hub_id| *id == 7 && *hub_id == 1)
+            .withf(|id, hub_id| id.get() == 7 && hub_id.get() == 1)
             .return_once(move |_, _| Ok(Some(product.clone())));
 
         let mut price_level_reader = MockPriceLevelReader::new();
@@ -2137,11 +2165,11 @@ mod tests {
 
         product_reader
             .expect_get_product_by_id()
-            .withf(|id, hub_id| *id == 8 && *hub_id == 1)
+            .withf(|id, hub_id| id.get() == 8 && hub_id.get() == 1)
             .return_once(|_, _| Ok(None));
         product_reader
             .expect_get_product_by_id()
-            .withf(|id, hub_id| *id == 9 && *hub_id == 1)
+            .withf(|id, hub_id| id.get() == 9 && hub_id.get() == 1)
             .return_once(move |_, _| Ok(Some(archived_product.clone())));
 
         let price_level_reader = MockPriceLevelReader::new();

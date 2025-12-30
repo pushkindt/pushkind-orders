@@ -1,6 +1,6 @@
 //! Product repository implementation with Diesel and FTS support.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use diesel::dsl::exists;
 use diesel::prelude::*;
@@ -20,7 +20,7 @@ use crate::{
     },
     domain::product_tag::NewProductTag as DomainNewProductTag,
     domain::tag::Tag as DomainTag,
-    domain::types::{ImageUrl, ProductId},
+    domain::types::{HubId, ImageUrl, ProductId, TagId},
     models::product::{
         NewProduct as DbNewProduct, Product as DbProduct, UpdateProduct as DbUpdateProduct,
     },
@@ -34,13 +34,17 @@ use crate::{
 };
 
 impl ProductReader for DieselRepository {
-    fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainProduct>> {
+    fn get_product_by_id(
+        &self,
+        id: ProductId,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<DomainProduct>> {
         use crate::schema::products;
 
         let mut conn = self.conn()?;
         let product = products::table
-            .filter(products::id.eq(id))
-            .filter(products::hub_id.eq(hub_id))
+            .filter(products::id.eq(id.get()))
+            .filter(products::hub_id.eq(hub_id.get()))
             .first::<DbProduct>(&mut conn)
             .optional()?;
 
@@ -182,8 +186,8 @@ impl ProductWriter for DieselRepository {
 
     fn update_product(
         &self,
-        product_id: i32,
-        hub_id: i32,
+        product_id: ProductId,
+        hub_id: HubId,
         updates: &DomainUpdateProduct,
     ) -> RepositoryResult<DomainProduct> {
         use crate::schema::products;
@@ -197,7 +201,7 @@ impl ProductWriter for DieselRepository {
             let category_exists: bool = select(exists(
                 categories::table
                     .filter(categories::id.eq(category_id.get()))
-                    .filter(categories::hub_id.eq(hub_id)),
+                    .filter(categories::hub_id.eq(hub_id.get())),
             ))
             .get_result(&mut conn)?;
 
@@ -209,8 +213,8 @@ impl ProductWriter for DieselRepository {
         let db_updates = DbUpdateProduct::from(updates);
 
         let target = products::table
-            .filter(products::id.eq(product_id))
-            .filter(products::hub_id.eq(hub_id));
+            .filter(products::id.eq(product_id.get()))
+            .filter(products::hub_id.eq(hub_id.get()));
 
         let updated = diesel::update(target)
             .set(&db_updates)
@@ -227,14 +231,14 @@ impl ProductWriter for DieselRepository {
         Ok(domain)
     }
 
-    fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()> {
+    fn delete_product(&self, product_id: ProductId, hub_id: HubId) -> RepositoryResult<()> {
         use crate::schema::products;
 
         let mut conn = self.conn()?;
 
         let target = products::table
-            .filter(products::id.eq(product_id))
-            .filter(products::hub_id.eq(hub_id));
+            .filter(products::id.eq(product_id.get()))
+            .filter(products::hub_id.eq(hub_id.get()));
 
         let deleted = diesel::delete(target).execute(&mut conn)?;
         if deleted == 0 {
@@ -246,8 +250,8 @@ impl ProductWriter for DieselRepository {
 
     fn replace_product_price_levels(
         &self,
-        product_id: i32,
-        hub_id: i32,
+        product_id: ProductId,
+        hub_id: HubId,
         rates: &[DomainNewProductPriceLevelRate],
     ) -> RepositoryResult<()> {
         use crate::schema::price_levels;
@@ -261,8 +265,8 @@ impl ProductWriter for DieselRepository {
         conn.transaction::<_, RepositoryError, _>(|conn| {
             let is_owned: bool = select(exists(
                 products::table
-                    .filter(products::id.eq(product_id))
-                    .filter(products::hub_id.eq(hub_id)),
+                    .filter(products::id.eq(product_id.get()))
+                    .filter(products::hub_id.eq(hub_id.get())),
             ))
             .get_result(conn)?;
 
@@ -271,7 +275,8 @@ impl ProductWriter for DieselRepository {
             }
 
             delete(
-                product_price_levels::table.filter(product_price_levels::product_id.eq(product_id)),
+                product_price_levels::table
+                    .filter(product_price_levels::product_id.eq(product_id.get())),
             )
             .execute(conn)?;
 
@@ -283,7 +288,7 @@ impl ProductWriter for DieselRepository {
                 if expected_count > 0 {
                     let actual_count: i64 = price_levels::table
                         .filter(price_levels::id.eq_any(price_level_ids))
-                        .filter(price_levels::hub_id.eq(hub_id))
+                        .filter(price_levels::hub_id.eq(hub_id.get()))
                         .count()
                         .get_result(conn)?;
 
@@ -307,9 +312,9 @@ impl ProductWriter for DieselRepository {
 
     fn replace_product_tags(
         &self,
-        product_id: i32,
-        hub_id: i32,
-        tag_ids: &[i32],
+        product_id: ProductId,
+        hub_id: HubId,
+        tag_ids: &[TagId],
     ) -> RepositoryResult<()> {
         use crate::schema::product_tags;
         use crate::schema::products;
@@ -321,8 +326,8 @@ impl ProductWriter for DieselRepository {
         conn.transaction::<_, RepositoryError, _>(|conn| {
             let is_owned: bool = select(exists(
                 products::table
-                    .filter(products::id.eq(product_id))
-                    .filter(products::hub_id.eq(hub_id)),
+                    .filter(products::id.eq(product_id.get()))
+                    .filter(products::hub_id.eq(hub_id.get())),
             ))
             .get_result(conn)?;
 
@@ -330,18 +335,18 @@ impl ProductWriter for DieselRepository {
                 return Err(RepositoryError::NotFound);
             }
 
-            delete(product_tags::table.filter(product_tags::product_id.eq(product_id)))
+            delete(product_tags::table.filter(product_tags::product_id.eq(product_id.get())))
                 .execute(conn)?;
 
             if !tag_ids.is_empty() {
-                let unique_ids: std::collections::BTreeSet<i32> =
-                    tag_ids.iter().copied().filter(|id| *id > 0).collect();
+                let unique_ids: HashSet<TagId> = tag_ids.iter().copied().collect();
 
                 if !unique_ids.is_empty() {
-                    let expected_count = unique_ids.len() as i64;
+                    let raw_ids: Vec<i32> = unique_ids.iter().map(|id| id.get()).collect();
+                    let expected_count = raw_ids.len() as i64;
                     let actual_count: i64 = tags::table
-                        .filter(tags::id.eq_any(&unique_ids))
-                        .filter(tags::hub_id.eq(hub_id))
+                        .filter(tags::id.eq_any(&raw_ids))
+                        .filter(tags::hub_id.eq(hub_id.get()))
                         .count()
                         .get_result(conn)?;
 
@@ -352,10 +357,10 @@ impl ProductWriter for DieselRepository {
                     let rows: Vec<DbNewProductTag> = unique_ids
                         .into_iter()
                         .map(|tag_id| {
-                            let domain = DomainNewProductTag::try_new(product_id, tag_id)?;
-                            Ok::<DbNewProductTag, RepositoryError>(DbNewProductTag::from(&domain))
+                            let domain = DomainNewProductTag::new(product_id, tag_id);
+                            DbNewProductTag::from(&domain)
                         })
-                        .collect::<Result<Vec<_>, _>>()?;
+                        .collect();
 
                     if !rows.is_empty() {
                         insert_into(product_tags::table)
@@ -373,8 +378,8 @@ impl ProductWriter for DieselRepository {
 
     fn replace_product_images(
         &self,
-        product_id: i32,
-        hub_id: i32,
+        product_id: ProductId,
+        hub_id: HubId,
         image_urls: &[ImageUrl],
     ) -> RepositoryResult<()> {
         use crate::schema::product_images;
@@ -386,8 +391,8 @@ impl ProductWriter for DieselRepository {
         conn.transaction::<_, RepositoryError, _>(|conn| {
             let is_owned: bool = select(exists(
                 products::table
-                    .filter(products::id.eq(product_id))
-                    .filter(products::hub_id.eq(hub_id)),
+                    .filter(products::id.eq(product_id.get()))
+                    .filter(products::hub_id.eq(hub_id.get())),
             ))
             .get_result(conn)?;
 
@@ -395,14 +400,15 @@ impl ProductWriter for DieselRepository {
                 return Err(RepositoryError::NotFound);
             }
 
-            delete(product_images::table.filter(product_images::product_id.eq(product_id)))
+            delete(product_images::table.filter(product_images::product_id.eq(product_id.get())))
                 .execute(conn)?;
 
             if !image_urls.is_empty() {
+                let product_id_raw = product_id.get();
                 let rows: Vec<DbNewProductImage<'_>> = image_urls
                     .iter()
                     .map(|url| DbNewProductImage {
-                        product_id,
+                        product_id: product_id_raw,
                         image_url: url.as_str(),
                     })
                     .collect();

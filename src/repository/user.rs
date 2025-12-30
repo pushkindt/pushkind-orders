@@ -4,32 +4,39 @@ use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
-    domain::user::{NewUser as DomainNewUser, UpdateUser as DomainUpdateUser, User as DomainUser},
+    domain::{
+        types::{HubId, UserEmail, UserId},
+        user::{NewUser as DomainNewUser, UpdateUser as DomainUpdateUser, User as DomainUser},
+    },
     models::user::{NewUser as DbNewUser, UpdateUser as DbUpdateUser, User as DbUser},
     repository::{DieselRepository, UserListQuery, UserReader, UserWriter},
 };
 
 impl UserReader for DieselRepository {
-    fn get_user_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainUser>> {
+    fn get_user_by_id(&self, id: UserId, hub_id: HubId) -> RepositoryResult<Option<DomainUser>> {
         use crate::schema::users;
 
         let mut conn = self.conn()?;
         let user = users::table
-            .filter(users::id.eq(id))
-            .filter(users::hub_id.eq(hub_id))
+            .filter(users::id.eq(id.get()))
+            .filter(users::hub_id.eq(hub_id.get()))
             .first::<DbUser>(&mut conn)
             .optional()?;
 
         Ok(user.map(DomainUser::try_from).transpose()?)
     }
 
-    fn get_user_by_email(&self, email: &str, hub_id: i32) -> RepositoryResult<Option<DomainUser>> {
+    fn get_user_by_email(
+        &self,
+        email: &UserEmail,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<DomainUser>> {
         use crate::schema::users;
 
         let mut conn = self.conn()?;
         let user = users::table
-            .filter(users::email.eq(email))
-            .filter(users::hub_id.eq(hub_id))
+            .filter(users::email.eq(email.as_str()))
+            .filter(users::hub_id.eq(hub_id.get()))
             .first::<DbUser>(&mut conn)
             .optional()?;
 
@@ -43,7 +50,7 @@ impl UserReader for DieselRepository {
 
         let query_builder = || {
             let mut items = users::table
-                .filter(users::hub_id.eq(query.hub_id))
+                .filter(users::hub_id.eq(query.hub_id.get()))
                 .into_boxed::<diesel::sqlite::Sqlite>();
 
             if let Some(term) = query.search.as_ref() {
@@ -99,8 +106,8 @@ impl UserWriter for DieselRepository {
 
     fn update_user(
         &self,
-        user_id: i32,
-        hub_id: i32,
+        user_id: UserId,
+        hub_id: HubId,
         updates: &DomainUpdateUser,
     ) -> RepositoryResult<DomainUser> {
         use crate::schema::users;
@@ -109,8 +116,8 @@ impl UserWriter for DieselRepository {
         let db_updates = DbUpdateUser::from(updates);
 
         let target = users::table
-            .filter(users::id.eq(user_id))
-            .filter(users::hub_id.eq(hub_id));
+            .filter(users::id.eq(user_id.get()))
+            .filter(users::hub_id.eq(hub_id.get()));
 
         let updated = diesel::update(target)
             .set(&db_updates)
@@ -119,14 +126,14 @@ impl UserWriter for DieselRepository {
         Ok(DomainUser::try_from(updated)?)
     }
 
-    fn delete_user(&self, user_id: i32, hub_id: i32) -> RepositoryResult<()> {
+    fn delete_user(&self, user_id: UserId, hub_id: HubId) -> RepositoryResult<()> {
         use crate::schema::users;
 
         let mut conn = self.conn()?;
 
         let target = users::table
-            .filter(users::id.eq(user_id))
-            .filter(users::hub_id.eq(hub_id));
+            .filter(users::id.eq(user_id.get()))
+            .filter(users::hub_id.eq(hub_id.get()));
 
         let deleted = diesel::delete(target).execute(&mut conn)?;
         if deleted == 0 {

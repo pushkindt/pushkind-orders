@@ -16,7 +16,10 @@ use crate::domain::{
     product_price_level::NewProductPriceLevelRate,
     store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
-    types::{HubId, ImageUrl, OrderId},
+    types::{
+        CategoryId, CategoryName, CustomerId, HubId, ImageUrl, OrderId, PhoneNumber, PriceLevelId,
+        ProductId, TagId, UserEmail, UserId,
+    },
     user::{NewUser, UpdateUser, User},
 };
 
@@ -35,13 +38,23 @@ pub mod mock;
 /// Read-only operations over customer records.
 pub trait CustomerReader {
     /// Retrieve a customer by ID within a hub.
-    fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Customer>>;
+    fn get_customer_by_id(
+        &self,
+        id: CustomerId,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<Customer>>;
     /// Retrieve a customer by email within a hub.
-    fn get_customer_by_email(&self, email: &str, hub_id: i32)
-    -> RepositoryResult<Option<Customer>>;
+    fn get_customer_by_email(
+        &self,
+        email: &UserEmail,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<Customer>>;
     /// Retrieve a customer by phone number within a hub.
-    fn get_customer_by_phone(&self, phone: &str, hub_id: i32)
-    -> RepositoryResult<Option<Customer>>;
+    fn get_customer_by_phone(
+        &self,
+        phone: &PhoneNumber,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<Customer>>;
     /// List customers matching the query with pagination and search.
     fn list_customers(&self, query: CustomerListQuery) -> RepositoryResult<(usize, Vec<Customer>)>;
 }
@@ -53,20 +66,24 @@ pub trait CustomerWriter {
     /// Assign a price level to multiple customers.
     fn assign_price_level_to_customers(
         &self,
-        hub_id: i32,
-        customer_ids: &[i32],
-        price_level_id: Option<i32>,
+        hub_id: HubId,
+        customer_ids: &[CustomerId],
+        price_level_id: Option<PriceLevelId>,
     ) -> RepositoryResult<()>;
 }
 
 /// Persistence operations for storefront OTP records.
 pub trait StoreOtpRepository {
     /// Retrieve an OTP record by hub ID and phone number.
-    fn get_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<Option<DomainStoreOtp>>;
+    fn get_store_otp(
+        &self,
+        hub_id: HubId,
+        phone: &PhoneNumber,
+    ) -> RepositoryResult<Option<DomainStoreOtp>>;
     /// Insert or update an OTP record.
     fn upsert_store_otp(&self, new_otp: &DomainNewStoreOtp) -> RepositoryResult<DomainStoreOtp>;
     /// Delete an OTP record by hub ID and phone number.
-    fn delete_store_otp(&self, hub_id: i32, phone: &str) -> RepositoryResult<()>;
+    fn delete_store_otp(&self, hub_id: HubId, phone: &PhoneNumber) -> RepositoryResult<()>;
 }
 
 #[derive(Clone)]
@@ -90,7 +107,7 @@ impl DieselRepository {
 /// Read-only operations over product records.
 pub trait ProductReader {
     /// Retrieve a product by ID within a hub.
-    fn get_product_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Product>>;
+    fn get_product_by_id(&self, id: ProductId, hub_id: HubId) -> RepositoryResult<Option<Product>>;
     /// List products matching the query with pagination and filters.
     fn list_products(&self, query: ProductListQuery) -> RepositoryResult<(usize, Vec<Product>)>;
 }
@@ -102,31 +119,31 @@ pub trait ProductWriter {
     /// Update an existing product record.
     fn update_product(
         &self,
-        product_id: i32,
-        hub_id: i32,
+        product_id: ProductId,
+        hub_id: HubId,
         updates: &UpdateProduct,
     ) -> RepositoryResult<Product>;
     /// Delete a product record.
-    fn delete_product(&self, product_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    fn delete_product(&self, product_id: ProductId, hub_id: HubId) -> RepositoryResult<()>;
     /// Replace all price level associations for a product.
     fn replace_product_price_levels(
         &self,
-        product_id: i32,
-        hub_id: i32,
+        product_id: ProductId,
+        hub_id: HubId,
         rates: &[NewProductPriceLevelRate],
     ) -> RepositoryResult<()>;
     /// Replace all tag associations for a product.
     fn replace_product_tags(
         &self,
-        product_id: i32,
-        hub_id: i32,
-        tag_ids: &[i32],
+        product_id: ProductId,
+        hub_id: HubId,
+        tag_ids: &[TagId],
     ) -> RepositoryResult<()>;
     /// Replace all image URLs for a product.
     fn replace_product_images(
         &self,
-        product_id: i32,
-        hub_id: i32,
+        product_id: ProductId,
+        hub_id: HubId,
         image_urls: &[ImageUrl],
     ) -> RepositoryResult<()>;
 }
@@ -134,7 +151,11 @@ pub trait ProductWriter {
 /// Read-only operations over price level records.
 pub trait PriceLevelReader {
     /// Retrieve a price level by ID within a hub.
-    fn get_price_level_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<PriceLevel>>;
+    fn get_price_level_by_id(
+        &self,
+        id: PriceLevelId,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<PriceLevel>>;
     /// List price levels matching the query with pagination and search.
     fn list_price_levels(
         &self,
@@ -149,12 +170,16 @@ pub trait PriceLevelWriter {
     /// Update an existing price level record.
     fn update_price_level(
         &self,
-        price_level_id: i32,
-        hub_id: i32,
+        price_level_id: PriceLevelId,
+        hub_id: HubId,
         updates: &UpdatePriceLevel,
     ) -> RepositoryResult<PriceLevel>;
     /// Delete a price level record.
-    fn delete_price_level(&self, price_level_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    fn delete_price_level(
+        &self,
+        price_level_id: PriceLevelId,
+        hub_id: HubId,
+    ) -> RepositoryResult<()>;
 }
 
 /// Read-only operations over order records including their products.
@@ -200,9 +225,14 @@ pub trait TagWriter {
     /// Create a new tag record.
     fn create_tag(&self, new_tag: &NewTag) -> RepositoryResult<Tag>;
     /// Update an existing tag record.
-    fn update_tag(&self, tag_id: i32, hub_id: i32, updates: &UpdateTag) -> RepositoryResult<Tag>;
+    fn update_tag(
+        &self,
+        tag_id: TagId,
+        hub_id: HubId,
+        updates: &UpdateTag,
+    ) -> RepositoryResult<Tag>;
     /// Delete a tag record.
-    fn delete_tag(&self, tag_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    fn delete_tag(&self, tag_id: TagId, hub_id: HubId) -> RepositoryResult<()>;
 }
 
 /// Read operations over category records.
@@ -213,15 +243,15 @@ pub trait CategoryReader {
     /// Retrieve a category by ID within a hub.
     fn get_category_by_id(
         &self,
-        category_id: i32,
-        hub_id: i32,
+        category_id: CategoryId,
+        hub_id: HubId,
     ) -> RepositoryResult<Option<Category>>;
     /// Retrieve a category by name and parent within a hub.
     fn get_category_by_name_and_parent(
         &self,
-        name: &str,
-        parent_id: Option<i32>,
-        hub_id: i32,
+        name: &CategoryName,
+        parent_id: Option<CategoryId>,
+        hub_id: HubId,
     ) -> RepositoryResult<Option<Category>>;
 }
 
@@ -232,25 +262,25 @@ pub trait CategoryWriter {
     /// Update an existing category record.
     fn update_category(
         &self,
-        category_id: i32,
-        hub_id: i32,
+        category_id: CategoryId,
+        hub_id: HubId,
         updates: &UpdateCategory,
     ) -> RepositoryResult<Category>;
     /// Delete a category record.
-    fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    fn delete_category(&self, category_id: CategoryId, hub_id: HubId) -> RepositoryResult<()>;
 }
 
 #[derive(Debug, Clone)]
 /// Query definition used to list users for a hub.
 pub struct UserListQuery {
-    pub hub_id: i32,
+    pub hub_id: HubId,
     pub search: Option<String>,
     pub pagination: Option<Pagination>,
 }
 
 impl UserListQuery {
     /// Construct a query that targets all users belonging to `hub_id`.
-    pub fn new(hub_id: i32) -> Self {
+    pub fn new(hub_id: HubId) -> Self {
         Self {
             hub_id,
             search: None,
@@ -274,9 +304,10 @@ impl UserListQuery {
 /// Read-only operations over user records.
 pub trait UserReader {
     /// Retrieve a user by ID within a hub.
-    fn get_user_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<User>>;
+    fn get_user_by_id(&self, id: UserId, hub_id: HubId) -> RepositoryResult<Option<User>>;
     /// Retrieve a user by email within a hub.
-    fn get_user_by_email(&self, email: &str, hub_id: i32) -> RepositoryResult<Option<User>>;
+    fn get_user_by_email(&self, email: &UserEmail, hub_id: HubId)
+    -> RepositoryResult<Option<User>>;
     /// List users matching the query with pagination and search.
     fn list_users(&self, query: UserListQuery) -> RepositoryResult<(usize, Vec<User>)>;
 }
@@ -288,10 +319,10 @@ pub trait UserWriter {
     /// Update an existing user record.
     fn update_user(
         &self,
-        user_id: i32,
-        hub_id: i32,
+        user_id: UserId,
+        hub_id: HubId,
         updates: &UpdateUser,
     ) -> RepositoryResult<User>;
     /// Delete a user record.
-    fn delete_user(&self, user_id: i32, hub_id: i32) -> RepositoryResult<()>;
+    fn delete_user(&self, user_id: UserId, hub_id: HubId) -> RepositoryResult<()>;
 }

@@ -6,6 +6,7 @@ use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 use crate::domain::tag::{
     NewTag as DomainNewTag, Tag as DomainTag, TagListQuery, UpdateTag as DomainUpdateTag,
 };
+use crate::domain::types::{HubId, TagId};
 use crate::models::tag::{NewTag as DbNewTag, Tag as DbTag, UpdateTag as DbUpdateTag};
 use crate::repository::{DieselRepository, TagReader, TagWriter};
 
@@ -64,8 +65,8 @@ impl TagWriter for DieselRepository {
 
     fn update_tag(
         &self,
-        tag_id: i32,
-        hub_id: i32,
+        tag_id: TagId,
+        hub_id: HubId,
         updates: &DomainUpdateTag,
     ) -> RepositoryResult<DomainTag> {
         use crate::schema::tags;
@@ -74,8 +75,8 @@ impl TagWriter for DieselRepository {
         let db_updates = DbUpdateTag::from(updates);
 
         let target = tags::table
-            .filter(tags::id.eq(tag_id))
-            .filter(tags::hub_id.eq(hub_id));
+            .filter(tags::id.eq(tag_id.get()))
+            .filter(tags::hub_id.eq(hub_id.get()));
 
         let updated = diesel::update(target)
             .set(&db_updates)
@@ -84,13 +85,13 @@ impl TagWriter for DieselRepository {
         Ok(DomainTag::try_from(updated)?)
     }
 
-    fn delete_tag(&self, tag_id: i32, hub_id: i32) -> RepositoryResult<()> {
+    fn delete_tag(&self, tag_id: TagId, hub_id: HubId) -> RepositoryResult<()> {
         use crate::schema::tags;
 
         let mut conn = self.conn()?;
         let target = tags::table
-            .filter(tags::id.eq(tag_id))
-            .filter(tags::hub_id.eq(hub_id));
+            .filter(tags::id.eq(tag_id.get()))
+            .filter(tags::hub_id.eq(hub_id.get()));
 
         let deleted = diesel::delete(target).execute(&mut conn)?;
         if deleted == 0 {

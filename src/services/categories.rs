@@ -70,7 +70,10 @@ where
         .into_update_category()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
 
-    repo.update_category(category_id, user.hub_id, &update)
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let category_id = CategoryId::new(category_id).map_err(|_| ServiceError::Internal)?;
+
+    repo.update_category(category_id, hub_id, &update)
         .map_err(ServiceError::from)
 }
 
@@ -81,7 +84,10 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    repo.delete_category(category_id, user.hub_id)
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let category_id = CategoryId::new(category_id).map_err(|_| ServiceError::Internal)?;
+
+    repo.delete_category(category_id, hub_id)
         .map_err(ServiceError::from)
 }
 
@@ -133,21 +139,15 @@ where
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .try_fold(None, |parent: Option<Category>, name| {
-            let parent_id = parent.as_ref().map(|c| c.id.get());
+            let parent_id = parent.as_ref().map(|c| c.id);
+            let name = CategoryName::new(name).map_err(|_| ServiceError::Internal)?;
 
-            if let Some(cat) =
-                repo.get_category_by_name_and_parent(name, parent_id, hub_id.get())?
-            {
+            if let Some(cat) = repo.get_category_by_name_and_parent(&name, parent_id, hub_id)? {
                 Ok::<Option<Category>, ServiceError>(Some(cat))
             } else {
-                let mut new_category = NewCategory::new(
-                    hub_id,
-                    CategoryName::new(name).map_err(|_| ServiceError::Internal)?,
-                );
+                let mut new_category = NewCategory::new(hub_id, name);
                 if let Some(parent_id) = parent_id {
-                    new_category = new_category
-                        .try_with_parent_id(parent_id)
-                        .map_err(|_| ServiceError::Internal)?;
+                    new_category = new_category.with_parent_id(parent_id);
                 }
                 let created = repo.create_category(&new_category)?;
                 Ok(Some(created))
@@ -199,17 +199,17 @@ mod tests {
 
         fn get_category_by_id(
             &self,
-            category_id: i32,
-            hub_id: i32,
+            category_id: CategoryId,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Category>> {
             self.reader.get_category_by_id(category_id, hub_id)
         }
 
         fn get_category_by_name_and_parent(
             &self,
-            name: &str,
-            parent_id: Option<i32>,
-            hub_id: i32,
+            name: &CategoryName,
+            parent_id: Option<CategoryId>,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Category>> {
             self.reader
                 .get_category_by_name_and_parent(name, parent_id, hub_id)
@@ -223,14 +223,14 @@ mod tests {
 
         fn update_category(
             &self,
-            category_id: i32,
-            hub_id: i32,
+            category_id: CategoryId,
+            hub_id: HubId,
             updates: &DomainUpdateCategory,
         ) -> RepositoryResult<Category> {
             self.writer.update_category(category_id, hub_id, updates)
         }
 
-        fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()> {
+        fn delete_category(&self, category_id: CategoryId, hub_id: HubId) -> RepositoryResult<()> {
             self.writer.delete_category(category_id, hub_id)
         }
     }
@@ -394,8 +394,8 @@ mod tests {
             .expect_update_category()
             .times(1)
             .withf(|category_id, hub_id, updates| {
-                assert_eq!(*category_id, 3);
-                assert_eq!(*hub_id, 9);
+                assert_eq!(category_id.get(), 3);
+                assert_eq!(hub_id.get(), 9);
                 assert_eq!(updates.name.as_str(), "Dry Goods");
                 assert_eq!(
                     updates.description.as_ref().map(|desc| desc.as_str()),
@@ -436,8 +436,8 @@ mod tests {
         repo.expect_delete_category()
             .times(1)
             .withf(|category_id, hub_id| {
-                assert_eq!(*category_id, 2);
-                assert_eq!(*hub_id, 9);
+                assert_eq!(category_id.get(), 2);
+                assert_eq!(hub_id.get(), 9);
                 true
             })
             .returning(|_, _| Ok(()));

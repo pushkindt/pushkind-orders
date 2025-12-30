@@ -6,18 +6,23 @@ use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
 use crate::{
     domain::customer::{Customer as DomainCustomer, NewCustomer as DomainNewCustomer},
+    domain::types::{CustomerId, HubId, PhoneNumber, PriceLevelId, UserEmail},
     models::customer::{Customer as DbCustomer, NewCustomer as DbNewCustomer},
     repository::{CustomerListQuery, CustomerReader, CustomerWriter, DieselRepository},
 };
 
 impl CustomerReader for DieselRepository {
-    fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<DomainCustomer>> {
+    fn get_customer_by_id(
+        &self,
+        id: CustomerId,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<DomainCustomer>> {
         use crate::schema::customers;
 
         let mut conn = self.conn()?;
         let customer = customers::table
-            .filter(customers::id.eq(id))
-            .filter(customers::hub_id.eq(hub_id))
+            .filter(customers::id.eq(id.get()))
+            .filter(customers::hub_id.eq(hub_id.get()))
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
@@ -26,17 +31,15 @@ impl CustomerReader for DieselRepository {
 
     fn get_customer_by_email(
         &self,
-        email: &str,
-        hub_id: i32,
+        email: &UserEmail,
+        hub_id: HubId,
     ) -> RepositoryResult<Option<DomainCustomer>> {
         use crate::schema::customers;
 
-        let normalized_email = email.trim().to_lowercase();
-
         let mut conn = self.conn()?;
         let customer = customers::table
-            .filter(customers::email.eq(normalized_email))
-            .filter(customers::hub_id.eq(hub_id))
+            .filter(customers::email.eq(email.as_str()))
+            .filter(customers::hub_id.eq(hub_id.get()))
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
@@ -45,17 +48,15 @@ impl CustomerReader for DieselRepository {
 
     fn get_customer_by_phone(
         &self,
-        phone: &str,
-        hub_id: i32,
+        phone: &PhoneNumber,
+        hub_id: HubId,
     ) -> RepositoryResult<Option<DomainCustomer>> {
         use crate::schema::customers;
 
-        let normalized_phone = phone.trim().to_string();
-
         let mut conn = self.conn()?;
         let customer = customers::table
-            .filter(customers::hub_id.eq(hub_id))
-            .filter(customers::phone.eq(&normalized_phone))
+            .filter(customers::hub_id.eq(hub_id.get()))
+            .filter(customers::phone.eq(phone.as_str()))
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 
@@ -140,9 +141,9 @@ impl CustomerWriter for DieselRepository {
 
     fn assign_price_level_to_customers(
         &self,
-        hub_id: i32,
-        customer_ids: &[i32],
-        price_level_id: Option<i32>,
+        hub_id: HubId,
+        customer_ids: &[CustomerId],
+        price_level_id: Option<PriceLevelId>,
     ) -> RepositoryResult<()> {
         use crate::schema::customers;
 
@@ -150,21 +151,24 @@ impl CustomerWriter for DieselRepository {
             return Ok(());
         }
 
+        let raw_customer_ids: Vec<i32> = customer_ids.iter().map(|id| id.get()).collect();
+        let price_level_id_raw = price_level_id.map(|id| id.get());
+
         let mut conn = self.conn()?;
 
-        if let Some(level_id) = price_level_id {
-            ensure_price_level_with_hub(&mut conn, hub_id, level_id)?;
+        if let Some(level_id) = price_level_id_raw {
+            ensure_price_level_with_hub(&mut conn, hub_id.get(), level_id)?;
         }
 
         let target = customers::table
-            .filter(customers::hub_id.eq(hub_id))
-            .filter(customers::id.eq_any(customer_ids));
+            .filter(customers::hub_id.eq(hub_id.get()))
+            .filter(customers::id.eq_any(&raw_customer_ids));
 
         let updated = diesel::update(target)
-            .set(customers::price_level_id.eq(price_level_id))
+            .set(customers::price_level_id.eq(price_level_id_raw))
             .execute(&mut conn)?;
 
-        if updated != customer_ids.len() {
+        if updated != raw_customer_ids.len() {
             return Err(RepositoryError::NotFound);
         }
 

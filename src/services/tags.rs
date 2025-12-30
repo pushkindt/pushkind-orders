@@ -4,6 +4,7 @@ use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::tag::{Tag, TagListQuery};
+use crate::domain::types::{HubId, TagId};
 use crate::dto::tags::{TagQuery, TagsPageData};
 use crate::forms::tags::{AddTagForm, EditTagForm};
 use crate::repository::{TagReader, TagWriter};
@@ -59,12 +60,13 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let tag_id = form.tag_id;
+    let tag_id = TagId::new(form.tag_id).map_err(|_| ServiceError::Internal)?;
     let update = form
         .into_update_tag()
         .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
 
-    repo.update_tag(tag_id, user.hub_id, &update)
+    repo.update_tag(tag_id, hub_id, &update)
         .map_err(ServiceError::from)
 }
 
@@ -75,7 +77,10 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    Ok(repo.delete_tag(tag_id, user.hub_id)?)
+    let tag_id = TagId::new(tag_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+
+    Ok(repo.delete_tag(tag_id, hub_id)?)
 }
 
 #[cfg(test)]
@@ -274,8 +279,8 @@ mod tests {
         repo.expect_update_tag()
             .times(1)
             .withf(|tag_id, hub_id, updates| {
-                assert_eq!(*tag_id, 5);
-                assert_eq!(*hub_id, 7);
+                assert_eq!(tag_id.get(), 5);
+                assert_eq!(hub_id.get(), 7);
                 assert_eq!(updates.name.as_str(), "Limited\nEdition");
                 true
             })
@@ -324,8 +329,8 @@ mod tests {
         repo.expect_delete_tag()
             .times(1)
             .withf(|tag_id, hub_id| {
-                assert_eq!(*tag_id, 4);
-                assert_eq!(*hub_id, 7);
+                assert_eq!(tag_id.get(), 4);
+                assert_eq!(hub_id.get(), 7);
                 true
             })
             .returning(|_, _| Ok(()));

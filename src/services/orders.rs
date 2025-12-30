@@ -34,7 +34,7 @@ where
 
     let customer = match order.customer_id {
         Some(customer_id) => repo
-            .get_customer_by_id(customer_id.get(), hub_id.get())
+            .get_customer_by_id(customer_id, hub_id)
             .map_err(ServiceError::from)?,
         None => None,
     };
@@ -151,7 +151,7 @@ where
 
     let customer = match order.customer_id {
         Some(customer_id) => repo
-            .get_customer_by_id(customer_id.get(), hub_id.get())
+            .get_customer_by_id(customer_id, hub_id)
             .map_err(ServiceError::from)?,
         None => None,
     };
@@ -203,22 +203,26 @@ mod tests {
     }
 
     impl CustomerReader for OrderServiceRepo {
-        fn get_customer_by_id(&self, id: i32, hub_id: i32) -> RepositoryResult<Option<Customer>> {
+        fn get_customer_by_id(
+            &self,
+            id: CustomerId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Customer>> {
             self.customers.get_customer_by_id(id, hub_id)
         }
 
         fn get_customer_by_email(
             &self,
-            email: &str,
-            hub_id: i32,
+            email: &UserEmail,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.customers.get_customer_by_email(email, hub_id)
         }
 
         fn get_customer_by_phone(
             &self,
-            phone: &str,
-            hub_id: i32,
+            phone: &PhoneNumber,
+            hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.customers.get_customer_by_phone(phone, hub_id)
         }
@@ -408,8 +412,8 @@ mod tests {
         repo.customers
             .expect_get_customer_by_id()
             .times(1)
-            .withf(move |id, hub_id| *id == 11 && *hub_id == expected_hub)
-            .returning(move |id, hub_id| Ok(Some(sample_customer(id, hub_id))));
+            .withf(move |id, hub_id| id.get() == 11 && hub_id.get() == expected_hub)
+            .returning(move |id, hub_id| Ok(Some(sample_customer(id.get(), hub_id.get()))));
 
         let result = load_order_details(&repo, &user, 4);
 
@@ -557,9 +561,9 @@ mod tests {
         repo.customers
             .expect_get_customer_by_id()
             .returning(|id, hub_id| {
-                assert_eq!(id, 3);
-                assert_eq!(hub_id, 7);
-                Ok(Some(sample_customer(id, hub_id)))
+                assert_eq!(id.get(), 3);
+                assert_eq!(hub_id.get(), 7);
+                Ok(Some(sample_customer(id.get(), hub_id.get())))
             });
 
         let result = update_order_product_approvals(

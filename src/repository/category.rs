@@ -9,6 +9,7 @@ use crate::domain::category::{
     Category as DomainCategory, CategoryTreeQuery, NewCategory as DomainNewCategory,
     UpdateCategory as DomainUpdateCategory,
 };
+use crate::domain::types::{CategoryId, CategoryName, HubId};
 use crate::models::category::{
     Category as DbCategory, NewCategory as DbNewCategory, UpdateCategory,
 };
@@ -66,16 +67,16 @@ impl CategoryReader for DieselRepository {
 
     fn get_category_by_id(
         &self,
-        category_id: i32,
-        hub_id: i32,
+        category_id: CategoryId,
+        hub_id: HubId,
     ) -> RepositoryResult<Option<DomainCategory>> {
         use crate::schema::categories;
 
         let mut conn = self.conn()?;
 
         let category = categories::table
-            .filter(categories::id.eq(category_id))
-            .filter(categories::hub_id.eq(hub_id))
+            .filter(categories::id.eq(category_id.get()))
+            .filter(categories::hub_id.eq(hub_id.get()))
             .first::<DbCategory>(&mut conn)
             .optional()?;
 
@@ -86,21 +87,21 @@ impl CategoryReader for DieselRepository {
 
     fn get_category_by_name_and_parent(
         &self,
-        name: &str,
-        parent_id: Option<i32>,
-        hub_id: i32,
+        name: &CategoryName,
+        parent_id: Option<CategoryId>,
+        hub_id: HubId,
     ) -> RepositoryResult<Option<DomainCategory>> {
         use crate::schema::categories;
 
         let mut conn = self.conn()?;
 
         let mut query = categories::table
-            .filter(categories::name.eq(name))
-            .filter(categories::hub_id.eq(hub_id))
+            .filter(categories::name.eq(name.as_str()))
+            .filter(categories::hub_id.eq(hub_id.get()))
             .into_boxed();
 
         match parent_id {
-            Some(id) => query = query.filter(categories::parent_id.eq(id)),
+            Some(id) => query = query.filter(categories::parent_id.eq(id.get())),
             None => query = query.filter(categories::parent_id.is_null()),
         }
 
@@ -134,8 +135,8 @@ impl CategoryWriter for DieselRepository {
 
     fn update_category(
         &self,
-        category_id: i32,
-        hub_id: i32,
+        category_id: CategoryId,
+        hub_id: HubId,
         updates: &DomainUpdateCategory,
     ) -> RepositoryResult<DomainCategory> {
         use crate::schema::categories;
@@ -145,8 +146,8 @@ impl CategoryWriter for DieselRepository {
         let db_updates = UpdateCategory::from(updates);
 
         let target = categories::table
-            .filter(categories::id.eq(category_id))
-            .filter(categories::hub_id.eq(hub_id));
+            .filter(categories::id.eq(category_id.get()))
+            .filter(categories::hub_id.eq(hub_id.get()));
 
         let updated = diesel::update(target)
             .set(&db_updates)
@@ -155,15 +156,15 @@ impl CategoryWriter for DieselRepository {
         Ok(DomainCategory::try_from(updated)?)
     }
 
-    fn delete_category(&self, category_id: i32, hub_id: i32) -> RepositoryResult<()> {
+    fn delete_category(&self, category_id: CategoryId, hub_id: HubId) -> RepositoryResult<()> {
         use crate::schema::categories;
 
         let mut conn = self.conn()?;
 
         let deleted = diesel::delete(
             categories::table
-                .filter(categories::id.eq(category_id))
-                .filter(categories::hub_id.eq(hub_id)),
+                .filter(categories::id.eq(category_id.get()))
+                .filter(categories::hub_id.eq(hub_id.get())),
         )
         .execute(&mut conn)?;
 
