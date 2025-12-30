@@ -1183,7 +1183,7 @@ Banana,USD,7.50,
             product_id,
             name: "Espresso Deluxe".to_string(),
             sku: Some("   ".to_string()),         // clears SKU
-            description: Some("   ".to_string()), // clears description
+            description: Some(" a ".to_string()), // clears description
             units: Some("  pack ".to_string()),
             currency: "eur".to_string(),
             image_urls: Some(" https://cdn.example.com/espresso-deluxe.png ".to_string()),

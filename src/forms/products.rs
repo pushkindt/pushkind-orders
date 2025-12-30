@@ -205,7 +205,7 @@ impl AddProductForm {
         }
 
         if let Some(description) = description {
-            let description = ProductDescription::new(ammonia::clean(&description))
+            let description = ProductDescription::new(&description)
                 .map_err(|_| ProductFormError::EmptyDescription)?;
             new_product = new_product.with_description(description);
         }
@@ -399,7 +399,7 @@ impl UploadProductsForm {
             }
 
             if let Some(description) = description {
-                let description = ProductDescription::new(ammonia::clean(&description))
+                let description = ProductDescription::new(&description)
                     .map_err(|_| ProductFormError::EmptyDescription)?;
                 product = product.with_description(description);
             }
@@ -558,10 +558,8 @@ impl EditProductForm {
             updates = updates.with_sku(sku);
         }
 
-        if let Some(description) = description
-            && let Some(sanitized) = sanitize_text(&ammonia::clean(&description))
-        {
-            let description = ProductDescription::new(sanitized)
+        if let Some(description) = description {
+            let description = ProductDescription::new(&description)
                 .map_err(|_| ProductFormError::EmptyDescription)?;
             updates = updates.with_description(description);
         }
