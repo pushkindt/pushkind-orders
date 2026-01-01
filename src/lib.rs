@@ -34,7 +34,7 @@ use crate::routes::store::{
     update_store_order_handler, verify_store_auth_otp,
 };
 use crate::routes::store_session::get_store_session;
-use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
+use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_edit_tag_modal, show_tags};
 
 pub mod domain;
 pub mod dto;
@@ -136,6 +136,7 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
                     .service(show_tags)
                     .service(add_tag)
                     .service(edit_tag)
+                    .service(show_edit_tag_modal)
                     .service(delete_tag)
                     .service(show_price_levels)
                     .service(add_price_level)

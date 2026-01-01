@@ -216,6 +216,8 @@ pub trait OrderWriter {
 
 /// Read-only operations over tag records.
 pub trait TagReader {
+    /// Retrieve a tag by ID within a hub.
+    fn get_tag_by_id(&self, tag_id: TagId, hub_id: HubId) -> RepositoryResult<Option<Tag>>;
     /// List tags matching the query with pagination and search.
     fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<Tag>)>;
 }
