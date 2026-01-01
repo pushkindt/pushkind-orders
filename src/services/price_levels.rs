@@ -42,6 +42,29 @@ where
     })
 }
 
+/// Loads a single price level for the authenticated user's hub.
+pub fn load_price_level_for_edit<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    price_level_id: i32,
+) -> ServiceResult<PriceLevel>
+where
+    R: PriceLevelReader + ?Sized,
+{
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let price_level_id = PriceLevelId::new(price_level_id).map_err(|_| ServiceError::Internal)?;
+
+    match repo
+        .get_price_level_by_id(price_level_id, hub_id)
+        .map_err(ServiceError::from)?
+    {
+        Some(price_level) => Ok(price_level),
+        None => Err(ServiceError::NotFound),
+    }
+}
+
 /// Loads saved price level assignments for all hub customers.
 pub fn load_client_price_level_assignments<R>(
     repo: &R,
@@ -325,6 +348,55 @@ mod tests {
         let result = load_price_levels(&repo, &user, PriceLevelsQuery::default());
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn load_price_level_for_edit_requires_role() {
+        let repo = MockPriceLevelReader::new();
+        let user = user_with_roles(&[]);
+
+        let result = load_price_level_for_edit(&repo, &user, 3);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn load_price_level_for_edit_returns_not_found() {
+        let mut repo = MockPriceLevelReader::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        repo.expect_get_price_level_by_id()
+            .times(1)
+            .withf(|price_level_id, hub_id| {
+                assert_eq!(price_level_id.get(), 9);
+                assert_eq!(hub_id.get(), 42);
+                true
+            })
+            .returning(|_, _| Ok(None));
+
+        let result = load_price_level_for_edit(&repo, &user, 9);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
+    }
+
+    #[test]
+    fn load_price_level_for_edit_returns_price_level() {
+        let mut repo = MockPriceLevelReader::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        repo.expect_get_price_level_by_id()
+            .times(1)
+            .withf(|price_level_id, hub_id| {
+                assert_eq!(price_level_id.get(), 11);
+                assert_eq!(hub_id.get(), 42);
+                true
+            })
+            .returning(|_, _| Ok(Some(sample_level(11, 42, "Retail"))));
+
+        let result = load_price_level_for_edit(&repo, &user, 11).expect("expected price level");
+
+        assert_eq!(result.id.get(), 11);
+        assert_eq!(result.name.as_str(), "Retail");
     }
 
     #[test]

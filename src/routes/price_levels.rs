@@ -3,7 +3,7 @@ use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
-use tera::Tera;
+use tera::{Context, Tera};
 
 use crate::dto::price_levels::PriceLevelsQuery;
 use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm};
@@ -11,7 +11,8 @@ use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::price_levels::{
-    create_price_level, load_price_levels, remove_price_level, update_price_level,
+    create_price_level, load_price_level_for_edit, load_price_levels, remove_price_level,
+    update_price_level,
 };
 
 #[get("/price-levels")]
@@ -86,7 +87,7 @@ pub async fn add_price_level(
     }
 }
 
-#[post("/price-levels/{price_level_id}/edit")]
+#[post("/price-level/{price_level_id}/edit")]
 /// Update an existing price level by ID.
 ///
 /// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
@@ -127,7 +128,34 @@ pub async fn edit_price_level(
     }
 }
 
-#[post("/price-levels/{price_level_id}/delete")]
+#[get("/price-level/{price_level_id}/modal")]
+/// Render the edit price level modal for a specific price level.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+pub async fn show_edit_price_level_modal(
+    path: web::Path<i32>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+    tera: web::Data<Tera>,
+) -> impl Responder {
+    let price_level_id = path.into_inner();
+
+    match load_price_level_for_edit(repo.get_ref(), &user, price_level_id) {
+        Ok(price_level) => {
+            let mut context = Context::new();
+            context.insert("price_level", &price_level);
+            render_template(&tera, "price_levels/edit_price_modal.html", &context)
+        }
+        Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
+        Err(ServiceError::NotFound) => HttpResponse::NotFound().finish(),
+        Err(err) => {
+            log::error!("Failed to load price level {price_level_id} modal: {err}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[post("/price-level/{price_level_id}/delete")]
 /// Delete a price level by ID.
 ///
 /// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.

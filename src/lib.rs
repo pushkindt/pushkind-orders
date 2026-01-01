@@ -25,7 +25,8 @@ use crate::routes::categories::{add_category, delete_category, edit_category, sh
 use crate::routes::main::show_index;
 use crate::routes::orders::{edit_order, show_order, update_order_product_approvals_handler};
 use crate::routes::price_levels::{
-    add_price_level, delete_price_level, edit_price_level, show_price_levels,
+    add_price_level, delete_price_level, edit_price_level, show_edit_price_level_modal,
+    show_price_levels,
 };
 use crate::routes::products::{add_product, edit_product, show_products, upload_products};
 use crate::routes::store::{
@@ -141,6 +142,7 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
                     .service(show_price_levels)
                     .service(add_price_level)
                     .service(edit_price_level)
+                    .service(show_edit_price_level_modal)
                     .service(delete_price_level)
                     .service(show_products)
                     .service(add_product)
