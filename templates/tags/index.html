@@ -40,8 +40,9 @@
                         type="button"
                         data-bs-toggle="modal"
                         data-bs-target="#editTagModal"
-                        data-tag-id="{{ tag.id }}"
-                        data-tag-name="{{ tag.name }}">
+                        hx-get="/tag/{{tag.id}}/modal"
+                        hx-swap="innerHTML"
+                        hx-target="#editTagModalContent">
                     <i class="bi bi-pen"></i>
                     <span class="d-none d-sm-inline">Изменить</span>
                 </button>
@@ -67,8 +68,14 @@
     ) }}
 </div>
 
+<div class="modal fade" id="editTagModal" tabindex="-1" aria-labelledby="editTagModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" id ="editTagModalContent">
+        </div>
+    </div>
+</div>
+
 {% include 'tags/add_tags_modal.html' %}
-{% include 'tags/edit_tags_modal.html' %}
 
 {% endblock %}
 {% block scripts %}{% endblock %}

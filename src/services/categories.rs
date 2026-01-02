@@ -34,6 +34,29 @@ where
     Ok(CategoryTreeData { tree })
 }
 
+/// Loads a single category for the authenticated user's hub.
+pub fn load_category_for_edit<R>(
+    repo: &R,
+    user: &AuthenticatedUser,
+    category_id: i32,
+) -> ServiceResult<Category>
+where
+    R: CategoryReader + ?Sized,
+{
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let category_id = CategoryId::new(category_id).map_err(|_| ServiceError::Internal)?;
+
+    match repo
+        .get_category_by_id(category_id, hub_id)
+        .map_err(ServiceError::from)?
+    {
+        Some(category) => Ok(category),
+        None => Err(ServiceError::NotFound),
+    }
+}
+
 /// Creates a new category for the authenticated user's hub.
 pub fn create_category<R>(
     repo: &R,
@@ -58,13 +81,12 @@ pub fn modify_category<R>(
     repo: &R,
     user: &AuthenticatedUser,
     form: EditCategoryForm,
+    category_id: i32,
 ) -> ServiceResult<Category>
 where
     R: CategoryReader + CategoryWriter + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
-
-    let category_id = form.category_id;
 
     let update = form
         .into_update_category()
@@ -271,6 +293,57 @@ mod tests {
     }
 
     #[test]
+    fn load_category_for_edit_requires_role() {
+        let repo = MockCategoryReader::new();
+        let user = user_with_roles(&[]);
+
+        let result = load_category_for_edit(&repo, &user, 3);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn load_category_for_edit_returns_not_found() {
+        let mut repo = MockCategoryReader::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let expected_hub = user.hub_id;
+
+        repo.expect_get_category_by_id()
+            .times(1)
+            .withf(move |category_id, hub_id| {
+                assert_eq!(category_id.get(), 9);
+                assert_eq!(hub_id.get(), expected_hub);
+                true
+            })
+            .returning(|_, _| Ok(None));
+
+        let result = load_category_for_edit(&repo, &user, 9);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
+    }
+
+    #[test]
+    fn load_category_for_edit_returns_category() {
+        let mut repo = MockCategoryReader::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let expected_hub = user.hub_id;
+
+        repo.expect_get_category_by_id()
+            .times(1)
+            .withf(move |category_id, hub_id| {
+                assert_eq!(category_id.get(), 11);
+                assert_eq!(hub_id.get(), expected_hub);
+                true
+            })
+            .returning(move |_, _| Ok(Some(sample_category(11, expected_hub, "Drinks"))));
+
+        let result = load_category_for_edit(&repo, &user, 11).expect("expected category");
+
+        assert_eq!(result.id.get(), 11);
+        assert_eq!(result.name.as_str(), "Drinks");
+    }
+
+    #[test]
     fn load_categories_returns_category_tree() {
         let mut repo = MockCategoryReader::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
@@ -373,14 +446,13 @@ mod tests {
         let repo = MockCategoryRepo::new();
         let user = user_with_roles(&[]);
         let form = EditCategoryForm {
-            category_id: 1,
             name: "Updated".to_string(),
             description: None,
             is_archived: false,
             image_url: None,
         };
 
-        let result = modify_category(&repo, &user, form);
+        let result = modify_category(&repo, &user, form, 1);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -406,14 +478,13 @@ mod tests {
             .returning(|_, _, _| Ok(sample_category(3, 9, "Dry Goods")));
 
         let form = EditCategoryForm {
-            category_id: 3,
             name: " Dry Goods ".to_string(),
             description: Some(" pantry items ".to_string()),
             is_archived: false,
             image_url: None,
         };
 
-        let updated = modify_category(&repo, &user, form).expect("expected success");
+        let updated = modify_category(&repo, &user, form, 3).expect("expected success");
 
         assert_eq!(updated.id.get(), 3);
     }

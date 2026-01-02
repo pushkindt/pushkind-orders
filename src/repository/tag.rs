@@ -1,5 +1,6 @@
 //! Tag repository implementation with Diesel.
 
+use diesel::OptionalExtension;
 use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
@@ -11,6 +12,22 @@ use crate::models::tag::{NewTag as DbNewTag, Tag as DbTag, UpdateTag as DbUpdate
 use crate::repository::{DieselRepository, TagReader, TagWriter};
 
 impl TagReader for DieselRepository {
+    fn get_tag_by_id(&self, tag_id: TagId, hub_id: HubId) -> RepositoryResult<Option<DomainTag>> {
+        use crate::schema::tags;
+
+        let mut conn = self.conn()?;
+
+        let tag = tags::table
+            .filter(tags::id.eq(tag_id.get()))
+            .filter(tags::hub_id.eq(hub_id.get()))
+            .first::<DbTag>(&mut conn)
+            .optional()?
+            .map(DomainTag::try_from)
+            .transpose()?;
+
+        Ok(tag)
+    }
+
     fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<DomainTag>)> {
         use crate::schema::tags;
 

@@ -1,164 +1,84 @@
-<div class="modal fade" id="editOrderModal" tabindex="-1" aria-labelledby="editOrderModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-            <form id="editOrderForm" action="/orders/{{ order.id }}/edit" method="POST" data-action-template="/orders/{order_id}/edit">
-                <div class="modal-header">
-                    <h1 class="modal-title fs-5" id="editOrderModalLabel">Редактировать заказ</h1>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
-                </div>
-                <div class="modal-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
-                    <input type="hidden" id="editOrderId" name="order_id">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label for="editOrderStatus" class="form-label">Статус</label>
-                            <select class="form-select" id="editOrderStatus" name="status" required>
-                                <option value="Draft">Черновик</option>
-                                <option value="Pending">Ожидает</option>
-                                <option value="Processing">В обработке</option>
-                                <option value="Completed">Завершён</option>
-                                <option value="Cancelled">Отменён</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="editOrderReference" class="form-label">Внешний номер</label>
-                            <input type="text"
-                                   class="form-control"
-                                   id="editOrderReference"
-                                   name="reference"
-                                   maxlength="128"
-                                   placeholder="Номер из 1С, договора и т.д.">
-                        </div>
-                    </div>
-
-                    <div class="mb-3 mt-3">
-                        <label for="editOrderNotes" class="form-label">Заметки</label>
-                        <textarea class="form-control"
-                                  id="editOrderNotes"
-                                  name="notes"
-                                  rows="3"
-                                  placeholder="Обновите внутренние заметки по заказу"></textarea>
-                    </div>
-
-                    <div class="row g-3 mt-3">
-                        <div class="col-md-6">
-                            <label for="editOrderShippingAddress" class="form-label">Адрес доставки</label>
-                            <textarea class="form-control"
-                                      id="editOrderShippingAddress"
-                                      name="shipping_address"
-                                      rows="2"
-                                      placeholder="Город, улица, дом/офис"></textarea>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="editOrderConsignee" class="form-label">Получатель</label>
-                            <input type="text"
-                                   class="form-control"
-                                   id="editOrderConsignee"
-                                   name="consignee"
-                                   maxlength="128"
-                                   placeholder="Имя получателя">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="editOrderDeliveryNotes" class="form-label">Инструкции по доставке</label>
-                            <textarea class="form-control"
-                                      id="editOrderDeliveryNotes"
-                                      name="delivery_notes"
-                                      rows="2"
-                                      placeholder="Уточнение времени или точки вручения"></textarea>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="editOrderPayer" class="form-label">Плательщик</label>
-                            <input type="text"
-                                   class="form-control"
-                                   id="editOrderPayer"
-                                   name="payer"
-                                   maxlength="128"
-                                   placeholder="Название компании или физлица">
-                        </div>
-                    </div>
-
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
-                    <button type="submit" class="btn btn-primary">Сохранить</button>
-                </div>
-            </form>
-        </div>
+<form id="editOrderForm" action="/orders/{{ order.id }}/edit" method="POST">
+    <div class="modal-header">
+        <h1 class="modal-title fs-5" id="editOrderModalLabel">Редактировать заказ</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
     </div>
-</div>
+    <div class="modal-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
+        <input type="hidden" id="editOrderId" name="order_id" value="{{ order.id }}">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label for="editOrderStatus" class="form-label">Статус</label>
+                <select class="form-select" id="editOrderStatus" name="status" required>
+                    <option value="Draft" {% if order.status == "Draft" %}selected{% endif %}>Черновик</option>
+                    <option value="Pending" {% if order.status == "Pending" %}selected{% endif %}>Ожидает</option>
+                    <option value="Processing" {% if order.status == "Processing" %}selected{% endif %}>В обработке</option>
+                    <option value="Completed" {% if order.status == "Completed" %}selected{% endif %}>Завершён</option>
+                    <option value="Cancelled" {% if order.status == "Cancelled" %}selected{% endif %}>Отменён</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="editOrderReference" class="form-label">Внешний номер</label>
+                <input type="text"
+                       class="form-control"
+                       id="editOrderReference"
+                       name="reference"
+                       value="{{ order.reference | default(value='') }}"
+                       maxlength="128"
+                       placeholder="Номер из 1С, договора и т.д.">
+            </div>
+        </div>
 
-<script>
-    document.addEventListener("DOMContentLoaded", () => {
-        const modalElement = document.getElementById("editOrderModal");
-        if (!modalElement) {
-            return;
-        }
+        <div class="mb-3 mt-3">
+            <label for="editOrderNotes" class="form-label">Заметки</label>
+            <textarea class="form-control"
+                      id="editOrderNotes"
+                      name="notes"
+                      rows="3"
+                      placeholder="Обновите внутренние заметки по заказу">{{ order.notes | default(value='') }}</textarea>
+        </div>
 
-        const form = modalElement.querySelector("form");
-        const actionTemplate = form?.dataset.actionTemplate || "";
-        const orderIdInput = modalElement.querySelector("#editOrderId");
-        const statusField = modalElement.querySelector("#editOrderStatus");
-        const notesField = modalElement.querySelector("#editOrderNotes");
-        const referenceField = modalElement.querySelector("#editOrderReference");
-        const shippingField = modalElement.querySelector("#editOrderShippingAddress");
-        const consigneeField = modalElement.querySelector("#editOrderConsignee");
-        const deliveryField = modalElement.querySelector("#editOrderDeliveryNotes");
-        const payerField = modalElement.querySelector("#editOrderPayer");
-        modalElement.addEventListener("show.bs.modal", (event) => {
-            const trigger = event.relatedTarget;
-            if (!trigger) {
-                return;
-            }
+        <div class="row g-3 mt-3">
+            <div class="col-md-6">
+                <label for="editOrderShippingAddress" class="form-label">Адрес доставки</label>
+                <textarea class="form-control"
+                          id="editOrderShippingAddress"
+                          name="shipping_address"
+                          rows="2"
+                          placeholder="Город, улица, дом/офис">{{ order.shipping_address | default(value='') }}</textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="editOrderConsignee" class="form-label">Получатель</label>
+                <input type="text"
+                       class="form-control"
+                       id="editOrderConsignee"
+                       name="consignee"
+                       value="{{ order.consignee | default(value='') }}"
+                       maxlength="128"
+                       placeholder="Имя получателя">
+            </div>
+            <div class="col-md-6">
+                <label for="editOrderDeliveryNotes" class="form-label">Инструкции по доставке</label>
+                <textarea class="form-control"
+                          id="editOrderDeliveryNotes"
+                          name="delivery_notes"
+                          rows="2"
+                          placeholder="Уточнение времени или точки вручения">{{ order.delivery_notes | default(value='') }}</textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="editOrderPayer" class="form-label">Плательщик</label>
+                <input type="text"
+                       class="form-control"
+                       id="editOrderPayer"
+                       name="payer"
+                       value="{{ order.payer | default(value='') }}"
+                       maxlength="128"
+                       placeholder="Название компании или физлица">
+            </div>
+        </div>
 
-            const orderId = trigger.getAttribute("data-order-id");
-            const status = trigger.getAttribute("data-order-status");
-            const notes = trigger.getAttribute("data-order-notes");
-            const reference = trigger.getAttribute("data-order-reference");
-            const shippingAddress = trigger.getAttribute("data-order-shipping-address");
-            const consignee = trigger.getAttribute("data-order-consignee");
-            const deliveryNotes = trigger.getAttribute("data-order-delivery-notes");
-            const payer = trigger.getAttribute("data-order-payer");
-
-            if (orderIdInput) {
-                orderIdInput.value = orderId || "";
-            }
-
-            if (form && actionTemplate && orderId) {
-                form.action = actionTemplate.replace("{order_id}", orderId);
-            }
-
-            if (statusField) {
-                statusField.value = status || "Draft";
-            }
-
-            if (notesField) {
-                notesField.value = notes || "";
-            }
-
-            if (referenceField) {
-                referenceField.value = reference || "";
-            }
-
-
-            if (shippingField) {
-                shippingField.value = shippingAddress || "";
-            }
-
-            if (consigneeField) {
-                consigneeField.value = consignee || "";
-            }
-
-            if (deliveryField) {
-                deliveryField.value = deliveryNotes || "";
-            }
-
-            if (payerField) {
-                payerField.value = payer || "";
-            }
-
-        });
-
-        modalElement.addEventListener("hidden.bs.modal", () => {
-            form?.reset();
-        });
-    });
-</script>
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+    </div>
+</form>

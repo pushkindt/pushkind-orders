@@ -21,11 +21,16 @@ use crate::repository::DieselRepository;
 use crate::routes::api::{
     api_v1_client_price_levels, api_v1_orders, api_v1_update_client_price_level,
 };
-use crate::routes::categories::{add_category, delete_category, edit_category, show_categories};
+use crate::routes::categories::{
+    add_category, delete_category, edit_category, show_categories, show_edit_category_modal,
+};
 use crate::routes::main::show_index;
-use crate::routes::orders::{edit_order, show_order, update_order_product_approvals_handler};
+use crate::routes::orders::{
+    edit_order, show_edit_order_modal, show_order, update_order_product_approvals_handler,
+};
 use crate::routes::price_levels::{
-    add_price_level, delete_price_level, edit_price_level, show_price_levels,
+    add_price_level, delete_price_level, edit_price_level, show_edit_price_level_modal,
+    show_price_levels,
 };
 use crate::routes::products::{add_product, edit_product, show_products, upload_products};
 use crate::routes::store::{
@@ -34,7 +39,7 @@ use crate::routes::store::{
     update_store_order_handler, verify_store_auth_otp,
 };
 use crate::routes::store_session::get_store_session;
-use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_tags};
+use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_edit_tag_modal, show_tags};
 
 pub mod domain;
 pub mod dto;
@@ -132,14 +137,17 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
                     .service(show_categories)
                     .service(add_category)
                     .service(edit_category)
+                    .service(show_edit_category_modal)
                     .service(delete_category)
                     .service(show_tags)
                     .service(add_tag)
                     .service(edit_tag)
+                    .service(show_edit_tag_modal)
                     .service(delete_tag)
                     .service(show_price_levels)
                     .service(add_price_level)
                     .service(edit_price_level)
+                    .service(show_edit_price_level_modal)
                     .service(delete_price_level)
                     .service(show_products)
                     .service(add_product)
@@ -147,6 +155,7 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
                     .service(upload_products)
                     .service(update_order_product_approvals_handler)
                     .service(edit_order)
+                    .service(show_edit_order_modal)
                     .service(logout),
             )
             .app_data(web::Data::new(tera.clone()))

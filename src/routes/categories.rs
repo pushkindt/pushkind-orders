@@ -3,13 +3,13 @@ use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
-use tera::Tera;
+use tera::{Context, Tera};
 
 use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::categories::{
-    create_category, load_categories, modify_category, remove_category,
+    create_category, load_categories, load_category_for_edit, modify_category, remove_category,
 };
 
 #[get("/categories")]
@@ -79,16 +79,17 @@ pub async fn add_category(
     }
 }
 
-#[post("/categories/edit")]
+#[post("/category/{category_id}/edit")]
 /// Update an existing product category.
 ///
 /// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn edit_category(
+    path: web::Path<i32>,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
     form: web::Form<EditCategoryForm>,
 ) -> impl Responder {
-    match modify_category(repo.get_ref(), &user, form.into_inner()) {
+    match modify_category(repo.get_ref(), &user, form.into_inner(), path.into_inner()) {
         Ok(category) => {
             FlashMessage::success(format!("Категория «{}» изменена.", category.name)).send();
             redirect("/categories")
@@ -109,7 +110,34 @@ pub async fn edit_category(
     }
 }
 
-#[post("/categories/{category_id}/delete")]
+#[get("/category/{category_id}/modal")]
+/// Render the edit category modal for a specific category.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+pub async fn show_edit_category_modal(
+    path: web::Path<i32>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+    tera: web::Data<Tera>,
+) -> impl Responder {
+    let category_id = path.into_inner();
+
+    match load_category_for_edit(repo.get_ref(), &user, category_id) {
+        Ok(category) => {
+            let mut context = Context::new();
+            context.insert("category", &category);
+            render_template(&tera, "categories/edit_category_modal.html", &context)
+        }
+        Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
+        Err(ServiceError::NotFound) => HttpResponse::NotFound().finish(),
+        Err(err) => {
+            log::error!("Failed to load category {category_id} modal: {err}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[post("/category/{category_id}/delete")]
 /// Delete a product category by ID.
 ///
 /// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.

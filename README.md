@@ -181,6 +181,9 @@ isolate services from the database when writing new tests.
   `pushkind_common::routes::ensure_role`.
 - **Testable**: accept traits rather than concrete types in services and prefer
   dependency injection so the mock repositories can be used in tests.
+- **HTMX edit modals**: implement edit modals as dedicated routes that return a
+  template fragment, and inject the result into the modal container via htmx
+  (rather than inlining edit forms on the index page).
 
 Following these guidelines will help new functionality slot seamlessly into the
 existing architecture and keep the service reliable in production.

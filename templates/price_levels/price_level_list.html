@@ -31,14 +31,14 @@
                 type="button"
                 data-bs-toggle="modal"
                 data-bs-target="#editPriceModal"
-                data-price-id="{{ price.id }}"
-                data-price-name="{{ price.name }}"
-                data-price-default="{{ price.is_default }}"
+                hx-get="/price-level/{{ price.id }}/modal"
+                hx-swap="innerHTML"
+                hx-target="#editPriceModalContent"
             >
                 <i class="bi bi-pen"></i>
                 <span class="d-none d-sm-inline">Изменить</span>
             </button>
-            <form method="POST" action="/price-levels/{{ price.id }}/delete">
+            <form method="POST" action="/price-level/{{ price.id }}/delete">
                 <button class="btn btn-sm btn-outline-danger d-flex align-items-center gap-2" type="submit">
                     <i class="bi bi-trash"></i>
                     <span class="d-none d-sm-inline">Удалить</span>

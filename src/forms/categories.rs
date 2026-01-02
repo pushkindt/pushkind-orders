@@ -104,9 +104,6 @@ impl AddCategoryForm {
 /// Form payload emitted when editing an existing category.
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditCategoryForm {
-    /// Identifier of the category to update.
-    #[validate(range(min = 1))]
-    pub category_id: i32,
     /// Name submitted by the user.
     #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
     pub name: String,
@@ -130,7 +127,6 @@ impl EditCategoryForm {
         self.validate()?;
 
         let EditCategoryForm {
-            category_id: _,
             name,
             description,
             is_archived,
@@ -215,7 +211,6 @@ mod tests {
     #[test]
     fn edit_category_form_builds_payload() {
         let form = EditCategoryForm {
-            category_id: 42,
             name: "  Pantry  ".to_string(),
             description: Some(" Dry goods ".to_string()),
             is_archived: true,
@@ -237,7 +232,6 @@ mod tests {
     #[test]
     fn edit_category_form_rejects_empty_name() {
         let form = EditCategoryForm {
-            category_id: 1,
             name: "   ".to_string(),
             description: None,
             is_archived: false,
@@ -252,7 +246,6 @@ mod tests {
     #[test]
     fn edit_category_form_clears_parent_and_description() {
         let form = EditCategoryForm {
-            category_id: 2,
             name: " Pantry ".to_string(),
             description: Some("  ".to_string()),
             is_archived: false,

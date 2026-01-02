@@ -3,13 +3,13 @@ use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
-use tera::Tera;
+use tera::{Context, Tera};
 
 use crate::dto::tags::TagQuery;
 use crate::forms::tags::{AddTagForm, EditTagForm};
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
-use crate::services::tags::{create_tag, load_tags, modify_tag, remove_tag};
+use crate::services::tags::{create_tag, load_tag_for_edit, load_tags, modify_tag, remove_tag};
 
 #[get("/tags")]
 /// Render the tags management page with search and pagination.
@@ -111,6 +111,33 @@ pub async fn edit_tag(
             log::error!("Failed to modify tag: {err}");
             FlashMessage::error("Не удалось изменить тег.").send();
             redirect("/tags")
+        }
+    }
+}
+
+#[get("/tag/{tag_id}/modal")]
+/// Render the edit tag modal for a specific tag.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+pub async fn show_edit_tag_modal(
+    path: web::Path<i32>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+    tera: web::Data<Tera>,
+) -> impl Responder {
+    let tag_id = path.into_inner();
+
+    match load_tag_for_edit(repo.get_ref(), &user, tag_id) {
+        Ok(tag) => {
+            let mut context = Context::new();
+            context.insert("tag", &tag);
+            render_template(&tera, "tags/edit_tags_modal.html", &context)
+        }
+        Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
+        Err(ServiceError::NotFound) => HttpResponse::NotFound().finish(),
+        Err(err) => {
+            log::error!("Failed to load tag {tag_id} modal: {err}");
+            HttpResponse::InternalServerError().finish()
         }
     }
 }

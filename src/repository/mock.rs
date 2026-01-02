@@ -136,6 +136,7 @@ mock! {
     pub TagReader {}
 
     impl TagReader for TagReader {
+        fn get_tag_by_id(&self, tag_id: TagId, hub_id: HubId) -> RepositoryResult<Option<Tag>>;
         fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<Tag>)>;
     }
 }

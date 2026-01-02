@@ -1322,6 +1322,10 @@ Banana,USD,7.50,
     }
 
     impl TagReader for FakeRepo {
+        fn get_tag_by_id(&self, tag_id: TagId, hub_id: HubId) -> RepositoryResult<Option<Tag>> {
+            self.tag_reader.get_tag_by_id(tag_id, hub_id)
+        }
+
         fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<Tag>)> {
             self.tag_reader.list_tags(query)
         }

@@ -39,6 +39,25 @@ where
     Ok(TagsPageData { tags, search })
 }
 
+/// Fetches a single tag for the authenticated user's hub.
+pub fn load_tag_for_edit<R>(repo: &R, user: &AuthenticatedUser, tag_id: i32) -> ServiceResult<Tag>
+where
+    R: TagReader + ?Sized,
+{
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+
+    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let tag_id = TagId::new(tag_id).map_err(|_| ServiceError::Internal)?;
+
+    match repo
+        .get_tag_by_id(tag_id, hub_id)
+        .map_err(ServiceError::from)?
+    {
+        Some(tag) => Ok(tag),
+        None => Err(ServiceError::NotFound),
+    }
+}
+
 /// Creates a new tag for the authenticated user's hub.
 pub fn create_tag<R>(repo: &R, user: &AuthenticatedUser, form: AddTagForm) -> ServiceResult<Tag>
 where
@@ -218,6 +237,55 @@ mod tests {
         let result = create_tag(&repo, &user, form);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn load_tag_for_edit_requires_role() {
+        let repo = MockTagReader::new();
+        let user = user_with_roles(&[]);
+
+        let result = load_tag_for_edit(&repo, &user, 3);
+
+        assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn load_tag_for_edit_returns_not_found() {
+        let mut repo = MockTagReader::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        repo.expect_get_tag_by_id()
+            .times(1)
+            .withf(|tag_id, hub_id| {
+                assert_eq!(tag_id.get(), 9);
+                assert_eq!(hub_id.get(), 7);
+                true
+            })
+            .returning(|_, _| Ok(None));
+
+        let result = load_tag_for_edit(&repo, &user, 9);
+
+        assert!(matches!(result, Err(ServiceError::NotFound)));
+    }
+
+    #[test]
+    fn load_tag_for_edit_returns_tag() {
+        let mut repo = MockTagReader::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        repo.expect_get_tag_by_id()
+            .times(1)
+            .withf(|tag_id, hub_id| {
+                assert_eq!(tag_id.get(), 12);
+                assert_eq!(hub_id.get(), 7);
+                true
+            })
+            .returning(|_, _| Ok(Some(sample_tag(12, 7, "Signature"))));
+
+        let result = load_tag_for_edit(&repo, &user, 12).expect("expected tag");
+
+        assert_eq!(result.id.get(), 12);
+        assert_eq!(result.name.as_str(), "Signature");
     }
 
     #[test]
