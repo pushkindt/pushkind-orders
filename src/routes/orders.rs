@@ -4,7 +4,7 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use serde_json::json;
-use tera::Tera;
+use tera::{Context, Tera};
 
 use crate::dto::orders::OrderProductApprovalPayload;
 use crate::forms::orders::EditOrderForm;
@@ -94,6 +94,33 @@ pub async fn edit_order(
             log::error!("Failed to update order {order_id}: {err}");
             FlashMessage::error("Не удалось обновить заказ.").send();
             redirect(order_path.as_str())
+        }
+    }
+}
+
+#[get("/order/{order_id}/modal")]
+/// Render the edit order modal for a specific order.
+///
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+pub async fn show_edit_order_modal(
+    path: web::Path<i32>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+    tera: web::Data<Tera>,
+) -> impl Responder {
+    let order_id = path.into_inner();
+
+    match order_service::load_order_details(repo.get_ref(), &user, order_id) {
+        Ok(details) => {
+            let mut context = Context::new();
+            context.insert("order", &details.order);
+            render_template(&tera, "order/edit_order_modal.html", &context)
+        }
+        Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
+        Err(ServiceError::NotFound) => HttpResponse::NotFound().finish(),
+        Err(err) => {
+            log::error!("Failed to load order {order_id} modal: {err}");
+            HttpResponse::InternalServerError().finish()
         }
     }
 }

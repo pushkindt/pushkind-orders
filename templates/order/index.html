@@ -14,14 +14,9 @@
                     type="button"
                     data-bs-toggle="modal"
                     data-bs-target="#editOrderModal"
-                    data-order-id="{{ order.id }}"
-                    data-order-status="{{ order.status }}"
-                    data-order-notes="{{ order.notes | default(value='') }}"
-                    data-order-reference="{{ order.reference | default(value='') }}"
-                    data-order-shipping-address="{{ order.shipping_address | default(value='') }}"
-                    data-order-consignee="{{ order.consignee | default(value='') }}"
-                    data-order-delivery-notes="{{ order.delivery_notes | default(value='') }}"
-                    data-order-payer="{{ order.payer | default(value='') }}">
+                    hx-get="/order/{{ order.id }}/modal"
+                    hx-swap="innerHTML"
+                    hx-target="#editOrderModalContent">
                 <i class="bi bi-pencil"></i>
                 Редактировать
             </button>
@@ -203,7 +198,12 @@
     </div>
 </div>
 
-{% include 'order/edit_order_modal.html' %}
+<div class="modal fade" id="editOrderModal" tabindex="-1" aria-labelledby="editOrderModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content" id="editOrderModalContent">
+        </div>
+    </div>
+</div>
 
 {% endblock %}
 
