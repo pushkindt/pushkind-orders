@@ -306,12 +306,13 @@ mod tests {
     fn load_category_for_edit_returns_not_found() {
         let mut repo = MockCategoryReader::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let expected_hub = user.hub_id;
 
         repo.expect_get_category_by_id()
             .times(1)
-            .withf(|category_id, hub_id| {
+            .withf(move |category_id, hub_id| {
                 assert_eq!(category_id.get(), 9);
-                assert_eq!(hub_id.get(), 7);
+                assert_eq!(hub_id.get(), expected_hub);
                 true
             })
             .returning(|_, _| Ok(None));
@@ -325,15 +326,16 @@ mod tests {
     fn load_category_for_edit_returns_category() {
         let mut repo = MockCategoryReader::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let expected_hub = user.hub_id;
 
         repo.expect_get_category_by_id()
             .times(1)
-            .withf(|category_id, hub_id| {
+            .withf(move |category_id, hub_id| {
                 assert_eq!(category_id.get(), 11);
-                assert_eq!(hub_id.get(), 7);
+                assert_eq!(hub_id.get(), expected_hub);
                 true
             })
-            .returning(|_, _| Ok(Some(sample_category(11, 7, "Drinks"))));
+            .returning(move |_, _| Ok(Some(sample_category(11, expected_hub, "Drinks"))));
 
         let result = load_category_for_edit(&repo, &user, 11).expect("expected category");
 
