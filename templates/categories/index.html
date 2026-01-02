@@ -69,11 +69,9 @@
                         title="Add child category"
                         data-bs-toggle="modal"
                         data-bs-target="#editCategoryModal"
-                        data-category-id="{{ n.category.id }}"
-                        data-category-name="{{ n.category.name }}"
-                        data-category-description="{{ n.category.description | default(value='') }}"
-                        data-category-archived="{{ n.category.is_archived }}"
-                        data-category-image-url="{{ n.category.image_url | default(value='') }}"
+                        hx-get="/category/{{ n.category.id }}/modal"
+                        hx-swap="innerHTML"
+                        hx-target="#editCategoryModalContent"
                 >
                     <i class="bi bi-pencil-square"></i>
                 </button>
@@ -117,7 +115,12 @@
 </div>
 
 {% include 'categories/add_category_modal.html' %}
-{% include 'categories/edit_category_modal.html' %}
+<div class="modal fade" id="editCategoryModal" tabindex="-1" aria-labelledby="editCategoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" id="editCategoryModalContent">
+        </div>
+    </div>
+</div>
 
 {% endblock %}
 {% block scripts %}{% endblock %}
