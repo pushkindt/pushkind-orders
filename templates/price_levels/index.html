@@ -37,6 +37,10 @@
     <div class="row">
         <div class="col">
             <h2 class="h5 my-3">Клиенты</h2>
+            <div class="mb-3">
+                <input id="clientsFilterInput" class="form-control" type="text"
+                       placeholder="Фильтр по имени, email или телефону">
+            </div>
             <div id="clientsStatusMessage" class="alert alert-info" role="status">
                 Загрузка списка клиентов...
             </div>
@@ -75,6 +79,8 @@
             if (!clientsTableBody || !statusMessage) {
                 return;
             }
+
+            createFilter('clientsFilterInput', 'clientsTableBody', 'tr');
 
             function setStatus(message, type = 'info') {
                 statusMessage.textContent = message;
