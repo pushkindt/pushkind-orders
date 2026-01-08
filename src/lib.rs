@@ -1,7 +1,5 @@
 //! Pushkind orders service library providing HTTP server setup and application wiring.
 
-use std::sync::Arc;
-
 use actix_cors::Cors;
 use actix_files::Files;
 use actix_identity::IdentityMiddleware;
@@ -16,7 +14,7 @@ use pushkind_common::routes::{logout, not_assigned};
 use pushkind_common::zmq::{ZmqSender, ZmqSenderOptions};
 use tera::Tera;
 
-use crate::models::config::ServerConfig;
+use crate::models::config::{ServerConfig, ZmqSenders};
 use crate::repository::DieselRepository;
 use crate::routes::api::{
     api_v1_client_price_levels, api_v1_orders, api_v1_update_client_price_level,
@@ -60,11 +58,18 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
         secret: server_config.secret.clone(),
     };
 
-    // Start a background ZeroMQ publisher used for outbound sms notifications.
-    let zmq_sender = ZmqSender::start(ZmqSenderOptions::pub_default(&server_config.zmq_sms_pub))
-        .map_err(|e| std::io::Error::other(format!("Failed to start ZMQ sender: {e}")))?;
+    // Start background ZeroMQ publishers used for outbound notifications.
+    let sms_sender = ZmqSender::start(ZmqSenderOptions::pub_default(&server_config.zmq_sms_pub))
+        .map_err(|e| std::io::Error::other(format!("Failed to start ZMQ SMS sender: {e}")))?;
+    let clients_sender = ZmqSender::start(ZmqSenderOptions::pub_default(
+        &server_config.zmq_clients_pub,
+    ))
+    .map_err(|e| std::io::Error::other(format!("Failed to start ZMQ clients sender: {e}")))?;
 
-    let zmq_sender = Arc::new(zmq_sender);
+    let zmq_senders = web::Data::new(ZmqSenders {
+        sms: sms_sender,
+        clients: clients_sender,
+    });
 
     // Establish Diesel connection pool for the SQLite database.
     let pool = establish_connection_pool(&server_config.database_url).map_err(|e| {
@@ -160,7 +165,7 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
             )
             .app_data(web::Data::new(tera.clone()))
             .app_data(web::Data::new(repo.clone()))
-            .app_data(web::Data::new(zmq_sender.clone()))
+            .app_data(zmq_senders.clone())
             .app_data(web::Data::new(common_config.clone()))
             .app_data(web::Data::new(server_config.clone()))
     })
