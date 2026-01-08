@@ -313,7 +313,15 @@
                         const row = document.createElement('tr');
 
                         const nameCell = document.createElement('td');
-                        nameCell.textContent = client.name ?? '';
+                        const publicId = client.public_id ?? '';
+                        if (publicId === '') {
+                            nameCell.textContent = client.name ?? '';
+                        } else {
+                            const nameLink = document.createElement('a');
+                            nameLink.href = "{{crm_service_url | safe}}?public_id=" + encodeURIComponent(publicId);
+                            nameLink.textContent = client.name ?? '';
+                            nameCell.appendChild(nameLink);
+                        }
                         row.appendChild(nameCell);
 
                         const normalizedEmail = normalizeEmail(client.email);
