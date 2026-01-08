@@ -5,6 +5,7 @@ use pushkind_common::{
     pagination::DEFAULT_ITEMS_PER_PAGE,
     zmq::{ZmqSenderExt, ZmqSenderTrait},
 };
+use pushkind_crm::models::zmq::ZmqClientMessage;
 use rand::Rng;
 
 use crate::domain::{
@@ -88,9 +89,10 @@ where
 }
 
 /// Verifies an OTP submission for the given hub.
-pub fn verify_store_otp<R>(
+pub async fn verify_store_otp<R>(
     repo: &R,
     hub_id: i32,
+    zmq_sender: &impl ZmqSenderTrait,
     payload: StoreOtpVerifyPayload,
 ) -> ServiceResult<StoreOtpVerifyResponse>
 where
@@ -120,19 +122,36 @@ where
     repo.delete_store_otp(hub_id, &phone)
         .map_err(ServiceError::from)?;
 
-    let customer = match repo
+    let (customer, created) = match repo
         .get_customer_by_phone(&phone, hub_id)
         .map_err(ServiceError::from)?
     {
-        Some(customer) => customer,
+        Some(customer) => (customer, false),
         None => {
             let new_customer = NewCustomer::try_new(hub_id.get(), phone.as_str(), phone.as_str())
                 .map_err(|_| ServiceError::Internal)?;
 
-            repo.create_customer(&new_customer)
-                .map_err(ServiceError::from)?
+            let customer = repo
+                .create_customer(&new_customer)
+                .map_err(ServiceError::from)?;
+            (customer, true)
         }
     };
+
+    if created {
+        let message = ZmqClientMessage {
+            hub_id: hub_id.get(),
+            name: customer.name.as_str().to_string(),
+            email: customer
+                .email
+                .as_ref()
+                .map(|email| email.as_str().to_string()),
+            phone: Some(customer.phone.as_str().to_string()),
+            fields: None,
+        };
+
+        zmq_sender.send_json(&message).await?;
+    }
 
     info!(
         "Storefront OTP verification for hub {hub_id} with phone {} and code {}",
@@ -492,6 +511,7 @@ mod tests {
 
     use pushkind_common::repository::errors::RepositoryResult;
     use pushkind_common::zmq::{SendFuture, ZmqSenderError, ZmqSenderTrait};
+    use pushkind_crm::models::zmq::ZmqClientMessage;
     use serde_json;
     use std::sync::{Arc, Mutex};
 
@@ -1312,6 +1332,58 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct TestZmqClientSender {
+        recorded: Arc<Mutex<Vec<ZmqClientMessage>>>,
+    }
+
+    impl TestZmqClientSender {
+        fn new() -> Self {
+            Self {
+                recorded: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+
+        fn messages(&self) -> Arc<Mutex<Vec<ZmqClientMessage>>> {
+            Arc::clone(&self.recorded)
+        }
+    }
+
+    impl ZmqSenderTrait for TestZmqClientSender {
+        fn send_bytes<'a>(&'a self, bytes: Vec<u8>) -> SendFuture<'a> {
+            let recorded = Arc::clone(&self.recorded);
+            Box::pin(async move {
+                let msg: ZmqClientMessage =
+                    serde_json::from_slice(&bytes).map_err(ZmqSenderError::Serialize)?;
+                recorded.lock().unwrap().push(msg);
+                Ok(())
+            })
+        }
+
+        fn try_send_bytes(&self, bytes: Vec<u8>) -> Result<(), ZmqSenderError> {
+            let msg: ZmqClientMessage =
+                serde_json::from_slice(&bytes).map_err(ZmqSenderError::Serialize)?;
+            self.recorded.lock().unwrap().push(msg);
+            Ok(())
+        }
+
+        fn send_multipart<'a>(&'a self, frames: Vec<Vec<u8>>) -> SendFuture<'a> {
+            let recorded = Arc::clone(&self.recorded);
+            Box::pin(async move {
+                let mut iter = frames.into_iter();
+                iter.next();
+                if let Some(payload) = iter.next() {
+                    let msg: ZmqClientMessage =
+                        serde_json::from_slice(&payload).map_err(ZmqSenderError::Serialize)?;
+                    recorded.lock().unwrap().push(msg);
+                    Ok(())
+                } else {
+                    Err(ZmqSenderError::QueueFull)
+                }
+            })
+        }
+    }
+
     #[actix_web::rt::test]
     async fn request_store_otp_accepts_first_request() {
         let phone = "+15551234".to_string();
@@ -1387,8 +1459,8 @@ mod tests {
         assert!(zmq_sender.messages().lock().unwrap().is_empty());
     }
 
-    #[test]
-    fn verify_store_otp_checks_code_and_expiry() {
+    #[actix_web::rt::test]
+    async fn verify_store_otp_checks_code_and_expiry() {
         let payload = StoreOtpVerifyPayload {
             phone: "+15551234".to_string(),
             otp: "123456".to_string(),
@@ -1416,17 +1488,31 @@ mod tests {
             .return_once(|_, _| Ok(Some(sample_customer())));
         repo.customer_writer.expect_create_customer().never();
 
-        let response = verify_store_otp(&repo, 1, payload).expect("expected success");
+        let zmq_sender = TestZmqClientSender::new();
+
+        let response = verify_store_otp(&repo, 1, &zmq_sender, payload)
+            .await
+            .expect("expected success");
+
+        assert!(zmq_sender.messages().lock().unwrap().is_empty());
 
         assert!(response.success);
         assert_eq!(response.customer, sample_customer());
     }
 
-    #[test]
-    fn verify_store_otp_creates_customer_when_missing() {
+    #[actix_web::rt::test]
+    async fn verify_store_otp_creates_customer_when_missing() {
         let payload = StoreOtpVerifyPayload {
             phone: "+15551234".to_string(),
             otp: "123456".to_string(),
+        };
+        let created_customer = Customer {
+            id: CustomerId::new(1).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: CustomerName::new("+15551234").unwrap(),
+            email: None,
+            phone: PhoneNumber::new("+15551234").unwrap(),
+            price_level_id: None,
         };
 
         let mut repo = MockOtpRequestRepo::new();
@@ -1457,16 +1543,32 @@ mod tests {
                     && new_customer.name.as_str() == "+15551234"
                     && new_customer.email.is_none()
             })
-            .return_once(|_| Ok(sample_customer()));
+            .return_once({
+                let created_customer = created_customer.clone();
+                move |_| Ok(created_customer)
+            });
 
-        let response = verify_store_otp(&repo, 1, payload).expect("expected success");
+        let zmq_sender = TestZmqClientSender::new();
+
+        let response = verify_store_otp(&repo, 1, &zmq_sender, payload)
+            .await
+            .expect("expected success");
+
+        let recorded = zmq_sender.messages();
+        let guard = recorded.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        let message = &guard[0];
+        assert_eq!(message.hub_id, 1);
+        assert_eq!(message.name, "+15551234");
+        assert_eq!(message.email.as_deref(), None);
+        assert_eq!(message.phone.as_deref(), Some("+15551234"));
 
         assert!(response.success);
-        assert_eq!(response.customer, sample_customer());
+        assert_eq!(response.customer, created_customer);
     }
 
-    #[test]
-    fn verify_store_otp_rejects_invalid_code() {
+    #[actix_web::rt::test]
+    async fn verify_store_otp_rejects_invalid_code() {
         let payload = StoreOtpVerifyPayload {
             phone: "+15551234".to_string(),
             otp: "000000".to_string(),
@@ -1491,7 +1593,9 @@ mod tests {
         repo.customer_reader.expect_get_customer_by_phone().never();
         repo.customer_writer.expect_create_customer().never();
 
-        let result = verify_store_otp(&repo, 1, payload);
+        let zmq_sender = TestZmqClientSender::new();
+
+        let result = verify_store_otp(&repo, 1, &zmq_sender, payload).await;
 
         match result {
             Err(ServiceError::Form(message)) => assert_eq!(message, OTP_INVALID_MESSAGE),
@@ -1499,8 +1603,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn verify_store_otp_rejects_expired_code() {
+    #[actix_web::rt::test]
+    async fn verify_store_otp_rejects_expired_code() {
         let payload = StoreOtpVerifyPayload {
             phone: "+15551234".to_string(),
             otp: "123456".to_string(),
@@ -1521,7 +1625,9 @@ mod tests {
         repo.otp_repository.expect_delete_store_otp().never();
         repo.otp_repository.expect_upsert_store_otp().never();
 
-        let result = verify_store_otp(&repo, 1, payload);
+        let zmq_sender = TestZmqClientSender::new();
+
+        let result = verify_store_otp(&repo, 1, &zmq_sender, payload).await;
 
         match result {
             Err(ServiceError::Form(message)) => assert_eq!(message, OTP_INVALID_MESSAGE),

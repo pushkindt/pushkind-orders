@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use actix_session::Session;
 use actix_web::{HttpResponse, Responder, get, patch, post, web};
 use log::error;
-use pushkind_common::zmq::ZmqSender;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -11,7 +8,7 @@ use crate::dto::store::{StoreCategoryFilters, StoreOrder, StoreProductFilters};
 use crate::forms::store::{
     StoreOrderLinePayload, StoreOrderUpdatePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload,
 };
-use crate::models::config::ServerConfig;
+use crate::models::config::{ServerConfig, ZmqSenders};
 use crate::repository::DieselRepository;
 use crate::routes::store_session::{get_store_customer_for_hub, set_store_customer};
 use crate::services::ServiceError;
@@ -190,7 +187,7 @@ pub async fn request_store_auth_otp(
     path: web::Path<HubPath>,
     payload: web::Json<StoreOtpRequestPayload>,
     repo: web::Data<DieselRepository>,
-    zmq_sender: web::Data<Arc<ZmqSender>>,
+    zmq_senders: web::Data<ZmqSenders>,
     server_config: web::Data<ServerConfig>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
@@ -198,7 +195,7 @@ pub async fn request_store_auth_otp(
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let zmq_sender = zmq_sender.get_ref().as_ref();
+    let zmq_sender = &zmq_senders.get_ref().sms;
 
     match request_store_otp(
         repo.get_ref(),
@@ -228,6 +225,7 @@ pub async fn verify_store_auth_otp(
     path: web::Path<HubPath>,
     payload: web::Json<StoreOtpVerifyPayload>,
     repo: web::Data<DieselRepository>,
+    zmq_senders: web::Data<ZmqSenders>,
     session: Session,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
@@ -242,7 +240,9 @@ pub async fn verify_store_auth_otp(
         return HttpResponse::InternalServerError().finish();
     }
 
-    match verify_store_otp(repo.get_ref(), hub_id, payload.into_inner()) {
+    let zmq_sender = &zmq_senders.get_ref().clients;
+
+    match verify_store_otp(repo.get_ref(), hub_id, zmq_sender, payload.into_inner()).await {
         Ok(response) => {
             if let Err(err) = set_store_customer(&session, &response.customer) {
                 error!("Failed to persist store customer for hub {hub_id}: {err}");

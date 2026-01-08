@@ -14,7 +14,7 @@ actix-web = "4.12.1"
 actix-web-flash-messages = { version = "0.5.0", features = ["cookies"] }
 chrono = { version = "0.4.41", features = ["serde"] }
 csv = "1.4.0"
-diesel = { version = "2.3.4", features = [
+diesel = { version = "2.3.5", features = [
     "sqlite",
     "r2d2",
     "chrono",
@@ -24,14 +24,14 @@ dotenvy = "0.15.7"
 env_logger = "0.11.8"
 log = "0.4.29"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.143"
+serde_json = "1.0.149"
 tera = { version = "1.20.1", features = ["builtins"] }
 pushkind-common = { git = "https://github.com/pushkindt/pushkind-common.git", branch = "main", features = [
     "db",
     "actix",
     "sms",
     "zeromq",
-], version = "0.1.0" }
+], default-features = false }
 validator = { version = "0.20.0", features = ["derive"] }
 actix-cors = "0.7.1"
 serde_qs = { version = "0.15.0" }
@@ -39,9 +39,12 @@ phonenumber = "0.3"
 rand = "0.9.2"
 ammonia = "4.1.2"
 config = { version = "0.15.19", default-features = false, features = ["yaml"] }
+pushkind-crm = { git = "https://github.com/pushkindt/pushkind-crm.git", version = "0.1.0", features = [
+    "data",
+], default-features = false }
 
 [dev-dependencies]
 diesel_migrations = "2.3.1"
 mockall = "0.14.0"
 actix-rt = "2.11.0"
-tempfile = "3.13.0"
+tempfile = "3.24.0"
