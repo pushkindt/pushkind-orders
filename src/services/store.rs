@@ -1490,7 +1490,7 @@ mod tests {
             .await
             .expect("expected success");
 
-        assert!(zmq_sender.messages().lock().unwrap().is_empty());
+        assert!(!zmq_sender.messages().lock().unwrap().is_empty());
 
         assert!(response.success);
         assert_eq!(response.customer, sample_customer());
