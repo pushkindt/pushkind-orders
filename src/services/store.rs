@@ -122,36 +122,32 @@ where
     repo.delete_store_otp(hub_id, &phone)
         .map_err(ServiceError::from)?;
 
-    let (customer, created) = match repo
+    let customer = match repo
         .get_customer_by_phone(&phone, hub_id)
         .map_err(ServiceError::from)?
     {
-        Some(customer) => (customer, false),
+        Some(customer) => customer,
         None => {
             let new_customer = NewCustomer::try_new(hub_id.get(), phone.as_str(), phone.as_str())
                 .map_err(|_| ServiceError::Internal)?;
 
-            let customer = repo
-                .create_customer(&new_customer)
-                .map_err(ServiceError::from)?;
-            (customer, true)
+            repo.create_customer(&new_customer)
+                .map_err(ServiceError::from)?
         }
     };
 
-    if created {
-        let message = ZmqClientMessage {
-            hub_id: hub_id.get(),
-            name: customer.name.as_str().to_string(),
-            email: customer
-                .email
-                .as_ref()
-                .map(|email| email.as_str().to_string()),
-            phone: Some(customer.phone.as_str().to_string()),
-            fields: None,
-        };
+    let message = ZmqClientMessage {
+        hub_id: hub_id.get(),
+        name: customer.name.as_str().to_string(),
+        email: customer
+            .email
+            .as_ref()
+            .map(|email| email.as_str().to_string()),
+        phone: Some(customer.phone.as_str().to_string()),
+        fields: None,
+    };
 
-        zmq_sender.send_json(&message).await?;
-    }
+    zmq_sender.send_json(&message).await?;
 
     info!(
         "Storefront OTP verification for hub {hub_id} with phone {} and code {}",
