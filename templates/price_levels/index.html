@@ -110,8 +110,8 @@
                 return value.replace(/\s+/g, ' ').trim();
             }
 
-            function buildContactKey(email, phone) {
-                return `${normalizeEmail(email)}::${normalizePhone(phone ?? '')}`;
+            function buildContactKey(phone) {
+                return normalizePhone(phone ?? '');
             }
 
             function fetchClients() {
@@ -274,7 +274,7 @@
                                     return null;
                                 }
                                 return [
-                                    buildContactKey(item.email ?? '', normalizedPhone),
+                                    buildContactKey(normalizedPhone),
                                     item.price_level_id ?? null,
                                 ];
                             })
@@ -336,7 +336,7 @@
 
                         const hubCell = document.createElement('td');
                         const savedId = assignmentLookup.get(
-                            buildContactKey(client.email, client.phone ?? ''),
+                            buildContactKey(client.phone ?? ''),
                         ) ?? null;
                         const contact = {
                             hubId,
