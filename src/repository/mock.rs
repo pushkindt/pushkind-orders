@@ -9,7 +9,7 @@ use super::{
 };
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
-    customer::{Customer, NewCustomer},
+    customer::{Customer, NewCustomer, UpdateCustomer},
     order::{NewOrder, Order, OrderListQuery, OrderProductApprovalUpdate, UpdateOrder},
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
@@ -51,7 +51,6 @@ mock! {
 
     impl CustomerReader for CustomerReader {
         fn get_customer_by_id(&self, id: CustomerId, hub_id: HubId) -> RepositoryResult<Option<Customer>>;
-        fn get_customer_by_email(&self, email: &UserEmail, hub_id: HubId) -> RepositoryResult<Option<Customer>>;
         fn get_customer_by_phone(&self, phone: &PhoneNumber, hub_id: HubId) -> RepositoryResult<Option<Customer>>;
         fn list_customers(&self, query: CustomerListQuery) -> RepositoryResult<(usize, Vec<Customer>)>;
     }
@@ -63,6 +62,7 @@ mock! {
     impl CustomerWriter for CustomerWriter {
         fn create_customer(&self, new_customer: &NewCustomer) -> RepositoryResult<Customer>;
         fn assign_price_level_to_customers(&self, hub_id: HubId, customer_ids: &[CustomerId], price_level_id: Option<PriceLevelId>) -> RepositoryResult<()>;
+        fn update_customer(&self, customer_id: CustomerId, hub_id: HubId, updates: &UpdateCustomer) -> RepositoryResult<Customer>;
     }
 }
 

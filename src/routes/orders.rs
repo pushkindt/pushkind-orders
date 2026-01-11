@@ -1,13 +1,13 @@
 use actix_web::{HttpResponse, Responder, get, post, web};
 use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use serde_json::json;
 use tera::{Context, Tera};
 
 use crate::dto::orders::OrderProductApprovalPayload;
 use crate::forms::orders::EditOrderForm;
+use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
 use crate::services::{ServiceError, orders as order_service};
 
@@ -20,7 +20,7 @@ pub async fn show_order(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
     flash_messages: IncomingFlashMessages,
-    server_config: web::Data<CommonServerConfig>,
+    server_config: web::Data<ServerConfig>,
     tera: web::Data<Tera>,
 ) -> impl Responder {
     let order_id = path.into_inner();
@@ -35,6 +35,7 @@ pub async fn show_order(
             );
             context.insert("order", &details.order);
             context.insert("customer", &details.customer);
+            context.insert("crm_service_url", &server_config.crm_service_url);
             render_template(&tera, "order/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {

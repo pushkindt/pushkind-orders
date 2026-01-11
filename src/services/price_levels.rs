@@ -2,14 +2,15 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::customer::{CustomerListQuery, NewCustomer};
+use crate::domain::customer::{CustomerListQuery, NewCustomer, UpdateCustomer};
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
 use crate::domain::types::{HubId, PriceLevelId};
 use crate::dto::price_levels::{
     ClientPriceLevelAssignment, ClientPriceLevelAssignments, PriceLevelsPageData, PriceLevelsQuery,
 };
 use crate::forms::price_levels::{
-    AddPriceLevelForm, AssignClientPriceLevelPayload, EditPriceLevelForm,
+    AddPriceLevelForm, AssignClientPriceLevelForm, AssignClientPriceLevelPayload,
+    EditPriceLevelForm,
 };
 use crate::repository::{CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter};
 use crate::services::{ServiceError, ServiceResult};
@@ -166,60 +167,45 @@ where
 pub fn assign_price_level_to_client<R>(
     repo: &R,
     user: &AuthenticatedUser,
-    payload: AssignClientPriceLevelPayload,
+    payload: AssignClientPriceLevelForm,
 ) -> ServiceResult<()>
 where
     R: CustomerReader + CustomerWriter + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let assignment = payload
-        .into_assignment_request()
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let assignment: AssignClientPriceLevelPayload = payload.try_into()?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let phone = crate::domain::types::PhoneNumber::new(assignment.phone.clone())
-        .map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
 
-    let customer = match repo
-        .get_customer_by_phone(&phone, hub_id)
-        .map_err(ServiceError::from)?
-    {
-        Some(existing) => existing,
+    match repo.get_customer_by_phone(&assignment.phone, hub_id)? {
+        Some(existing) => {
+            let updates = UpdateCustomer {
+                name: assignment.name,
+                public_id: Some(assignment.public_id),
+                price_level_id: assignment.price_level_id,
+            };
+
+            repo.update_customer(existing.id, hub_id, &updates)?;
+            Ok(())
+        }
         None => {
             let mut new_customer = NewCustomer::try_new(
                 user.hub_id,
                 assignment.name.clone(),
                 assignment.phone.clone(),
-            )
-            .map_err(|_| ServiceError::Internal)?;
+            )?;
 
-            if let Some(email) = assignment.email.as_ref() {
-                new_customer = new_customer
-                    .with_email(email.clone())
-                    .map_err(|_| ServiceError::Internal)?;
-            }
+            new_customer = new_customer.try_with_public_id(assignment.public_id)?;
 
             if let Some(price_level_id) = assignment.price_level_id {
-                let price_level_id =
-                    PriceLevelId::new(price_level_id).map_err(|_| ServiceError::Internal)?;
                 new_customer = new_customer.with_price_level_id(price_level_id);
             }
 
-            repo.create_customer(&new_customer)
-                .map_err(ServiceError::from)?
+            repo.create_customer(&new_customer)?;
+            Ok(())
         }
-    };
-
-    repo.assign_price_level_to_customers(
-        hub_id,
-        &[customer.id],
-        assignment
-            .price_level_id
-            .map(|id| PriceLevelId::new(id).map_err(|_| ServiceError::Internal))
-            .transpose()?,
-    )
-    .map_err(ServiceError::from)
+    }
 }
 
 #[cfg(test)]
@@ -227,13 +213,13 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
 
-    use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer};
+    use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer, UpdateCustomer};
     use crate::domain::price_level::PriceLevel;
     use crate::domain::types::{
-        CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, PriceLevelName, UserEmail,
+        CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, PriceLevelName,
     };
     use crate::dto::price_levels::{ClientPriceLevelAssignment, PriceLevelsQuery};
-    use crate::forms::price_levels::{AddPriceLevelForm, AssignClientPriceLevelPayload};
+    use crate::forms::price_levels::{AddPriceLevelForm, AssignClientPriceLevelForm};
     use crate::repository::mock::{
         MockCustomerReader, MockCustomerWriter, MockPriceLevelReader, MockPriceLevelWriter,
     };
@@ -258,14 +244,6 @@ mod tests {
             hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.reader.get_customer_by_id(id, hub_id)
-        }
-
-        fn get_customer_by_email(
-            &self,
-            email: &UserEmail,
-            hub_id: HubId,
-        ) -> RepositoryResult<Option<Customer>> {
-            self.reader.get_customer_by_email(email, hub_id)
         }
 
         fn get_customer_by_phone(
@@ -298,6 +276,15 @@ mod tests {
             self.writer
                 .assign_price_level_to_customers(hub_id, customer_ids, price_level_id)
         }
+
+        fn update_customer(
+            &self,
+            customer_id: CustomerId,
+            hub_id: HubId,
+            updates: &UpdateCustomer,
+        ) -> RepositoryResult<Customer> {
+            self.writer.update_customer(customer_id, hub_id, updates)
+        }
     }
 
     fn fixed_datetime() -> NaiveDateTime {
@@ -323,9 +310,9 @@ mod tests {
             id: CustomerId::new(id).unwrap(),
             hub_id: HubId::new(hub_id).unwrap(),
             name: CustomerName::new(format!("Customer {id}")).unwrap(),
-            email: Some(UserEmail::new(format!("customer{id}@example.com")).unwrap()),
             phone: PhoneNumber::new(format!("+100000{id}")).unwrap(),
             price_level_id: price_level_id.map(|value| PriceLevelId::new(value).unwrap()),
+            public_id: None,
         }
     }
 
@@ -600,14 +587,6 @@ mod tests {
             self.customer_reader.get_customer_by_id(id, hub_id)
         }
 
-        fn get_customer_by_email(
-            &self,
-            email: &UserEmail,
-            hub_id: HubId,
-        ) -> RepositoryResult<Option<Customer>> {
-            self.customer_reader.get_customer_by_email(email, hub_id)
-        }
-
         fn get_customer_by_phone(
             &self,
             phone: &PhoneNumber,
@@ -695,7 +674,6 @@ mod tests {
         assert_eq!(
             assignments.assignments[0],
             ClientPriceLevelAssignment {
-                email: Some("customer1@example.com".to_string()),
                 phone: "+1000001".to_string(),
                 price_level_id: Some(11),
             }
@@ -703,7 +681,6 @@ mod tests {
         assert_eq!(
             assignments.assignments[1],
             ClientPriceLevelAssignment {
-                email: Some("customer2@example.com".to_string()),
                 phone: "+1000002".to_string(),
                 price_level_id: None,
             }
@@ -714,11 +691,11 @@ mod tests {
     fn assign_price_level_to_client_requires_role() {
         let repo = CombinedCustomerRepo::new(MockCustomerReader::new(), MockCustomerWriter::new());
         let user = user_with_roles(&[]);
-        let payload = AssignClientPriceLevelPayload {
+        let payload = AssignClientPriceLevelForm {
             name: "Client Example".to_string(),
-            email: Some("example@client.com".to_string()),
             phone: "+1234567890".to_string(),
             price_level_id: Some(5),
+            public_id: "public-123".to_string(),
         };
 
         let result = assign_price_level_to_client(&repo, &user, payload);
@@ -733,6 +710,7 @@ mod tests {
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let hub_id = user.hub_id;
         let expected_customer_id = 321;
+        let expected_public_id = "public-456";
 
         reader
             .expect_get_customer_by_phone()
@@ -743,22 +721,26 @@ mod tests {
             .returning(move |_, _| Ok(Some(sample_customer(expected_customer_id, hub_id, None))));
 
         writer
-            .expect_assign_price_level_to_customers()
+            .expect_update_customer()
             .times(1)
-            .withf(move |target_hub, ids, price_level_id| {
-                target_hub.get() == hub_id
-                    && ids.len() == 1
-                    && ids[0].get() == expected_customer_id
-                    && price_level_id.map(|id| id.get()) == Some(8)
+            .withf(move |customer_id, target_hub, updates| {
+                customer_id.get() == expected_customer_id
+                    && target_hub.get() == hub_id
+                    && updates.name.as_str() == "Customer Seven"
+                    && updates.price_level_id.map(|id| id.get()) == Some(8)
+                    && updates
+                        .public_id
+                        .as_ref()
+                        .is_some_and(|id| id.as_str() == expected_public_id)
             })
-            .returning(|_, _, _| Ok(()));
+            .returning(move |_, _, _| Ok(sample_customer(expected_customer_id, hub_id, Some(8))));
 
         let repo = CombinedCustomerRepo::new(reader, writer);
-        let payload = AssignClientPriceLevelPayload {
+        let payload = AssignClientPriceLevelForm {
             name: "Customer Seven".to_string(),
-            email: Some("Customer7@Example.com".to_string()),
             phone: "  +15550007 ".to_string(),
             price_level_id: Some(8),
+            public_id: expected_public_id.to_string(),
         };
 
         assign_price_level_to_client(&repo, &user, payload).expect("expected success");
@@ -770,15 +752,18 @@ mod tests {
         let mut writer = MockCustomerWriter::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let hub_id = user.hub_id;
+        let expected_public_id = "public-789";
         let expected_customer = Customer {
             id: CustomerId::new(55).unwrap(),
             hub_id: HubId::new(hub_id).unwrap(),
             name: CustomerName::new("Client 55").unwrap(),
-            email: Some(UserEmail::new("client55@example.com").unwrap()),
             phone: PhoneNumber::new("+1999555").unwrap(),
             price_level_id: Some(PriceLevelId::new(12).unwrap()),
+            public_id: None,
         };
-        let expected_customer_id: i32 = expected_customer.id.into();
+        let expected_customer_id = expected_customer.id;
+        let expected_customer_reader = expected_customer.clone();
+        let expected_customer_writer = expected_customer.clone();
 
         reader
             .expect_get_customer_by_phone()
@@ -786,25 +771,29 @@ mod tests {
             .withf(move |phone, query_hub_id| {
                 query_hub_id.get() == hub_id && phone.as_str() == "+1999555"
             })
-            .returning(move |_, _| Ok(Some(expected_customer.clone())));
+            .returning(move |_, _| Ok(Some(expected_customer_reader.clone())));
 
         writer
-            .expect_assign_price_level_to_customers()
+            .expect_update_customer()
             .times(1)
-            .withf(move |target_hub, ids, price_level_id| {
-                target_hub.get() == hub_id
-                    && ids.len() == 1
-                    && ids[0].get() == expected_customer_id
-                    && price_level_id.is_none()
+            .withf(move |customer_id, target_hub, updates| {
+                *customer_id == expected_customer_id
+                    && target_hub.get() == hub_id
+                    && updates.name.as_str() == "Client 55"
+                    && updates.price_level_id.is_none()
+                    && updates
+                        .public_id
+                        .as_ref()
+                        .is_some_and(|id| id.as_str() == expected_public_id)
             })
-            .returning(|_, _, _| Ok(()));
+            .returning(move |_, _, _| Ok(expected_customer_writer.clone()));
 
         let repo = CombinedCustomerRepo::new(reader, writer);
-        let payload = AssignClientPriceLevelPayload {
+        let payload = AssignClientPriceLevelForm {
             name: "Client 55".to_string(),
-            email: Some("client55@example.com".to_string()),
             phone: "+1999555".to_string(),
             price_level_id: None,
+            public_id: expected_public_id.to_string(),
         };
 
         assign_price_level_to_client(&repo, &user, payload).expect("expected success");
@@ -817,6 +806,7 @@ mod tests {
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let hub_id = user.hub_id;
         let expected_customer_id = 777;
+        let expected_public_id = "public-000";
 
         reader
             .expect_get_customer_by_phone()
@@ -828,40 +818,31 @@ mod tests {
             .times(1)
             .withf(move |new_customer| {
                 new_customer.hub_id.get() == hub_id
-                    && new_customer.email.as_ref().map(|email| email.as_str())
-                        == Some("missing@example.com")
                     && new_customer.name.as_str() == "Missing User"
                     && new_customer.phone.as_str() == "+1999000"
                     && new_customer.price_level_id == Some(PriceLevelId::new(1).unwrap())
+                    && new_customer
+                        .public_id
+                        .as_ref()
+                        .is_some_and(|id| id.as_str() == expected_public_id)
             })
             .returning(move |new_customer| {
                 Ok(Customer {
                     id: CustomerId::new(expected_customer_id).unwrap(),
                     hub_id: HubId::new(hub_id).unwrap(),
                     name: new_customer.name.clone(),
-                    email: new_customer.email.clone(),
                     phone: new_customer.phone.clone(),
                     price_level_id: new_customer.price_level_id,
+                    public_id: new_customer.public_id.clone(),
                 })
             });
 
-        writer
-            .expect_assign_price_level_to_customers()
-            .times(1)
-            .withf(move |target_hub, ids, price_level_id| {
-                target_hub.get() == hub_id
-                    && ids.len() == 1
-                    && ids[0].get() == expected_customer_id
-                    && price_level_id.map(|id| id.get()) == Some(1)
-            })
-            .return_once(|_, _, _| Ok(()));
-
         let repo = CombinedCustomerRepo::new(reader, writer);
-        let payload = AssignClientPriceLevelPayload {
+        let payload = AssignClientPriceLevelForm {
             name: "  Missing User  ".to_string(),
-            email: Some("Missing@Example.com".to_string()),
             phone: " +1999000 ".to_string(),
             price_level_id: Some(1),
+            public_id: expected_public_id.to_string(),
         };
 
         assign_price_level_to_client(&repo, &user, payload).expect("expected success");
@@ -871,11 +852,11 @@ mod tests {
     fn assign_price_level_to_client_propagates_form_errors() {
         let repo = CombinedCustomerRepo::new(MockCustomerReader::new(), MockCustomerWriter::new());
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-        let payload = AssignClientPriceLevelPayload {
+        let payload = AssignClientPriceLevelForm {
             name: "".to_string(),
-            email: Some("invalid-email".to_string()),
             phone: "".to_string(),
             price_level_id: Some(0),
+            public_id: "".to_string(),
         };
 
         let result = assign_price_level_to_client(&repo, &user, payload);
@@ -884,9 +865,9 @@ mod tests {
             Err(ServiceError::Form(message)) => {
                 assert!(message.contains("validation failed:"));
                 assert!(message.contains("price_level_id: Validation error: range"));
-                assert!(message.contains("email: Validation error: email"));
                 assert!(message.contains("phone: Validation error: length"));
                 assert!(message.contains("name: Validation error: length"));
+                assert!(message.contains("public_id: Validation error: length"));
             }
             other => panic!("expected form error, got {other:?}"),
         }

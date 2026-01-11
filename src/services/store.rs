@@ -139,10 +139,7 @@ where
     let message = ZmqClientMessage {
         hub_id: hub_id.get(),
         name: customer.name.as_str().to_string(),
-        email: customer
-            .email
-            .as_ref()
-            .map(|email| email.as_str().to_string()),
+        email: None,
         phone: Some(customer.phone.as_str().to_string()),
         fields: None,
     };
@@ -489,7 +486,7 @@ mod tests {
         product_price_level::ProductPriceLevelRate,
         store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
         tag::Tag,
-        types::{OtpCode, PhoneNumber, UserEmail},
+        types::{OtpCode, PhoneNumber},
     };
     use crate::dto::store::{StoreCategoryFilters, StoreProductFilters};
     use crate::forms::store::{
@@ -690,9 +687,9 @@ mod tests {
             id: CustomerId::new(10).unwrap(),
             hub_id: HubId::new(1).unwrap(),
             name: CustomerName::new("Customer").unwrap(),
-            email: None,
             phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
+            public_id: None,
         };
 
         repo.price_level_reader
@@ -774,9 +771,9 @@ mod tests {
             id: CustomerId::new(10).unwrap(),
             hub_id: HubId::new(1).unwrap(),
             name: CustomerName::new("Customer").unwrap(),
-            email: None,
             phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
+            public_id: None,
         };
 
         repo.price_level_reader
@@ -804,9 +801,9 @@ mod tests {
             id: CustomerId::new(10).unwrap(),
             hub_id: HubId::new(1).unwrap(),
             name: CustomerName::new("Customer").unwrap(),
-            email: None,
             phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
+            public_id: None,
         };
 
         repo.price_level_reader
@@ -842,9 +839,9 @@ mod tests {
             id: CustomerId::new(10).unwrap(),
             hub_id: HubId::new(1).unwrap(),
             name: CustomerName::new("Customer").unwrap(),
-            email: None,
             phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
+            public_id: None,
         };
 
         repo.price_level_reader
@@ -882,9 +879,9 @@ mod tests {
             id: CustomerId::new(10).unwrap(),
             hub_id: HubId::new(1).unwrap(),
             name: CustomerName::new("Customer").unwrap(),
-            email: None,
             phone: PhoneNumber::new("+111").unwrap(),
             price_level_id: None,
+            public_id: None,
         };
 
         let payload = vec![StoreOrderLinePayload {
@@ -1170,14 +1167,6 @@ mod tests {
             self.customer_reader.get_customer_by_id(id, hub_id)
         }
 
-        fn get_customer_by_email(
-            &self,
-            email: &UserEmail,
-            hub_id: HubId,
-        ) -> RepositoryResult<Option<Customer>> {
-            self.customer_reader.get_customer_by_email(email, hub_id)
-        }
-
         fn get_customer_by_phone(
             &self,
             phone: &PhoneNumber,
@@ -1214,6 +1203,16 @@ mod tests {
                 price_level_id,
             )
         }
+
+        fn update_customer(
+            &self,
+            customer_id: CustomerId,
+            hub_id: HubId,
+            updates: &crate::domain::customer::UpdateCustomer,
+        ) -> RepositoryResult<Customer> {
+            self.customer_writer
+                .update_customer(customer_id, hub_id, updates)
+        }
     }
 
     impl StoreOtpRepository for MockOtpRequestRepo {
@@ -1242,9 +1241,9 @@ mod tests {
             id: CustomerId::new(1).unwrap(),
             hub_id: HubId::new(99).unwrap(),
             name: CustomerName::new("Sample").unwrap(),
-            email: None,
             phone: PhoneNumber::new("+15551234").unwrap(),
             price_level_id: None,
+            public_id: None,
         }
     }
 
@@ -1506,9 +1505,9 @@ mod tests {
             id: CustomerId::new(1).unwrap(),
             hub_id: HubId::new(1).unwrap(),
             name: CustomerName::new("+15551234").unwrap(),
-            email: None,
             phone: PhoneNumber::new("+15551234").unwrap(),
             price_level_id: None,
+            public_id: None,
         };
 
         let mut repo = MockOtpRequestRepo::new();
@@ -1537,7 +1536,6 @@ mod tests {
                 new_customer.hub_id.get() == 1
                     && new_customer.phone.as_str() == "+15551234"
                     && new_customer.name.as_str() == "+15551234"
-                    && new_customer.email.is_none()
             })
             .return_once({
                 let created_customer = created_customer.clone();

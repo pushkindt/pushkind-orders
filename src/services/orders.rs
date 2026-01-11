@@ -166,7 +166,7 @@ mod tests {
 
     use crate::domain::types::{
         CurrencyCode, CustomerId, CustomerName, HubId, OrderId, OrderNotes, OrderReference,
-        PhoneNumber, PriceCents, ProductId, ProductName, ProductQuantity, UserEmail,
+        PhoneNumber, PriceCents, ProductId, ProductName, ProductQuantity,
     };
     use crate::domain::{
         customer::Customer,
@@ -209,14 +209,6 @@ mod tests {
             hub_id: HubId,
         ) -> RepositoryResult<Option<Customer>> {
             self.customers.get_customer_by_id(id, hub_id)
-        }
-
-        fn get_customer_by_email(
-            &self,
-            email: &UserEmail,
-            hub_id: HubId,
-        ) -> RepositoryResult<Option<Customer>> {
-            self.customers.get_customer_by_email(email, hub_id)
         }
 
         fn get_customer_by_phone(
@@ -316,9 +308,9 @@ mod tests {
             id: CustomerId::new(id).unwrap(),
             hub_id: HubId::new(hub_id).unwrap(),
             name: CustomerName::new("Sample Customer").unwrap(),
-            email: Some(UserEmail::new("customer@example.com").unwrap()),
             phone: PhoneNumber::new("+10000000000").unwrap(),
             price_level_id: None,
+            public_id: None,
         }
     }
 
