@@ -50,11 +50,14 @@
                         <dt class="col-5 text-muted">Клиент</dt>
                         <dd class="col-7 mb-2">
                             {% if customer %}
-                                <div class="fw-semibold">{{ customer.name }}</div>
+                                <div class="fw-semibold">
+                                    {% if customer.public_id %}
+                                        <a href="{{crm_service_url | safe}}?public_id={{ customer.public_id }}">{{ customer.name }}</a>
+                                    {% else %}
+                                        {{ customer.name }}
+                                    {% endif %}
+                                </div>
                                 <div class="text-muted small">{{ customer.phone }}</div>
-                                {% if customer.email %}
-                                    <div class="text-muted small">{{ customer.email }}</div>
-                                {% endif %}
                             {% elif order.customer_id %}
                                 <span class="text-muted">Клиент не найден</span>
                             {% else %}

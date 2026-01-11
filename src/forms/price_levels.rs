@@ -3,16 +3,12 @@ use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
 use crate::{
-    domain::price_level::{NewPriceLevel, UpdatePriceLevel},
-    domain::types::{HubId, PriceLevelName, TypeConstraintError, normalize_phone_to_e164},
+    domain::{
+        price_level::{NewPriceLevel, UpdatePriceLevel},
+        types::{CustomerName, HubId, PhoneNumber, PriceLevelId, PriceLevelName, PublicId},
+    },
     forms::sanitize_text,
 };
-
-/// Maximum length allowed for a price level name.
-const NAME_MAX_LEN: usize = 128;
-const NAME_MAX_LEN_VALIDATOR: u64 = NAME_MAX_LEN as u64;
-const PHONE_MAX_LEN: usize = 64;
-const PHONE_MAX_LEN_VALIDATOR: u64 = PHONE_MAX_LEN as u64;
 
 /// Result type returned by the price level form helpers.
 pub type PriceLevelFormResult<T> = Result<T, PriceLevelFormError>;
@@ -25,23 +21,26 @@ pub enum PriceLevelFormError {
     Validation(#[from] ValidationErrors),
     /// The provided name is empty after sanitization.
     #[error("price level name cannot be empty")]
-    EmptyName,
-    /// The provided email is empty after sanitization.
-    #[error("email is incorrect")]
-    IncorrectEmail,
-    /// The provided phone is missing.
-    #[error("phone number is required")]
-    MissingPhone,
+    InvalidPriceLevelName,
+    /// The provided public id is empty after sanitization.
+    #[error("public id is incorrect")]
+    IncorrectPublicId,
+    /// The provided customer name is empty after sanitization.
+    #[error("customer name cannot be empty")]
+    InvalidCustomerName,
     /// The provided phone fails validation.
     #[error("phone number is incorrect")]
     IncorrectPhone,
+    /// Incorrect price level id provided.
+    #[error("price level id must be a positive integer")]
+    InvalidPriceLevelId,
 }
 
 /// Form payload emitted when submitting the "Add price level" form.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddPriceLevelForm {
     /// Name entered by the user.
-    #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
+    #[validate(length(min = 1))]
     pub name: String,
     /// Is this a default price level?
     #[serde(default)]
@@ -50,64 +49,52 @@ pub struct AddPriceLevelForm {
 
 /// Payload emitted when assigning a price level to a client.
 #[derive(Debug, Deserialize, Validate)]
-pub struct AssignClientPriceLevelPayload {
+pub struct AssignClientPriceLevelForm {
     /// Customer name used when creating missing records.
-    #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
+    #[validate(length(min = 1))]
     pub name: String,
-    /// Customer email used as part of the composite key.
-    #[serde(default)]
-    #[validate(email)]
-    pub email: Option<String>,
     /// Customer phone used as part of the composite key.
-    #[validate(length(min = 1, max = PHONE_MAX_LEN_VALIDATOR))]
+    #[validate(length(min = 1))]
     pub phone: String,
+    /// Customer public id used as part of the composite key.
+    #[validate(length(min = 1))]
+    pub public_id: String,
     /// Selected price level identifier. `None` restores the default hub level.
     #[validate(range(min = 1))]
     #[serde(default)]
     pub price_level_id: Option<i32>,
 }
 
-impl AssignClientPriceLevelPayload {
-    /// Validates and normalizes the payload into an assignment request.
-    pub fn into_assignment_request(self) -> PriceLevelFormResult<AssignClientPriceLevelInput> {
-        self.validate()?;
-
-        let sanitized_name = match sanitize_text(&self.name) {
-            Some(name) => name,
-            None => return Err(PriceLevelFormError::EmptyName),
-        };
-
-        let normalized_email = self.email.as_ref().and_then(|value| {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_lowercase())
-            }
-        });
-
-        let normalized_phone = normalize_phone_to_e164(&self.phone).map_err(|err| match err {
-            TypeConstraintError::EmptyString => PriceLevelFormError::MissingPhone,
-            TypeConstraintError::InvalidPhone => PriceLevelFormError::IncorrectPhone,
-            _ => PriceLevelFormError::IncorrectPhone,
-        })?;
-
-        Ok(AssignClientPriceLevelInput {
-            name: sanitized_name,
-            email: normalized_email,
-            phone: normalized_phone,
-            price_level_id: self.price_level_id,
-        })
-    }
-}
-
 /// Normalized payload that can be passed to the service layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AssignClientPriceLevelInput {
-    pub name: String,
-    pub email: Option<String>,
-    pub phone: String,
-    pub price_level_id: Option<i32>,
+pub struct AssignClientPriceLevelPayload {
+    pub name: CustomerName,
+    pub public_id: PublicId,
+    pub phone: PhoneNumber,
+    pub price_level_id: Option<PriceLevelId>,
+}
+
+impl TryFrom<AssignClientPriceLevelForm> for AssignClientPriceLevelPayload {
+    type Error = PriceLevelFormError;
+
+    fn try_from(value: AssignClientPriceLevelForm) -> Result<Self, Self::Error> {
+        value.validate().map_err(PriceLevelFormError::Validation)?;
+
+        Ok(Self {
+            name: CustomerName::new(value.name)
+                .map_err(|_| PriceLevelFormError::InvalidCustomerName)?,
+            public_id: PublicId::new(value.public_id)
+                .map_err(|_| PriceLevelFormError::IncorrectPublicId)?,
+            phone: PhoneNumber::new(value.phone)
+                .map_err(|_| PriceLevelFormError::IncorrectPhone)?,
+            price_level_id: match value.price_level_id {
+                Some(id) => Some(
+                    PriceLevelId::new(id).map_err(|_| PriceLevelFormError::InvalidPriceLevelId)?,
+                ),
+                None => None,
+            },
+        })
+    }
 }
 
 impl AddPriceLevelForm {
@@ -118,8 +105,9 @@ impl AddPriceLevelForm {
         let hub_id = HubId::new(hub_id)
             .map_err(|_| PriceLevelFormError::Validation(ValidationErrors::new()))?;
 
-        let name = sanitize_text(&self.name).ok_or(PriceLevelFormError::EmptyName)?;
-        let name = PriceLevelName::new(name).map_err(|_| PriceLevelFormError::EmptyName)?;
+        let name = sanitize_text(&self.name).ok_or(PriceLevelFormError::InvalidPriceLevelName)?;
+        let name =
+            PriceLevelName::new(name).map_err(|_| PriceLevelFormError::InvalidPriceLevelName)?;
 
         Ok(NewPriceLevel::new(hub_id, name, self.default))
     }
@@ -129,7 +117,7 @@ impl AddPriceLevelForm {
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditPriceLevelForm {
     /// Updated name entered by the user.
-    #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
+    #[validate(length(min = 1))]
     pub name: String,
     /// Updated default flag for the price level.
     #[serde(default)]
@@ -141,8 +129,9 @@ impl EditPriceLevelForm {
     pub fn into_update_price_level(self) -> PriceLevelFormResult<UpdatePriceLevel> {
         self.validate()?;
 
-        let name = sanitize_text(&self.name).ok_or(PriceLevelFormError::EmptyName)?;
-        let name = PriceLevelName::new(name).map_err(|_| PriceLevelFormError::EmptyName)?;
+        let name = sanitize_text(&self.name).ok_or(PriceLevelFormError::InvalidPriceLevelName)?;
+        let name =
+            PriceLevelName::new(name).map_err(|_| PriceLevelFormError::InvalidPriceLevelName)?;
 
         Ok(UpdatePriceLevel::new(name, self.default))
     }
@@ -167,49 +156,48 @@ mod tests {
 
     #[test]
     fn assign_client_price_level_payload_validates_positive_ids() {
-        let payload = AssignClientPriceLevelPayload {
+        let payload = AssignClientPriceLevelForm {
             name: "   User Name  ".to_string(),
-            email: Some("USER@example.com".to_string()),
             phone: "  +1999  ".to_string(),
             price_level_id: Some(3),
+            public_id: "123123".to_string(),
         };
 
-        let assignment = payload
-            .into_assignment_request()
-            .expect("expected valid payload");
+        let assignment: AssignClientPriceLevelPayload =
+            payload.try_into().expect("expected valid payload");
 
-        assert_eq!(assignment.name, "User Name");
-        assert_eq!(assignment.email.as_deref(), Some("user@example.com"));
-        assert_eq!(assignment.phone, "+1999");
-        assert_eq!(assignment.price_level_id, Some(3));
+        assert_eq!(assignment.name.as_str(), "User Name");
+        assert_eq!(assignment.phone.as_str(), "+1999");
+        assert_eq!(assignment.price_level_id.map(|id| id.get()), Some(3));
+        assert_eq!(assignment.public_id.as_str(), "123123");
     }
 
     #[test]
     fn assign_client_price_level_payload_rejects_invalid_ids() {
-        let payload = AssignClientPriceLevelPayload {
+        let payload = AssignClientPriceLevelForm {
             name: "".to_string(),
-            email: Some("".to_string()),
             phone: "+1888".to_string(),
             price_level_id: Some(0),
+            public_id: "123123".to_string(),
         };
 
-        let result = payload.into_assignment_request();
+        let result: PriceLevelFormResult<AssignClientPriceLevelPayload> = payload.try_into();
 
         assert!(result.is_err(), "expected validation error");
     }
 
     #[test]
     fn assign_client_price_level_payload_requires_phone() {
-        let payload = AssignClientPriceLevelPayload {
+        let payload = AssignClientPriceLevelForm {
             name: "User".to_string(),
-            email: None,
             phone: "   ".to_string(),
             price_level_id: None,
+            public_id: "123123".to_string(),
         };
 
-        let result = payload.into_assignment_request();
+        let result: Result<AssignClientPriceLevelPayload, PriceLevelFormError> = payload.try_into();
 
-        assert!(matches!(result, Err(PriceLevelFormError::MissingPhone)));
+        assert!(matches!(result, Err(PriceLevelFormError::IncorrectPhone)));
     }
 
     #[test]
@@ -221,7 +209,10 @@ mod tests {
 
         let result = form.into_new_price_level(1);
 
-        assert!(matches!(result, Err(PriceLevelFormError::EmptyName)));
+        assert!(matches!(
+            result,
+            Err(PriceLevelFormError::InvalidPriceLevelName)
+        ));
     }
 
     #[test]
@@ -246,6 +237,9 @@ mod tests {
 
         let result = form.into_update_price_level();
 
-        assert!(matches!(result, Err(PriceLevelFormError::EmptyName)));
+        assert!(matches!(
+            result,
+            Err(PriceLevelFormError::InvalidPriceLevelName)
+        ));
     }
 }

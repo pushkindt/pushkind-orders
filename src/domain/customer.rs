@@ -4,7 +4,7 @@ use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::types::{
-    CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, TypeConstraintError, UserEmail,
+    CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, PublicId, TypeConstraintError,
 };
 
 /// Domain representation of a customer that belongs to a hub.
@@ -16,12 +16,12 @@ pub struct Customer {
     pub hub_id: HubId,
     /// Human-friendly display name of the customer.
     pub name: CustomerName,
-    /// Primary email address expected to be supplied in lowercase for comparisons.
-    pub email: Option<UserEmail>,
     /// Contact phone number associated with the customer in E.164 format.
     pub phone: PhoneNumber,
     /// Optional price level assigned to the customer; falls back to the hub default when absent.
     pub price_level_id: Option<PriceLevelId>,
+    /// Public identifier of the customer.
+    pub public_id: Option<PublicId>,
 }
 
 /// Payload required to insert a new customer for a hub.
@@ -31,12 +31,21 @@ pub struct NewCustomer {
     pub hub_id: HubId,
     /// Human-friendly display name of the customer.
     pub name: CustomerName,
-    /// Primary email address expected to be supplied in lowercase for comparisons.
-    pub email: Option<UserEmail>,
     /// Contact phone number associated with the customer.
     pub phone: PhoneNumber,
     /// Optional price level assigned to the customer.
     pub price_level_id: Option<PriceLevelId>,
+    /// Public identifier of the customer.
+    pub public_id: Option<PublicId>,
+}
+
+pub struct UpdateCustomer {
+    /// Human-friendly display name of the customer.
+    pub name: CustomerName,
+    /// Optional price level assigned to the customer.
+    pub price_level_id: Option<PriceLevelId>,
+    /// Public identifier of the customer.
+    pub public_id: Option<PublicId>,
 }
 
 impl NewCustomer {
@@ -46,9 +55,9 @@ impl NewCustomer {
         Self {
             hub_id,
             name,
-            email: None,
             phone,
             price_level_id: None,
+            public_id: None,
         }
     }
 
@@ -65,14 +74,7 @@ impl NewCustomer {
         ))
     }
 
-    /// Attach an email address to the customer payload.
-    pub fn with_email(mut self, email: impl Into<String>) -> Result<Self, TypeConstraintError> {
-        self.email = Some(UserEmail::new(email)?);
-        Ok(self)
-    }
-
     /// Attach a price level identifier to the customer payload.
-    #[must_use]
     pub fn with_price_level_id(mut self, price_level_id: PriceLevelId) -> Self {
         self.price_level_id = Some(price_level_id);
         self
@@ -84,6 +86,21 @@ impl NewCustomer {
         price_level_id: i32,
     ) -> Result<Self, TypeConstraintError> {
         self.price_level_id = Some(PriceLevelId::new(price_level_id)?);
+        Ok(self)
+    }
+
+    /// Attach a public identifier to the customer payload.
+    pub fn with_public_id(mut self, public_id: PublicId) -> Self {
+        self.public_id = Some(public_id);
+        self
+    }
+
+    /// Attach a public identifier from a raw string.
+    pub fn try_with_public_id(
+        mut self,
+        public_id: impl Into<String>,
+    ) -> Result<Self, TypeConstraintError> {
+        self.public_id = Some(PublicId::new(public_id.into())?);
         Ok(self)
     }
 }
@@ -113,7 +130,7 @@ impl CustomerListQuery {
         Ok(Self::new(HubId::new(hub_id)?))
     }
 
-    /// Filter the results by a case-insensitive search on name or email fields.
+    /// Filter the results by a case-insensitive search on name or phone fields.
     pub fn search(mut self, term: impl Into<String>) -> Self {
         self.search = Some(term.into());
         self

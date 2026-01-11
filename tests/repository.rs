@@ -124,15 +124,9 @@ fn test_customer_repository_crud() {
         .create_price_level(&NewPriceLevel::try_new(1, "VIP", false).unwrap())
         .expect("failed to create price level");
 
-    let alice_new = NewCustomer::try_new(1, "Alice", "+15551234")
-        .and_then(|customer| customer.with_email("alice@example.com"))
-        .expect("valid alice");
-    let bob_new = NewCustomer::try_new(1, "Bob", "+15550000")
-        .and_then(|customer| customer.with_email("bob@example.com"))
-        .expect("valid bob");
-    let carla_new = NewCustomer::try_new(2, "Carla", "+18880000")
-        .and_then(|customer| customer.with_email("carla@example.com"))
-        .expect("valid carla");
+    let alice_new = NewCustomer::try_new(1, "Alice", "+15551234").expect("valid alice");
+    let bob_new = NewCustomer::try_new(1, "Bob", "+15550000").expect("valid bob");
+    let carla_new = NewCustomer::try_new(2, "Carla", "+18880000").expect("valid carla");
 
     let alice = repo
         .create_customer(&alice_new)
@@ -144,10 +138,6 @@ fn test_customer_repository_crud() {
         .create_customer(&carla_new)
         .expect("failed to create Carla");
 
-    assert_eq!(
-        alice.email.as_ref().map(|email| email.as_str()),
-        Some("alice@example.com")
-    );
     assert_eq!(alice.phone.as_str(), "+15551234");
     assert_eq!(bob.price_level_id, None);
     assert_eq!(carla.hub_id.get(), 2);
@@ -165,15 +155,6 @@ fn test_customer_repository_crud() {
             .expect("failed to fetch scoped customer")
             .is_none()
     );
-
-    let fetched_by_email = repo
-        .get_customer_by_email(
-            &UserEmail::new("ALICE@example.com").expect("valid email"),
-            hub_id,
-        )
-        .expect("failed to fetch by email")
-        .expect("expected Alice via email");
-    assert_eq!(fetched_by_email.id, alice.id);
 
     let fetched_by_phone = repo
         .get_customer_by_phone(&PhoneNumber::new("+15551234").expect("valid phone"), hub_id)

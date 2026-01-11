@@ -5,6 +5,7 @@
 //! still want convenient conversions.
 
 use crate::domain::types::TypeConstraintError;
+use crate::forms::price_levels::PriceLevelFormError;
 use pushkind_common::repository::errors::RepositoryError;
 use pushkind_common::services::errors::ServiceError;
 
@@ -17,5 +18,11 @@ impl From<TypeConstraintError> for ServiceError {
 impl From<TypeConstraintError> for RepositoryError {
     fn from(val: TypeConstraintError) -> Self {
         RepositoryError::ValidationError(val.to_string())
+    }
+}
+
+impl From<PriceLevelFormError> for ServiceError {
+    fn from(val: PriceLevelFormError) -> Self {
+        ServiceError::Form(val.to_string())
     }
 }

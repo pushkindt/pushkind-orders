@@ -20,8 +20,6 @@ pub struct PriceLevelsPageData {
 /// Saved price level assignment for a specific customer.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct ClientPriceLevelAssignment {
-    /// Normalized email address used to identify the customer.
-    pub email: Option<String>,
     /// Phone number stored for the customer.
     pub phone: String,
     /// Selected price level identifier, if any.
@@ -31,7 +29,6 @@ pub struct ClientPriceLevelAssignment {
 impl From<Customer> for ClientPriceLevelAssignment {
     fn from(customer: Customer) -> Self {
         Self {
-            email: customer.email.map(|email| email.into_inner()),
             phone: customer.phone.as_str().to_string(),
             price_level_id: customer.price_level_id.map(|id| id.get()),
         }

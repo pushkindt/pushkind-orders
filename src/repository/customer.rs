@@ -4,10 +4,13 @@ use diesel::dsl::{exists, select};
 use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
+use crate::domain::customer::UpdateCustomer;
 use crate::{
     domain::customer::{Customer as DomainCustomer, NewCustomer as DomainNewCustomer},
-    domain::types::{CustomerId, HubId, PhoneNumber, PriceLevelId, UserEmail},
-    models::customer::{Customer as DbCustomer, NewCustomer as DbNewCustomer},
+    domain::types::{CustomerId, HubId, PhoneNumber, PriceLevelId},
+    models::customer::{
+        Customer as DbCustomer, NewCustomer as DbNewCustomer, UpdateCustomer as DbUpdateCustomer,
+    },
     repository::{CustomerListQuery, CustomerReader, CustomerWriter, DieselRepository},
 };
 
@@ -22,23 +25,6 @@ impl CustomerReader for DieselRepository {
         let mut conn = self.conn()?;
         let customer = customers::table
             .filter(customers::id.eq(id.get()))
-            .filter(customers::hub_id.eq(hub_id.get()))
-            .first::<DbCustomer>(&mut conn)
-            .optional()?;
-
-        Ok(customer.map(DomainCustomer::try_from).transpose()?)
-    }
-
-    fn get_customer_by_email(
-        &self,
-        email: &UserEmail,
-        hub_id: HubId,
-    ) -> RepositoryResult<Option<DomainCustomer>> {
-        use crate::schema::customers;
-
-        let mut conn = self.conn()?;
-        let customer = customers::table
-            .filter(customers::email.eq(email.as_str()))
             .filter(customers::hub_id.eq(hub_id.get()))
             .first::<DbCustomer>(&mut conn)
             .optional()?;
@@ -81,7 +67,7 @@ impl CustomerReader for DieselRepository {
                 items = items.filter(
                     customers::name
                         .like(pattern.clone())
-                        .or(customers::email.like(pattern)),
+                        .or(customers::phone.like(pattern)),
                 );
             }
 
@@ -173,6 +159,33 @@ impl CustomerWriter for DieselRepository {
         }
 
         Ok(())
+    }
+
+    fn update_customer(
+        &self,
+        customer_id: CustomerId,
+        hub_id: HubId,
+        updates: &UpdateCustomer,
+    ) -> RepositoryResult<DomainCustomer> {
+        use crate::schema::customers;
+
+        let mut conn = self.conn()?;
+
+        if let Some(level_id) = updates.price_level_id {
+            ensure_price_level_with_hub(&mut conn, hub_id.get(), level_id.get())?;
+        }
+
+        let target = customers::table
+            .filter(customers::id.eq(customer_id.get()))
+            .filter(customers::hub_id.eq(hub_id.get()));
+
+        let updates = DbUpdateCustomer::from(updates);
+
+        let updated = diesel::update(target)
+            .set(updates)
+            .get_result::<DbCustomer>(&mut conn)?;
+
+        Ok(DomainCustomer::try_from(updated)?)
     }
 }
 

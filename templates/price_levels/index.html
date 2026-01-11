@@ -39,7 +39,7 @@
             <h2 class="h5 my-3">Клиенты</h2>
             <div class="mb-3">
                 <input id="clientsFilterInput" class="form-control" type="text"
-                       placeholder="Фильтр по имени, email или телефону">
+                       placeholder="Фильтр по имени или телефону">
             </div>
             <div id="clientsStatusMessage" class="alert alert-info" role="status">
                 Загрузка списка клиентов...
@@ -49,7 +49,6 @@
                     <thead>
                         <tr>
                             <th scope="col">Название</th>
-                            <th scope="col">Email</th>
                             <th scope="col">Телефон</th>
                             <th scope="col">Уровень</th>
                         </tr>
@@ -90,10 +89,6 @@
 
             function hideStatus() {
                 statusMessage.hidden = true;
-            }
-
-            function normalizeEmail(value) {
-                return typeof value === 'string' ? value.trim().toLowerCase() : '';
             }
 
             function normalizePhone(value) {
@@ -145,7 +140,8 @@
                 const contactValid = Number.isInteger(contact.hubId)
                     && contact.name.length > 0
                     && typeof contact.phone === 'string'
-                    && contact.phone.length > 0;
+                    && contact.phone.length > 0
+                    && typeof contact.public_id === 'string';
 
                 if (!contactValid) {
                     select.disabled = true;
@@ -200,9 +196,9 @@
                         body: JSON.stringify({
                             hub_id: contact.hubId,
                             name: contact.name,
-                            email: contact.email ?? null,
                             phone: contact.phone,
                             price_level_id: parsedValue,
+                            public_id: contact.public_id,
                         }),
                     })
                         .then(response => {
@@ -231,7 +227,6 @@
                         .catch(error => {
                             console.error(
                                 'Не удалось сохранить уровень клиента:',
-                                contact.email ?? '<нет email>',
                                 contact.phone ?? '<нет телефона>',
                                 error,
                             );
@@ -324,11 +319,6 @@
                         }
                         row.appendChild(nameCell);
 
-                        const normalizedEmail = normalizeEmail(client.email);
-                        const emailCell = document.createElement('td');
-                        emailCell.textContent = normalizedEmail === '' ? '—' : normalizedEmail;
-                        row.appendChild(emailCell);
-
                         const phoneCell = document.createElement('td');
                         const normalizedPhone = normalizePhone(client.phone);
                         phoneCell.textContent = normalizedPhone === '' ? '—' : normalizedPhone;
@@ -341,8 +331,8 @@
                         const contact = {
                             hubId,
                             name: normalizeName(client.name),
-                            email: normalizedEmail === '' ? null : normalizedEmail,
                             phone: normalizedPhone,
+                            public_id: client.public_id ?? null,
                         };
                         const select = createPriceLevelSelect(contact, savedId, defaultAssignmentId);
                         hubCell.appendChild(select);

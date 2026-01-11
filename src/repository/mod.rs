@@ -5,7 +5,7 @@ use pushkind_common::db::{DbConnection, DbPool};
 use pushkind_common::pagination::Pagination;
 use pushkind_common::repository::errors::RepositoryResult;
 
-use crate::domain::customer::CustomerListQuery;
+use crate::domain::customer::{CustomerListQuery, UpdateCustomer};
 use crate::domain::types::PriceCents;
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
@@ -43,12 +43,6 @@ pub trait CustomerReader {
         id: CustomerId,
         hub_id: HubId,
     ) -> RepositoryResult<Option<Customer>>;
-    /// Retrieve a customer by email within a hub.
-    fn get_customer_by_email(
-        &self,
-        email: &UserEmail,
-        hub_id: HubId,
-    ) -> RepositoryResult<Option<Customer>>;
     /// Retrieve a customer by phone number within a hub.
     fn get_customer_by_phone(
         &self,
@@ -70,6 +64,13 @@ pub trait CustomerWriter {
         customer_ids: &[CustomerId],
         price_level_id: Option<PriceLevelId>,
     ) -> RepositoryResult<()>;
+    /// Update an existing customer record.
+    fn update_customer(
+        &self,
+        customer_id: CustomerId,
+        hub_id: HubId,
+        updates: &UpdateCustomer,
+    ) -> RepositoryResult<Customer>;
 }
 
 /// Persistence operations for storefront OTP records.

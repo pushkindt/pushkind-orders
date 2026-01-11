@@ -23,7 +23,7 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         phone -> Text,
-        email -> Nullable<Text>,
+        public_id -> Nullable<Text>,
     }
 }
 

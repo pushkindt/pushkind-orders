@@ -705,6 +705,11 @@ non_empty_string_newtype!(OrderConsignee, "Order consignee wrapper.");
 non_empty_string_newtype!(OrderDeliveryNotes, "Order delivery notes wrapper.");
 non_empty_string_newtype!(OrderPayer, "Order payer wrapper.");
 
+non_empty_string_newtype!(
+    PublicId,
+    "Customer public identifier wrapper enforcing non-empty values."
+);
+
 macro_rules! html_string_newtype {
     ($name:ident, $doc:expr) => {
         #[doc = $doc]

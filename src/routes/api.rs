@@ -2,7 +2,7 @@ use actix_web::{HttpResponse, Responder, get, put, web};
 use pushkind_common::domain::auth::AuthenticatedUser;
 
 use crate::dto::main::IndexQuery;
-use crate::forms::price_levels::AssignClientPriceLevelPayload;
+use crate::forms::price_levels::AssignClientPriceLevelForm;
 use crate::repository::DieselRepository;
 use crate::services::price_levels::{
     assign_price_level_to_client, load_client_price_level_assignments,
@@ -54,10 +54,9 @@ pub async fn api_v1_client_price_levels(
 pub async fn api_v1_update_client_price_level(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
-    payload: web::Json<AssignClientPriceLevelPayload>,
+    payload: web::Json<AssignClientPriceLevelForm>,
 ) -> impl Responder {
     let payload = payload.into_inner();
-    let log_email = payload.email.clone();
     let log_phone = payload.phone.clone();
 
     match assign_price_level_to_client(repo.get_ref(), &user, payload) {
@@ -68,8 +67,7 @@ pub async fn api_v1_update_client_price_level(
             HttpResponse::UnprocessableEntity().json(json!({"error": message}))
         }
         Err(err) => {
-            let email_ref = log_email.as_deref().unwrap_or("<none>");
-            log::error!("Failed to assign price level to client {email_ref} / {log_phone}: {err}");
+            log::error!("Failed to assign price level to client {log_phone}: {err}");
             HttpResponse::InternalServerError().finish()
         }
     }
