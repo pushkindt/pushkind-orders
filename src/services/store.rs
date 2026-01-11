@@ -2360,6 +2360,7 @@ mod tests {
             category_id: Some(3),
             search: Some(" coffee ".to_string()),
             page: Some(2),
+            tag_id: None,
         };
 
         let result = load_store_products(&repo, 1, filters, None).expect("load products");

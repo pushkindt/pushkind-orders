@@ -26,6 +26,7 @@ struct HubPath {
 #[serde(rename_all = "camelCase")]
 struct StoreProductsQuery {
     category_id: Option<i32>,
+    tag_id: Option<i32>,
     search: Option<String>,
     page: Option<usize>,
 }
@@ -36,6 +37,7 @@ impl From<StoreProductsQuery> for StoreProductFilters {
             category_id: value.category_id,
             search: value.search,
             page: value.page,
+            tag_id: value.tag_id,
         }
     }
 }

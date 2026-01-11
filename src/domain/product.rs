@@ -9,7 +9,7 @@ use crate::domain::{
     tag::Tag,
     types::{
         CategoryId, CurrencyCode, HubId, ImageUrl, ProductAmount, ProductDescription, ProductId,
-        ProductName, ProductSku, ProductUnits, TypeConstraintError,
+        ProductName, ProductSku, ProductUnits, TagId, TypeConstraintError,
     },
 };
 
@@ -219,6 +219,8 @@ pub struct ProductListQuery {
     pub hub_id: HubId,
     /// Optional identifier of the category the products belong to.
     pub category_id: Option<CategoryId>,
+    /// Optional tag identifier to filter products by.
+    pub tag_id: Option<TagId>,
     /// Whether only products without an assigned category should be included.
     pub only_without_category: bool,
     /// Optional name or description search term.
@@ -242,6 +244,7 @@ impl ProductListQuery {
             sku: None,
             include_archived: false,
             pagination: None,
+            tag_id: None,
         }
     }
 
@@ -264,6 +267,13 @@ impl ProductListQuery {
         self
     }
 
+    /// Filter the results by tag.
+    pub fn with_tag_id(mut self, tag_id: TagId) -> Self {
+        self.tag_id = Some(tag_id);
+        self.only_without_category = false;
+        self
+    }
+
     /// Restrict the results to products that do not have a category.
     pub fn only_without_category(mut self) -> Self {
         self.category_id = None;
@@ -274,6 +284,7 @@ impl ProductListQuery {
     /// Filter the results by an exact SKU match.
     pub fn sku(mut self, sku: ProductSku) -> Self {
         self.sku = Some(sku);
+        self.only_without_category = false;
         self
     }
 
