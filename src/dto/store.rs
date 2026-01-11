@@ -10,7 +10,7 @@ use crate::domain::{
     product::{Product, ProductListQuery},
     product_price_level::ProductPriceLevelRate,
     tag::Tag,
-    types::{CategoryId, HubId},
+    types::{CategoryId, HubId, TagId},
 };
 
 /// Minimal representation of a category exposed to the storefront.
@@ -208,6 +208,8 @@ impl From<Product> for StoreProduct {
 pub struct StoreProductFilters {
     /// Only include products belonging to this category.
     pub category_id: Option<i32>,
+    /// Only include products tagged with this tag.
+    pub tag_id: Option<i32>,
     /// Filter products by a search term applied to the name and description.
     pub search: Option<String>,
     /// Fetch a specific page of products.
@@ -221,6 +223,11 @@ impl StoreProductFilters {
         query = match self.category_id.and_then(|id| CategoryId::new(id).ok()) {
             Some(category_id) => query.with_category_id(category_id),
             None => query.only_without_category(),
+        };
+
+        query = match self.tag_id.and_then(|id| TagId::new(id).ok()) {
+            Some(tag_id) => query.with_tag_id(tag_id),
+            None => query,
         };
 
         if let Some(search) = self
