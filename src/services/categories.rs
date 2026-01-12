@@ -18,11 +18,9 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
 
-    let (_, mut flat) = repo
-        .list_categories(CategoryTreeQuery::new(hub_id).include_archived())
-        .map_err(ServiceError::from)?;
+    let (_, mut flat) = repo.list_categories(CategoryTreeQuery::new(hub_id).include_archived())?;
 
     if flat.is_empty() {
         return Ok(CategoryTreeData { tree: Vec::new() });
@@ -45,13 +43,10 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let category_id = CategoryId::new(category_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let category_id = CategoryId::new(category_id)?;
 
-    match repo
-        .get_category_by_id(category_id, hub_id)
-        .map_err(ServiceError::from)?
-    {
+    match repo.get_category_by_id(category_id, hub_id)? {
         Some(category) => Ok(category),
         None => Err(ServiceError::NotFound),
     }
@@ -68,12 +63,9 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let new_category = form
-        .into_new_category(user.hub_id)
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let new_category = form.into_new_category(user.hub_id)?;
 
-    repo.create_category(&new_category)
-        .map_err(ServiceError::from)
+    Ok(repo.create_category(&new_category)?)
 }
 
 /// Updates an existing category for the authenticated user's hub.
@@ -88,15 +80,12 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let update = form
-        .into_update_category()
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let update = form.into_update_category()?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let category_id = CategoryId::new(category_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let category_id = CategoryId::new(category_id)?;
 
-    repo.update_category(category_id, hub_id, &update)
-        .map_err(ServiceError::from)
+    Ok(repo.update_category(category_id, hub_id, &update)?)
 }
 
 /// Deletes a category for the authenticated user's hub.
@@ -106,11 +95,10 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let category_id = CategoryId::new(category_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let category_id = CategoryId::new(category_id)?;
 
-    repo.delete_category(category_id, hub_id)
-        .map_err(ServiceError::from)
+    Ok(repo.delete_category(category_id, hub_id)?)
 }
 
 /// Builds a hierarchical tree structure from a flat list of categories.
@@ -156,13 +144,13 @@ pub fn create_category_chain<R>(path: &str, hub_id: i32, repo: &R) -> ServiceRes
 where
     R: CategoryReader + CategoryWriter + ?Sized,
 {
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(hub_id)?;
     path.split('/')
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .try_fold(None, |parent: Option<Category>, name| {
             let parent_id = parent.as_ref().map(|c| c.id);
-            let name = CategoryName::new(name).map_err(|_| ServiceError::Internal)?;
+            let name = CategoryName::new(name)?;
 
             if let Some(cat) = repo.get_category_by_name_and_parent(&name, parent_id, hub_id)? {
                 Ok::<Option<Category>, ServiceError>(Some(cat))

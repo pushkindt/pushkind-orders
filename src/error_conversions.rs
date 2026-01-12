@@ -4,10 +4,16 @@
 //! downstream crates using `pushkind-emailer` with only the `data` feature may
 //! still want convenient conversions.
 
-use crate::domain::types::TypeConstraintError;
-use crate::forms::price_levels::PriceLevelFormError;
 use pushkind_common::repository::errors::RepositoryError;
 use pushkind_common::services::errors::ServiceError;
+
+use crate::domain::types::TypeConstraintError;
+use crate::forms::categories::CategoryFormError;
+use crate::forms::orders::EditOrderFormError;
+use crate::forms::price_levels::PriceLevelFormError;
+use crate::forms::products::ProductFormError;
+use crate::forms::store::{StoreFormError, StoreOrderUpdateError};
+use crate::forms::tags::TagFormError;
 
 impl From<TypeConstraintError> for ServiceError {
     fn from(val: TypeConstraintError) -> Self {
@@ -23,6 +29,42 @@ impl From<TypeConstraintError> for RepositoryError {
 
 impl From<PriceLevelFormError> for ServiceError {
     fn from(val: PriceLevelFormError) -> Self {
+        ServiceError::Form(val.to_string())
+    }
+}
+
+impl From<CategoryFormError> for ServiceError {
+    fn from(val: CategoryFormError) -> Self {
+        ServiceError::Form(val.to_string())
+    }
+}
+
+impl From<EditOrderFormError> for ServiceError {
+    fn from(val: EditOrderFormError) -> Self {
+        ServiceError::Form(val.to_string())
+    }
+}
+
+impl From<ProductFormError> for ServiceError {
+    fn from(val: ProductFormError) -> Self {
+        ServiceError::Form(val.to_string())
+    }
+}
+
+impl From<StoreFormError> for ServiceError {
+    fn from(val: StoreFormError) -> Self {
+        ServiceError::Form(val.to_string())
+    }
+}
+
+impl From<StoreOrderUpdateError> for ServiceError {
+    fn from(val: StoreOrderUpdateError) -> Self {
+        ServiceError::Form(val.to_string())
+    }
+}
+
+impl From<TagFormError> for ServiceError {
+    fn from(val: TagFormError) -> Self {
         ServiceError::Form(val.to_string())
     }
 }

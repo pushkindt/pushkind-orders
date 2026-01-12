@@ -41,7 +41,7 @@ where
     } = query;
 
     let page = page.unwrap_or(1);
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
     let mut list_query = ProductListQuery::new(hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
 
     if let Some(search_term) = search.as_ref() {
@@ -52,14 +52,10 @@ where
         list_query = list_query.include_archived();
     }
 
-    let (total, items) = repo.list_products(list_query).map_err(ServiceError::from)?;
-    let (_, price_levels) = repo
-        .list_price_levels(PriceLevelListQuery::new(hub_id))
-        .map_err(ServiceError::from)?;
+    let (total, items) = repo.list_products(list_query)?;
+    let (_, price_levels) = repo.list_price_levels(PriceLevelListQuery::new(hub_id))?;
 
-    let (_, mut categories) = repo
-        .list_categories(CategoryTreeQuery::new(hub_id))
-        .map_err(ServiceError::from)?;
+    let (_, mut categories) = repo.list_categories(CategoryTreeQuery::new(hub_id))?;
     let category_lookup: HashMap<i32, String> = categories
         .iter()
         .map(|category| (category.id.get(), category.name.as_str().to_string()))
@@ -67,8 +63,8 @@ where
     categories.retain(|category| !category.is_archived);
     categories.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
-    let tag_query = TagListQuery::try_new(hub_id.get()).map_err(|_| ServiceError::Internal)?;
-    let (_, mut tags) = repo.list_tags(tag_query).map_err(ServiceError::from)?;
+    let tag_query = TagListQuery::try_new(hub_id.get())?;
+    let (_, mut tags) = repo.list_tags(tag_query)?;
     tags.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
     let level_lookup: HashMap<i32, &PriceLevel> = price_levels
@@ -107,9 +103,7 @@ where
 
     let price_levels = fetch_all_price_levels(repo, user.hub_id)?;
 
-    let payload = form
-        .into_new_product_with_prices(user.hub_id, &price_levels)
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let payload = form.into_new_product_with_prices(user.hub_id, &price_levels)?;
 
     persist_new_product(repo, user.hub_id, payload)
 }
@@ -127,9 +121,7 @@ where
 
     let price_levels = fetch_all_price_levels(repo, user.hub_id)?;
 
-    let uploads = form
-        .into_new_products(user.hub_id, &price_levels)
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let uploads = form.into_new_products(user.hub_id, &price_levels)?;
 
     let mut created = 0usize;
     for upload in uploads {
@@ -152,8 +144,8 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let product_id = ProductId::new(product_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let product_id = ProductId::new(product_id)?;
     let product = repo.get_product_by_id(product_id, hub_id)?;
 
     if product.is_none() {
@@ -164,9 +156,7 @@ where
 
     let available_price_levels = fetch_all_price_levels(repo, user.hub_id)?;
 
-    let payload = form
-        .into_update_product_with_prices(&available_price_levels)
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let payload = form.into_update_product_with_prices(&available_price_levels)?;
 
     let EditProductUpdate {
         product: updates,
@@ -188,20 +178,16 @@ where
 
     let tag_ids = tag_ids
         .into_iter()
-        .map(|id| TagId::new(id).map_err(|_| ServiceError::Internal))
+        .map(TagId::new)
         .collect::<Result<Vec<_>, _>>()?;
 
-    repo.replace_product_price_levels(product_id, hub_id, &price_level_rates)
-        .map_err(ServiceError::from)?;
+    repo.replace_product_price_levels(product_id, hub_id, &price_level_rates)?;
 
-    repo.replace_product_tags(product_id, hub_id, &tag_ids)
-        .map_err(ServiceError::from)?;
+    repo.replace_product_tags(product_id, hub_id, &tag_ids)?;
 
-    repo.replace_product_images(product_id, hub_id, &image_urls)
-        .map_err(ServiceError::from)?;
+    repo.replace_product_images(product_id, hub_id, &image_urls)?;
 
-    repo.update_product(product_id, hub_id, &updates)
-        .map_err(ServiceError::from)
+    Ok(repo.update_product(product_id, hub_id, &updates)?)
 }
 
 /// Fetches all price levels for a hub.
@@ -209,8 +195,8 @@ fn fetch_all_price_levels<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<PriceLe
 where
     R: PriceLevelReader + ?Sized,
 {
-    let query = PriceLevelListQuery::new(HubId::new(hub_id).map_err(|_| ServiceError::Internal)?);
-    let (_, price_levels) = repo.list_price_levels(query).map_err(ServiceError::from)?;
+    let query = PriceLevelListQuery::new(HubId::new(hub_id)?);
+    let (_, price_levels) = repo.list_price_levels(query)?;
     Ok(price_levels)
 }
 
@@ -223,7 +209,7 @@ fn persist_new_product<R>(
 where
     R: ProductWriter + CategoryReader + CategoryWriter + ?Sized,
 {
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(hub_id)?;
     let NewProductUpload {
         mut product,
         price_levels,
@@ -237,7 +223,7 @@ where
         product.category_id = Some(category.id);
     }
 
-    let mut created = repo.create_product(&product).map_err(ServiceError::from)?;
+    let mut created = repo.create_product(&product)?;
 
     if let Err(err) = repo.replace_product_images(created.id, hub_id, &image_urls) {
         log::error!("Failed to attach images to product {}: {err}", created.id);
@@ -256,7 +242,7 @@ where
 
     let tag_ids = tag_ids
         .into_iter()
-        .map(|id| TagId::new(id).map_err(|_| ServiceError::Internal))
+        .map(TagId::new)
         .collect::<Result<Vec<_>, _>>()?;
 
     if !tag_ids.is_empty()

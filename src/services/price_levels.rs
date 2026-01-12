@@ -34,20 +34,16 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
     let mut list_query = PriceLevelListQuery::new(hub_id);
 
     if let Some(value) = query.search.as_ref() {
         list_query = list_query.search(value);
     }
 
-    let (_total, price_levels) = repo
-        .list_price_levels(list_query)
-        .map_err(ServiceError::from)?;
+    let (_total, price_levels) = repo.list_price_levels(list_query)?;
 
-    let (_, mut categories) = repo
-        .list_categories(CategoryTreeQuery::new(hub_id))
-        .map_err(ServiceError::from)?;
+    let (_, mut categories) = repo.list_categories(CategoryTreeQuery::new(hub_id))?;
     categories.retain(|category| !category.is_archived);
     categories.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
@@ -69,13 +65,10 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let price_level_id = PriceLevelId::new(price_level_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let price_level_id = PriceLevelId::new(price_level_id)?;
 
-    match repo
-        .get_price_level_by_id(price_level_id, hub_id)
-        .map_err(ServiceError::from)?
-    {
+    match repo.get_price_level_by_id(price_level_id, hub_id)? {
         Some(price_level) => Ok(price_level),
         None => Err(ServiceError::NotFound),
     }
@@ -91,20 +84,16 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
 
-    let (_, price_levels) = repo
-        .list_price_levels(PriceLevelListQuery::new(hub_id))
-        .map_err(ServiceError::from)?;
+    let (_, price_levels) = repo.list_price_levels(PriceLevelListQuery::new(hub_id))?;
 
     let default_price_level_id = price_levels
         .iter()
         .find(|level| level.is_default)
         .map(|level| level.id.get());
 
-    let (_, customers) = repo
-        .list_customers(CustomerListQuery::new(hub_id))
-        .map_err(ServiceError::from)?;
+    let (_, customers) = repo.list_customers(CustomerListQuery::new(hub_id))?;
 
     let assignments = customers
         .into_iter()
@@ -211,15 +200,12 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let updates = form
-        .into_update_price_level()
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let updates = form.into_update_price_level()?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let price_level_id = PriceLevelId::new(price_level_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let price_level_id = PriceLevelId::new(price_level_id)?;
 
-    repo.update_price_level(price_level_id, hub_id, &updates)
-        .map_err(ServiceError::from)
+    Ok(repo.update_price_level(price_level_id, hub_id, &updates)?)
 }
 
 /// Deletes a price level for the authenticated user's hub.
@@ -233,11 +219,10 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let price_level_id = PriceLevelId::new(price_level_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let price_level_id = PriceLevelId::new(price_level_id)?;
 
-    repo.delete_price_level(price_level_id, hub_id)
-        .map_err(ServiceError::from)
+    Ok(repo.delete_price_level(price_level_id, hub_id)?)
 }
 
 /// Persists a price level assignment for a single customer.

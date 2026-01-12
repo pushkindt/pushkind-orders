@@ -23,19 +23,15 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let order_id = OrderId::new(order_id)?;
+    let hub_id = HubId::new(user.hub_id)?;
 
-    let order = repo
-        .get_order_by_id(order_id, hub_id)
-        .map_err(ServiceError::from)?;
+    let order = repo.get_order_by_id(order_id, hub_id)?;
 
     let order = order.ok_or(ServiceError::NotFound)?;
 
     let customer = match order.customer_id {
-        Some(customer_id) => repo
-            .get_customer_by_id(customer_id, hub_id)
-            .map_err(ServiceError::from)?,
+        Some(customer_id) => repo.get_customer_by_id(customer_id, hub_id)?,
         None => None,
     };
 
@@ -54,15 +50,12 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let order_id = OrderId::new(order_id)?;
+    let hub_id = HubId::new(user.hub_id)?;
 
-    let updates = form
-        .into_update_order()
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let updates = form.into_update_order()?;
 
-    repo.update_order(order_id, hub_id, &updates)
-        .map_err(ServiceError::from)
+    Ok(repo.update_order(order_id, hub_id, &updates)?)
 }
 
 /// Updates approved quantities for order products and recalculates the order total.
@@ -83,8 +76,8 @@ where
         ));
     }
 
-    let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let order_id = OrderId::new(order_id)?;
+    let hub_id = HubId::new(user.hub_id)?;
 
     let mut approvals_map: HashMap<ProductId, ProductQuantity> = HashMap::new();
     for payload in approvals {
@@ -96,8 +89,7 @@ where
     }
 
     let order = repo
-        .get_order_by_id(order_id, hub_id)
-        .map_err(ServiceError::from)?
+        .get_order_by_id(order_id, hub_id)?
         .ok_or(ServiceError::NotFound)?;
 
     let mut updates: Vec<OrderProductApprovalUpdate> = Vec::new();
@@ -129,7 +121,7 @@ where
             && let Some(updated_quantity) = approvals_map.get(&product_id)
         {
             matched.insert(product_id);
-            let price_cents = PriceCents::new(line_total).map_err(|_| ServiceError::Internal)?;
+            let price_cents = PriceCents::new(line_total)?;
             updates.push(OrderProductApprovalUpdate {
                 product_id,
                 approved_quantity: *updated_quantity,
@@ -142,17 +134,14 @@ where
         return Err(ServiceError::NotFound);
     }
 
-    let total_cents = PriceCents::new(total_cents).map_err(|_| ServiceError::Internal)?;
+    let total_cents = PriceCents::new(total_cents)?;
     let updated_at = Utc::now().naive_utc();
 
-    let order = repo
-        .update_order_product_approvals(order_id, hub_id, &updates, total_cents, updated_at)
-        .map_err(ServiceError::from)?;
+    let order =
+        repo.update_order_product_approvals(order_id, hub_id, &updates, total_cents, updated_at)?;
 
     let customer = match order.customer_id {
-        Some(customer_id) => repo
-            .get_customer_by_id(customer_id, hub_id)
-            .map_err(ServiceError::from)?,
+        Some(customer_id) => repo.get_customer_by_id(customer_id, hub_id)?,
         None => None,
     };
 

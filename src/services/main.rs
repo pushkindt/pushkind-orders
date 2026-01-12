@@ -7,7 +7,7 @@ use crate::domain::order::OrderListQuery;
 use crate::domain::types::HubId;
 use crate::dto::main::{IndexPageData, IndexQuery};
 use crate::repository::OrderReader;
-use crate::services::{ServiceError, ServiceResult};
+use crate::services::ServiceResult;
 
 /// Loads the orders list for the main index page.
 pub fn load_index_page<R>(
@@ -21,14 +21,14 @@ where
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
     let page = query.page.unwrap_or(1);
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
     let mut list_query = OrderListQuery::new(hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
 
     if let Some(value) = query.search.as_ref() {
         list_query = list_query.search(value);
     }
 
-    let (total, orders) = repo.list_orders(list_query).map_err(ServiceError::from)?;
+    let (total, orders) = repo.list_orders(list_query)?;
 
     let total_pages = total.div_ceil(DEFAULT_ITEMS_PER_PAGE);
     let orders = Paginated::new(orders, page, total_pages);
@@ -43,6 +43,7 @@ where
 mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
+    use pushkind_common::services::errors::ServiceError;
     use serde_json::Value;
 
     use crate::SERVICE_ACCESS_ROLE;
