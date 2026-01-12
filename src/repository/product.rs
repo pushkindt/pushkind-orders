@@ -268,7 +268,7 @@ impl ProductWriter for DieselRepository {
         use crate::schema::product_price_levels;
         use crate::schema::products;
         use diesel::dsl::insert_into;
-        use diesel::dsl::{delete, exists};
+        use diesel::dsl::{delete, exists, select};
 
         let mut conn = self.conn()?;
 
