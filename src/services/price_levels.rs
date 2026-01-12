@@ -129,18 +129,12 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let (new_price_level, modifier_input) = form
-        .into_new_price_level_with_modifier(user.hub_id)
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let (new_price_level, modifier_input) = form.into_new_price_level_with_modifier(user.hub_id)?;
 
-    let created = repo
-        .create_price_level(&new_price_level)
-        .map_err(ServiceError::from)?;
+    let created = repo.create_price_level(&new_price_level)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let (_, mut products) = repo
-        .list_products(ProductListQuery::new(hub_id))
-        .map_err(ServiceError::from)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let (_, mut products) = repo.list_products(ProductListQuery::new(hub_id))?;
 
     if !modifier_input.use_all_categories {
         let excluded: HashSet<_> = modifier_input.excluded_category_ids.into_iter().collect();
@@ -175,8 +169,7 @@ where
     }
 
     if !rates.is_empty() {
-        repo.create_product_price_levels(hub_id, &rates)
-            .map_err(ServiceError::from)?;
+        repo.create_product_price_levels(hub_id, &rates)?;
     }
 
     Ok(created)
