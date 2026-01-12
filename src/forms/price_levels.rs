@@ -5,7 +5,9 @@ use validator::{Validate, ValidationErrors};
 use crate::{
     domain::{
         price_level::{NewPriceLevel, UpdatePriceLevel},
-        types::{CustomerName, HubId, PhoneNumber, PriceLevelId, PriceLevelName, PublicId},
+        types::{
+            CategoryId, CustomerName, HubId, PhoneNumber, PriceLevelId, PriceLevelName, PublicId,
+        },
     },
     forms::sanitize_text,
 };
@@ -34,6 +36,26 @@ pub enum PriceLevelFormError {
     /// Incorrect price level id provided.
     #[error("price level id must be a positive integer")]
     InvalidPriceLevelId,
+    /// Incorrect base price level id provided.
+    #[error("base price level id must be a positive integer")]
+    InvalidBasePriceLevelId,
+    /// Price modifier is out of supported range.
+    #[error("price modifier is outside of the allowed range")]
+    InvalidPriceModifier,
+    /// Excluded categories list must not be empty when not using all categories.
+    #[error("at least one excluded category must be selected")]
+    ExcludedCategoriesRequired,
+    /// Excluded category ids must be positive.
+    #[error("excluded category id must be a positive integer")]
+    InvalidExcludedCategoryId,
+}
+
+/// Modifier type for price level adjustments.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PriceModifierKind {
+    Percent,
+    Fixed,
 }
 
 /// Form payload emitted when submitting the "Add price level" form.
@@ -45,6 +67,19 @@ pub struct AddPriceLevelForm {
     /// Is this a default price level?
     #[serde(default)]
     pub default: bool,
+    /// Base price level used for adjustments.
+    #[validate(range(min = 1))]
+    pub base_price_level_id: i32,
+    /// Price modifier value.
+    pub price_modifier: i32,
+    /// Determines if modifier is percentage or fixed amount.
+    pub price_modifier_kind: PriceModifierKind,
+    /// Apply to all categories.
+    #[serde(default)]
+    pub use_all_categories: bool,
+    /// Category ids excluded from modifier.
+    #[serde(default)]
+    pub excluded_category_ids: Vec<i32>,
 }
 
 /// Payload emitted when assigning a price level to a client.
@@ -109,6 +144,37 @@ impl AddPriceLevelForm {
         let name =
             PriceLevelName::new(name).map_err(|_| PriceLevelFormError::InvalidPriceLevelName)?;
 
+        let _base_price_level_id = PriceLevelId::new(self.base_price_level_id)
+            .map_err(|_| PriceLevelFormError::InvalidBasePriceLevelId)?;
+
+        let _price_modifier = match self.price_modifier_kind {
+            PriceModifierKind::Percent => {
+                if (-100..=100).contains(&self.price_modifier) {
+                    self.price_modifier
+                } else {
+                    return Err(PriceLevelFormError::InvalidPriceModifier);
+                }
+            }
+            PriceModifierKind::Fixed => {
+                if (-1_000_000..=1_000_000).contains(&self.price_modifier) {
+                    self.price_modifier
+                } else {
+                    return Err(PriceLevelFormError::InvalidPriceModifier);
+                }
+            }
+        };
+
+        let excluded_category_ids: Vec<CategoryId> = self
+            .excluded_category_ids
+            .into_iter()
+            .map(CategoryId::new)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| PriceLevelFormError::InvalidExcludedCategoryId)?;
+
+        if !self.use_all_categories && excluded_category_ids.is_empty() {
+            return Err(PriceLevelFormError::ExcludedCategoriesRequired);
+        }
+
         Ok(NewPriceLevel::new(hub_id, name, self.default))
     }
 }
@@ -146,6 +212,11 @@ mod tests {
         let form = AddPriceLevelForm {
             name: "  Premium\tLevel  ".to_string(),
             default: false,
+            base_price_level_id: 1,
+            price_modifier: 10,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: true,
+            excluded_category_ids: Vec::new(),
         };
 
         let new_level = form.into_new_price_level(5).expect("expected success");
@@ -205,6 +276,11 @@ mod tests {
         let form = AddPriceLevelForm {
             name: "   ".to_string(),
             default: false,
+            base_price_level_id: 1,
+            price_modifier: 10,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: true,
+            excluded_category_ids: Vec::new(),
         };
 
         let result = form.into_new_price_level(1);
@@ -212,6 +288,46 @@ mod tests {
         assert!(matches!(
             result,
             Err(PriceLevelFormError::InvalidPriceLevelName)
+        ));
+    }
+
+    #[test]
+    fn add_price_level_form_requires_excluded_categories_when_disabled() {
+        let form = AddPriceLevelForm {
+            name: "Retail".to_string(),
+            default: false,
+            base_price_level_id: 1,
+            price_modifier: 5,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: false,
+            excluded_category_ids: Vec::new(),
+        };
+
+        let result = form.into_new_price_level(1);
+
+        assert!(matches!(
+            result,
+            Err(PriceLevelFormError::ExcludedCategoriesRequired)
+        ));
+    }
+
+    #[test]
+    fn add_price_level_form_rejects_out_of_range_modifier() {
+        let form = AddPriceLevelForm {
+            name: "Wholesale".to_string(),
+            default: false,
+            base_price_level_id: 1,
+            price_modifier: 500,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: true,
+            excluded_category_ids: Vec::new(),
+        };
+
+        let result = form.into_new_price_level(1);
+
+        assert!(matches!(
+            result,
+            Err(PriceLevelFormError::InvalidPriceModifier)
         ));
     }
 

@@ -38,6 +38,7 @@ pub async fn show_price_levels(
             );
             context.insert("price_levels", &data.price_levels);
             context.insert("search", &data.search);
+            context.insert("categories", &data.categories);
             context.insert("search_action", "/price-levels");
             context.insert("crm_service_url", &server_config.crm_service_url);
             render_template(&tera, "price_levels/index.html", &context)

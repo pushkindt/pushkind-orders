@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::domain::{customer::Customer, price_level::PriceLevel};
+use crate::domain::{category::Category, customer::Customer, price_level::PriceLevel};
 
 /// Query parameters accepted by the price levels index page.
 #[derive(Debug, Default, Deserialize)]
@@ -15,6 +15,8 @@ pub struct PriceLevelsPageData {
     pub price_levels: Vec<PriceLevel>,
     /// Search query echoed back to the template when present.
     pub search: Option<String>,
+    /// Categories available for price level targeting.
+    pub categories: Vec<Category>,
 }
 
 /// Saved price level assignment for a specific customer.
