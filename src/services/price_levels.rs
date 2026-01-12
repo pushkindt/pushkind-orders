@@ -131,8 +131,6 @@ where
 
     let (new_price_level, modifier_input) = form.into_new_price_level_with_modifier(user.hub_id)?;
 
-    let created = repo.create_price_level(&new_price_level)?;
-
     let hub_id = HubId::new(user.hub_id)?;
     let (_, mut products) = repo.list_products(ProductListQuery::new(hub_id))?;
 
@@ -146,7 +144,7 @@ where
         });
     }
 
-    let mut rates = Vec::new();
+    let mut seed_rates = Vec::new();
     for product in products {
         let base_rate = product
             .price_levels
@@ -163,13 +161,23 @@ where
             modifier_input.price_modifier_kind,
         )?;
 
-        rates.push(NewProductPriceLevelRate::new(
-            product.id, created.id, adjusted,
-        ));
+        seed_rates.push((product.id, adjusted));
     }
 
-    if !rates.is_empty() {
-        repo.create_product_price_levels(hub_id, &rates)?;
+    let created = repo.create_price_level(&new_price_level)?;
+
+    if !seed_rates.is_empty() {
+        let rates: Vec<NewProductPriceLevelRate> = seed_rates
+            .into_iter()
+            .map(|(product_id, price_cents)| {
+                NewProductPriceLevelRate::new(product_id, created.id, price_cents)
+            })
+            .collect();
+
+        if let Err(err) = repo.create_product_price_levels(hub_id, &rates) {
+            let _ = repo.delete_price_level(created.id, hub_id);
+            return Err(ServiceError::from(err));
+        }
     }
 
     Ok(created)
@@ -850,6 +858,47 @@ mod tests {
             Err(ServiceError::Form(message)) => {
                 assert!(
                     message.contains("cannot be empty"),
+                    "unexpected message: {message}"
+                );
+            }
+            other => panic!("expected form error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_price_level_rejects_invalid_modifier_before_persisting() {
+        let mut price_writer = MockPriceLevelWriter::new();
+        let mut product_reader = MockProductReader::new();
+        let mut product_writer = MockProductWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = AddPriceLevelForm {
+            name: "Bad Discount".to_string(),
+            default: false,
+            base_price_level_id: 1,
+            price_modifier: -200,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: true,
+            excluded_category_ids: Vec::new(),
+        };
+
+        let expected_hub = user.hub_id;
+        price_writer.expect_create_price_level().times(0);
+
+        product_reader
+            .expect_list_products()
+            .times(1)
+            .withf(move |query| query.hub_id.get() == expected_hub)
+            .returning(|_| Ok((1, vec![sample_product(1, 42, None, vec![(1, 1000)])])));
+
+        product_writer.expect_create_product_price_levels().times(0);
+
+        let repo = CombinedPriceLevelCreateRepo::new(price_writer, product_reader, product_writer);
+        let result = create_price_level(&repo, &user, form);
+
+        match result {
+            Err(ServiceError::Form(message)) => {
+                assert!(
+                    message.contains("non-positive price"),
                     "unexpected message: {message}"
                 );
             }
