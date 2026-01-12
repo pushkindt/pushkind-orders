@@ -47,17 +47,13 @@ pub async fn request_store_otp<R>(
 where
     R: StoreOtpRepository,
 {
-    let request = payload
-        .into_request()
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
-    let phone = PhoneNumber::new(request.phone.clone()).map_err(|_| ServiceError::Internal)?;
+    let request = payload.into_request()?;
+    let hub_id = HubId::new(hub_id)?;
+    let phone = PhoneNumber::new(request.phone.clone())?;
 
     let now = Utc::now().naive_utc();
 
-    if let Some(existing) = repo
-        .get_store_otp(hub_id, &phone)
-        .map_err(ServiceError::from)?
+    if let Some(existing) = repo.get_store_otp(hub_id, &phone)?
         && existing.last_sent_at + Duration::minutes(OTP_THROTTLE_MINUTES) > now
     {
         return Err(ServiceError::Form(OTP_THROTTLE_MESSAGE.to_string()));
@@ -66,11 +62,9 @@ where
     let code = format!("{:06}", rand::rng().random_range(0..1_000_000));
     let expires_at = now + Duration::minutes(OTP_EXPIRY_MINUTES);
     let otp_payload =
-        NewStoreOtp::try_new(hub_id.get(), phone.as_str(), code.clone(), expires_at, now)
-            .map_err(|err| ServiceError::Form(err.to_string()))?;
+        NewStoreOtp::try_new(hub_id.get(), phone.as_str(), code.clone(), expires_at, now)?;
 
-    repo.upsert_store_otp(&otp_payload)
-        .map_err(ServiceError::from)?;
+    repo.upsert_store_otp(&otp_payload)?;
 
     let zmq_message = ZMQSendSmsMessage {
         sender_id: sms_sender.to_string(),
@@ -98,17 +92,14 @@ pub async fn verify_store_otp<R>(
 where
     R: CustomerReader + CustomerWriter + StoreOtpRepository,
 {
-    let request = payload
-        .into_request()
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
-    let phone = PhoneNumber::new(request.phone.clone()).map_err(|_| ServiceError::Internal)?;
+    let request = payload.into_request()?;
+    let hub_id = HubId::new(hub_id)?;
+    let phone = PhoneNumber::new(request.phone.clone())?;
 
     let now = Utc::now().naive_utc();
 
     let record = repo
-        .get_store_otp(hub_id, &phone)
-        .map_err(ServiceError::from)?
+        .get_store_otp(hub_id, &phone)?
         .ok_or_else(|| ServiceError::Form(OTP_INVALID_MESSAGE.to_string()))?;
 
     if record.code.as_str() != request.otp {
@@ -119,20 +110,14 @@ where
         return Err(ServiceError::Form(OTP_INVALID_MESSAGE.to_string()));
     }
 
-    repo.delete_store_otp(hub_id, &phone)
-        .map_err(ServiceError::from)?;
+    repo.delete_store_otp(hub_id, &phone)?;
 
-    let customer = match repo
-        .get_customer_by_phone(&phone, hub_id)
-        .map_err(ServiceError::from)?
-    {
+    let customer = match repo.get_customer_by_phone(&phone, hub_id)? {
         Some(customer) => customer,
         None => {
-            let new_customer = NewCustomer::try_new(hub_id.get(), phone.as_str(), phone.as_str())
-                .map_err(|_| ServiceError::Internal)?;
+            let new_customer = NewCustomer::try_new(hub_id.get(), phone.as_str(), phone.as_str())?;
 
-            repo.create_customer(&new_customer)
-                .map_err(ServiceError::from)?
+            repo.create_customer(&new_customer)?
         }
     };
 
@@ -162,10 +147,8 @@ fn resolve_default_price_level_id<R>(repo: &R, hub_id: i32) -> ServiceResult<Opt
 where
     R: PriceLevelReader + ?Sized,
 {
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
-    let (_, price_levels) = repo
-        .list_price_levels(PriceLevelListQuery::new(hub_id))
-        .map_err(ServiceError::from)?;
+    let hub_id = HubId::new(hub_id)?;
+    let (_, price_levels) = repo.list_price_levels(PriceLevelListQuery::new(hub_id))?;
 
     Ok(price_levels
         .into_iter()
@@ -183,9 +166,8 @@ pub fn create_store_order<R>(
 where
     R: ProductReader + PriceLevelReader + OrderWriter + ?Sized,
 {
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
-    let items =
-        validate_store_order_lines(payloads).map_err(|err| ServiceError::Form(err.to_string()))?;
+    let hub_id = HubId::new(hub_id)?;
+    let items = validate_store_order_lines(payloads)?;
 
     let default_price_level_id = resolve_default_price_level_id(repo, hub_id.get())?;
     let customer_price_level_id = customer.price_level_id.map(|id| id.get());
@@ -202,8 +184,7 @@ where
         let product_id = ProductId::new(item.product_id)
             .map_err(|_| ServiceError::Form("product not found".to_string()))?;
         let product = repo
-            .get_product_by_id(product_id, hub_id)
-            .map_err(ServiceError::from)?
+            .get_product_by_id(product_id, hub_id)?
             .filter(|product| !product.is_archived)
             .ok_or_else(|| ServiceError::Form("product not found".to_string()))?;
 
@@ -245,8 +226,7 @@ where
             product_currency.clone(),
             approved_quantity.get(),
             default_price_cents,
-        )
-        .map_err(|_| ServiceError::Internal)?
+        )?
         .with_product_id(product.id)
         .with_approved_quantity(approved_quantity);
 
@@ -263,13 +243,12 @@ where
 
     let currency = currency.unwrap_or_default();
 
-    let new_order = NewOrder::try_new(hub_id.get(), total_cents, currency)
-        .map_err(|_| ServiceError::Internal)?
+    let new_order = NewOrder::try_new(hub_id.get(), total_cents, currency)?
         .with_customer_id(customer.id)
         .with_status(OrderStatus::Pending)
         .with_products(products);
 
-    repo.create_order(&new_order).map_err(ServiceError::from)
+    Ok(repo.create_order(&new_order)?)
 }
 
 /// Load orders placed by a storefront customer for the provided hub.
@@ -282,14 +261,14 @@ pub fn list_store_orders<R>(
 where
     R: OrderReader + ?Sized,
 {
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(hub_id)?;
     let mut query = OrderListQuery::new(hub_id).customer_id(customer.id);
 
     if let Some(page) = page.filter(|page| *page > 0) {
         query = query.paginate(page, DEFAULT_ITEMS_PER_PAGE);
     }
 
-    let (_, orders) = repo.list_orders(query).map_err(ServiceError::from)?;
+    let (_, orders) = repo.list_orders(query)?;
 
     Ok(orders.into_iter().map(StoreOrder::from).collect())
 }
@@ -305,12 +284,11 @@ pub fn update_store_order<R>(
 where
     R: OrderReader + OrderWriter + ?Sized,
 {
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
-    let order_id = OrderId::new(order_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(hub_id)?;
+    let order_id = OrderId::new(order_id)?;
 
     let order = repo
-        .get_order_by_id(order_id, hub_id)
-        .map_err(ServiceError::from)?
+        .get_order_by_id(order_id, hub_id)?
         .ok_or(ServiceError::NotFound)?;
 
     if order.customer_id != Some(customer.id) {
@@ -333,9 +311,7 @@ where
         payer,
     };
 
-    let updated_order = repo
-        .update_order(order_id, hub_id, &updates)
-        .map_err(ServiceError::from)?;
+    let updated_order = repo.update_order(order_id, hub_id, &updates)?;
 
     Ok(StoreOrder::from(updated_order))
 }
@@ -356,9 +332,9 @@ pub fn load_store_categories<R>(
 where
     R: CategoryReader + ?Sized,
 {
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(hub_id)?;
     let query = CategoryTreeQuery::new(hub_id);
-    let categories = repo.list_categories(query).map_err(ServiceError::from)?.1;
+    let categories = repo.list_categories(query)?.1;
 
     let parent_id = filters.parent_id.and_then(|id| CategoryId::new(id).ok());
     let filtered = categories
@@ -384,16 +360,13 @@ pub fn load_store_products<R>(
 where
     R: ProductReader + PriceLevelReader + ?Sized,
 {
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(hub_id)?;
 
     let default_price_level_id = resolve_default_price_level_id(repo, hub_id.get())?;
     let customer_price_level_id =
         store_customer.and_then(|customer| customer.price_level_id.map(|id| id.get()));
 
-    let products = repo
-        .list_products(filters.into_query(hub_id))
-        .map_err(ServiceError::from)?
-        .1;
+    let products = repo.list_products(filters.into_query(hub_id))?.1;
 
     let filtered = products
         .into_iter()
@@ -416,12 +389,10 @@ pub fn load_store_product<R>(
 where
     R: ProductReader + PriceLevelReader + ?Sized,
 {
-    let hub_id = HubId::new(hub_id).map_err(|_| ServiceError::Internal)?;
-    let product_id = ProductId::new(product_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(hub_id)?;
+    let product_id = ProductId::new(product_id)?;
 
-    let product = repo
-        .get_product_by_id(product_id, hub_id)
-        .map_err(ServiceError::from)?;
+    let product = repo.get_product_by_id(product_id, hub_id)?;
 
     let product = match product {
         Some(product) if !product.is_archived => product,
@@ -444,10 +415,7 @@ pub fn load_store_tags<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<StoreTag>>
 where
     R: TagReader + ?Sized,
 {
-    let tags = repo
-        .list_tags(TagListQuery::try_new(hub_id).map_err(|_| ServiceError::Internal)?)
-        .map_err(ServiceError::from)?
-        .1;
+    let tags = repo.list_tags(TagListQuery::try_new(hub_id)?)?.1;
 
     let mut formatted: Vec<StoreTag> = tags.into_iter().map(StoreTag::from).collect();
     formatted.sort_by(|a, b| a.name.cmp(&b.name));
@@ -463,8 +431,7 @@ pub fn load_store_session_customer<R>(
 where
     R: CustomerReader + ?Sized,
 {
-    repo.get_customer_by_id(session_customer.id, session_customer.hub_id)
-        .map_err(ServiceError::from)?
+    repo.get_customer_by_id(session_customer.id, session_customer.hub_id)?
         .ok_or(ServiceError::Unauthorized)
 }
 

@@ -24,7 +24,7 @@ where
     let TagQuery { search, page } = query;
     let page = page.unwrap_or(1);
 
-    let mut list_query = TagListQuery::try_new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let mut list_query = TagListQuery::try_new(user.hub_id)?;
 
     if let Some(term) = search.as_ref() {
         list_query = list_query.search(term);
@@ -32,7 +32,7 @@ where
 
     list_query = list_query.paginate(page, DEFAULT_ITEMS_PER_PAGE);
 
-    let (total, tags) = repo.list_tags(list_query).map_err(ServiceError::from)?;
+    let (total, tags) = repo.list_tags(list_query)?;
     let total_pages = total.div_ceil(DEFAULT_ITEMS_PER_PAGE);
     let tags = Paginated::new(tags, page, total_pages);
 
@@ -46,13 +46,10 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
-    let tag_id = TagId::new(tag_id).map_err(|_| ServiceError::Internal)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let tag_id = TagId::new(tag_id)?;
 
-    match repo
-        .get_tag_by_id(tag_id, hub_id)
-        .map_err(ServiceError::from)?
-    {
+    match repo.get_tag_by_id(tag_id, hub_id)? {
         Some(tag) => Ok(tag),
         None => Err(ServiceError::NotFound),
     }
@@ -65,11 +62,9 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let new_tag = form
-        .into_new_tag(user.hub_id)
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let new_tag = form.into_new_tag(user.hub_id)?;
 
-    repo.create_tag(&new_tag).map_err(ServiceError::from)
+    Ok(repo.create_tag(&new_tag)?)
 }
 
 /// Updates an existing tag for the authenticated user's hub.
@@ -79,14 +74,11 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let tag_id = TagId::new(form.tag_id).map_err(|_| ServiceError::Internal)?;
-    let update = form
-        .into_update_tag()
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let tag_id = TagId::new(form.tag_id)?;
+    let update = form.into_update_tag()?;
+    let hub_id = HubId::new(user.hub_id)?;
 
-    repo.update_tag(tag_id, hub_id, &update)
-        .map_err(ServiceError::from)
+    Ok(repo.update_tag(tag_id, hub_id, &update)?)
 }
 
 /// Deletes a tag for the authenticated user's hub.
@@ -96,8 +88,8 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let tag_id = TagId::new(tag_id).map_err(|_| ServiceError::Internal)?;
-    let hub_id = HubId::new(user.hub_id).map_err(|_| ServiceError::Internal)?;
+    let tag_id = TagId::new(tag_id)?;
+    let hub_id = HubId::new(user.hub_id)?;
 
     Ok(repo.delete_tag(tag_id, hub_id)?)
 }

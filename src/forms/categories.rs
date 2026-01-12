@@ -1,4 +1,4 @@
-use pushkind_common::routes::empty_string_as_none;
+use pushkind_common::routes::{empty_string_as_none, empty_string_as_none_fromstr};
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
@@ -6,7 +6,7 @@ use validator::{Validate, ValidationErrors};
 use crate::{
     domain::category::{NewCategory, UpdateCategory},
     domain::types::{CategoryDescription, CategoryName, HubId, ImageUrl},
-    forms::{empty_id_as_none, sanitize_text},
+    forms::sanitize_text,
 };
 
 /// Maximum length allowed for a category name.
@@ -29,6 +29,9 @@ pub enum CategoryFormError {
     /// The provided name is empty after sanitization.
     #[error("category name cannot be empty")]
     EmptyName,
+    /// Invalid image URL format.
+    #[error("invalid image URL format")]
+    InvalidImageUrl,
 }
 
 /// Form payload emitted when submitting the "Add category" form.
@@ -45,7 +48,7 @@ pub struct AddCategoryForm {
     /// Optional parent category identifier in string form.
     #[validate(range(min = 1))]
     #[serde(default)]
-    #[serde(deserialize_with = "empty_id_as_none")]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub parent_id: Option<i32>,
     /// Optional image URL for the category
     #[serde(default)]
@@ -147,7 +150,7 @@ impl EditCategoryForm {
             .and_then(|url| sanitize_text(&url))
             .map(ImageUrl::new)
             .transpose()
-            .map_err(|_| CategoryFormError::Validation(ValidationErrors::new()))?;
+            .map_err(|_| CategoryFormError::InvalidImageUrl)?;
 
         let update = UpdateCategory::new(name, description, is_archived, image_url);
 

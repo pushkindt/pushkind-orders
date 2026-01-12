@@ -2,6 +2,7 @@ use std::{collections::HashMap, io::Seek};
 
 use actix_multipart::form::{MultipartForm, tempfile::TempFile};
 use csv::{StringRecord, Trim};
+use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
@@ -15,7 +16,7 @@ use crate::{
             ProductName, ProductSku, ProductUnits,
         },
     },
-    forms::{empty_id_as_none, sanitize_text},
+    forms::sanitize_text,
 };
 
 /// Maximum allowed length for a product name.
@@ -127,7 +128,7 @@ pub struct AddProductForm {
     /// Optional category identifier selected by the user.
     #[validate(range(min = 1))]
     #[serde(default)]
-    #[serde(deserialize_with = "empty_id_as_none")]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub category_id: Option<i32>,
     /// Optional set of tag identifiers selected by the user.
     #[serde(default)]
@@ -481,7 +482,7 @@ pub struct EditProductForm {
     pub is_archived: bool,
     /// Optional category update (negative or zero clears the category).
     #[serde(default)]
-    #[serde(deserialize_with = "empty_id_as_none")]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub category_id: Option<i32>,
     /// Optional set of tags to associate with the product.
     #[serde(default)]
