@@ -875,7 +875,7 @@ mod tests {
             name: "Bad Discount".to_string(),
             default: false,
             base_price_level_id: 1,
-            price_modifier: -200,
+            price_modifier: -100,
             price_modifier_kind: PriceModifierKind::Percent,
             use_all_categories: true,
             excluded_category_ids: Vec::new(),
