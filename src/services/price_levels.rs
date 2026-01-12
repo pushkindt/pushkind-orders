@@ -2,6 +2,7 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
+use crate::domain::category::CategoryTreeQuery;
 use crate::domain::customer::{CustomerListQuery, NewCustomer, UpdateCustomer};
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
 use crate::domain::types::{HubId, PriceLevelId};
@@ -12,7 +13,9 @@ use crate::forms::price_levels::{
     AddPriceLevelForm, AssignClientPriceLevelForm, AssignClientPriceLevelPayload,
     EditPriceLevelForm,
 };
-use crate::repository::{CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter};
+use crate::repository::{
+    CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter,
+};
 use crate::services::{ServiceError, ServiceResult};
 
 /// Loads the price levels list for the index page.
@@ -22,7 +25,7 @@ pub fn load_price_levels<R>(
     query: PriceLevelsQuery,
 ) -> ServiceResult<PriceLevelsPageData>
 where
-    R: PriceLevelReader + ?Sized,
+    R: PriceLevelReader + CategoryReader + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
@@ -37,9 +40,16 @@ where
         .list_price_levels(list_query)
         .map_err(ServiceError::from)?;
 
+    let (_, mut categories) = repo
+        .list_categories(CategoryTreeQuery::new(hub_id))
+        .map_err(ServiceError::from)?;
+    categories.retain(|category| !category.is_archived);
+    categories.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
+
     Ok(PriceLevelsPageData {
         price_levels,
         search: query.search,
+        categories,
     })
 }
 
@@ -213,17 +223,22 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
 
+    use crate::domain::category::{Category, CategoryTreeQuery};
     use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer, UpdateCustomer};
     use crate::domain::price_level::PriceLevel;
     use crate::domain::types::{
-        CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId, PriceLevelName,
+        CategoryId, CategoryName, CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId,
+        PriceLevelName,
     };
     use crate::dto::price_levels::{ClientPriceLevelAssignment, PriceLevelsQuery};
-    use crate::forms::price_levels::{AddPriceLevelForm, AssignClientPriceLevelForm};
-    use crate::repository::mock::{
-        MockCustomerReader, MockCustomerWriter, MockPriceLevelReader, MockPriceLevelWriter,
+    use crate::forms::price_levels::{
+        AddPriceLevelForm, AssignClientPriceLevelForm, PriceModifierKind,
     };
-    use crate::repository::{CustomerReader, CustomerWriter};
+    use crate::repository::mock::{
+        MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockPriceLevelReader,
+        MockPriceLevelWriter,
+    };
+    use crate::repository::{CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader};
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
     struct CombinedCustomerRepo {
@@ -287,6 +302,64 @@ mod tests {
         }
     }
 
+    struct CombinedPriceLevelRepo {
+        price_reader: MockPriceLevelReader,
+        category_reader: MockCategoryReader,
+    }
+
+    impl CombinedPriceLevelRepo {
+        fn new(price_reader: MockPriceLevelReader, category_reader: MockCategoryReader) -> Self {
+            Self {
+                price_reader,
+                category_reader,
+            }
+        }
+    }
+
+    impl PriceLevelReader for CombinedPriceLevelRepo {
+        fn get_price_level_by_id(
+            &self,
+            id: PriceLevelId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<PriceLevel>> {
+            self.price_reader.get_price_level_by_id(id, hub_id)
+        }
+
+        fn list_price_levels(
+            &self,
+            query: PriceLevelListQuery,
+        ) -> RepositoryResult<(usize, Vec<PriceLevel>)> {
+            self.price_reader.list_price_levels(query)
+        }
+    }
+
+    impl CategoryReader for CombinedPriceLevelRepo {
+        fn list_categories(
+            &self,
+            query: CategoryTreeQuery,
+        ) -> RepositoryResult<(usize, Vec<Category>)> {
+            self.category_reader.list_categories(query)
+        }
+
+        fn get_category_by_id(
+            &self,
+            category_id: CategoryId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Category>> {
+            self.category_reader.get_category_by_id(category_id, hub_id)
+        }
+
+        fn get_category_by_name_and_parent(
+            &self,
+            name: &CategoryName,
+            parent_id: Option<CategoryId>,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Category>> {
+            self.category_reader
+                .get_category_by_name_and_parent(name, parent_id, hub_id)
+        }
+    }
+
     fn fixed_datetime() -> NaiveDateTime {
         match NaiveDate::from_ymd_opt(2024, 1, 1) {
             Some(date) => date.and_hms_opt(0, 0, 0).unwrap_or_default(),
@@ -316,6 +389,20 @@ mod tests {
         }
     }
 
+    fn sample_category(id: i32, hub_id: i32, name: &str, is_archived: bool) -> Category {
+        Category {
+            id: CategoryId::new(id).unwrap(),
+            hub_id: HubId::new(hub_id).unwrap(),
+            parent_id: None,
+            name: CategoryName::new(name).unwrap(),
+            description: None,
+            is_archived,
+            image_url: None,
+            created_at: fixed_datetime(),
+            updated_at: fixed_datetime(),
+        }
+    }
+
     fn user_with_roles(roles: &[&str]) -> AuthenticatedUser {
         AuthenticatedUser {
             sub: "user-1".to_string(),
@@ -329,7 +416,8 @@ mod tests {
 
     #[test]
     fn load_price_levels_returns_unauthorized_when_role_missing() {
-        let repo = MockPriceLevelReader::new();
+        let repo =
+            CombinedPriceLevelRepo::new(MockPriceLevelReader::new(), MockCategoryReader::new());
         let user = user_with_roles(&[]);
 
         let result = load_price_levels(&repo, &user, PriceLevelsQuery::default());
@@ -388,7 +476,8 @@ mod tests {
 
     #[test]
     fn load_price_levels_returns_paginated_data() {
-        let mut repo = MockPriceLevelReader::new();
+        let mut price_reader = MockPriceLevelReader::new();
+        let mut category_reader = MockCategoryReader::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let query = PriceLevelsQuery {
             search: Some("sil".to_string()),
@@ -396,7 +485,8 @@ mod tests {
 
         let expected_hub = user.hub_id;
 
-        repo.expect_list_price_levels()
+        price_reader
+            .expect_list_price_levels()
             .times(1)
             .withf(move |query| {
                 assert_eq!(query.hub_id.get(), expected_hub);
@@ -413,6 +503,24 @@ mod tests {
                 ))
             });
 
+        category_reader
+            .expect_list_categories()
+            .times(1)
+            .withf(move |query| {
+                assert_eq!(query.hub_id.get(), expected_hub);
+                true
+            })
+            .returning(move |_| {
+                Ok((
+                    2,
+                    vec![
+                        sample_category(3, expected_hub, "Desserts", false),
+                        sample_category(4, expected_hub, "Archived", true),
+                    ],
+                ))
+            });
+
+        let repo = CombinedPriceLevelRepo::new(price_reader, category_reader);
         let result = load_price_levels(&repo, &user, query);
 
         let data = match result {
@@ -422,6 +530,7 @@ mod tests {
 
         assert_eq!(data.search.as_deref(), Some("sil"));
         assert_eq!(data.price_levels.len(), 2);
+        assert_eq!(data.categories.len(), 1);
     }
 
     #[test]
@@ -431,6 +540,11 @@ mod tests {
         let form = AddPriceLevelForm {
             name: "Retail".to_string(),
             default: false,
+            base_price_level_id: 1,
+            price_modifier: 10,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: true,
+            excluded_category_ids: Vec::new(),
         };
 
         let result = create_price_level(&repo, &user, form);
@@ -445,6 +559,11 @@ mod tests {
         let form = AddPriceLevelForm {
             name: "Retail".to_string(),
             default: false,
+            base_price_level_id: 1,
+            price_modifier: 10,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: true,
+            excluded_category_ids: Vec::new(),
         };
 
         let expected_hub = user.hub_id;
@@ -469,6 +588,11 @@ mod tests {
         let form = AddPriceLevelForm {
             name: "   ".to_string(),
             default: false,
+            base_price_level_id: 1,
+            price_modifier: 10,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: true,
+            excluded_category_ids: Vec::new(),
         };
 
         let result = create_price_level(&repo, &user, form);

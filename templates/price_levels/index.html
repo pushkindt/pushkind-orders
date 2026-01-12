@@ -74,12 +74,22 @@
             const priceLevels = {{ price_levels | json_encode() | safe }};
             const priceLevelById = new Map(priceLevels.map(level => [level.id, level]));
             const defaultLevelFromList = priceLevels.find(level => level.is_default) ?? null;
+            const useAllCategoriesToggle = document.getElementById('priceUseAllCategories');
+            const excludedCategoriesSection = document.getElementById('priceExcludedCategories');
 
             if (!clientsTableBody || !statusMessage) {
                 return;
             }
 
             createFilter('clientsFilterInput', 'clientsTableBody', 'tr');
+
+            if (useAllCategoriesToggle && excludedCategoriesSection) {
+                const syncCategorySelection = () => {
+                    excludedCategoriesSection.hidden = useAllCategoriesToggle.checked;
+                };
+                syncCategorySelection();
+                useAllCategoriesToggle.addEventListener('change', syncCategorySelection);
+            }
 
             function setStatus(message, type = 'info') {
                 statusMessage.textContent = message;

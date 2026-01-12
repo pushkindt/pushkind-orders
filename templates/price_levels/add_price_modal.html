@@ -18,6 +18,70 @@
                         </div>
                     </div>
                     <div class="row mb-3">
+                        <label for="priceLevelBase" class="col-md-3 col-form-label">Базовый уровень</label>
+                        <div class="col-md-9">
+                            <select name="base_price_level_id" id="priceLevelBase" class="form-select" required>
+                                <option value="" selected disabled>Выберите уровень цен</option>
+                                {% for price_level in price_levels | default(value=[]) %}
+                                <option value="{{ price_level.id }}">{{ price_level.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-text">
+                            Значения будут пересчитаны относительно выбранного уровня.
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <label for="priceModifierValue" class="col-md-3 col-form-label">Модификатор</label>
+                        <div class="col-md-9">
+                            <div class="input-group">
+                                <input name="price_modifier" type="number" class="form-control" id="priceModifierValue"
+                                    placeholder="Например: 10" step="1" required>
+                                <select name="price_modifier_kind" class="form-select" id="priceModifierKind">
+                                    <option value="percent">%</option>
+                                    <option value="fixed">₽</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-text">
+                            Выберите процент или фиксированную сумму для расчета цены.
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-9 offset-md-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" value="true" id="priceUseAllCategories"
+                                    name="use_all_categories" checked>
+                                <label class="form-check-label" for="priceUseAllCategories">Применять ко всем категориям</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3" id="priceExcludedCategories" hidden>
+                        <label class="col-md-3 col-form-label">Исключить категории</label>
+                        <div class="col-md-9">
+                            {% if categories is defined and categories | length > 0 %}
+                            <div class="row">
+                                {% for category in categories %}
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="{{ category.id }}"
+                                            id="excludeCategory{{ category.id }}" name="excluded_category_ids">
+                                        <label class="form-check-label" for="excludeCategory{{ category.id }}">
+                                            {{ category.name }}
+                                        </label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <div class="text-muted">Категории не найдены.</div>
+                            {% endif %}
+                            <div class="form-text">
+                                Отметьте категории, для которых модификатор не применяется.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
                         <div class="col-md-9 offset-md-3">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" value="true" id="priceLevelDefault" name="default">
