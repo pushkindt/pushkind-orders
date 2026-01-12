@@ -41,6 +41,7 @@ mock! {
         fn update_product(&self, product_id: ProductId, hub_id: HubId, updates: &UpdateProduct) -> RepositoryResult<Product>;
         fn delete_product(&self, product_id: ProductId, hub_id: HubId) -> RepositoryResult<()>;
         fn replace_product_price_levels(&self, product_id: ProductId, hub_id: HubId, rates: &[NewProductPriceLevelRate]) -> RepositoryResult<()>;
+        fn create_product_price_levels(&self, hub_id: HubId, rates: &[NewProductPriceLevelRate]) -> RepositoryResult<()>;
         fn replace_product_tags(&self, product_id: ProductId, hub_id: HubId, tag_ids: &[TagId]) -> RepositoryResult<()>;
         fn replace_product_images(&self, product_id: ProductId, hub_id: HubId, image_urls: &[ImageUrl]) -> RepositoryResult<()>;
     }

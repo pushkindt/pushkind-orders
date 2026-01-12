@@ -61,9 +61,18 @@ pub async fn show_price_levels(
 pub async fn add_price_level(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
-    form: web::Form<AddPriceLevelForm>,
+    form: web::Bytes,
 ) -> impl Responder {
-    match create_price_level(repo.get_ref(), &user, form.into_inner()) {
+    let form: AddPriceLevelForm = match serde_html_form::from_bytes(&form) {
+        Ok(form) => form,
+        Err(err) => {
+            log::error!("Error parsing form: {err}");
+            FlashMessage::error("Ошибка при обработке формы.").send();
+            return redirect("/price-levels");
+        }
+    };
+
+    match create_price_level(repo.get_ref(), &user, form) {
         Ok(price_level) => {
             FlashMessage::success(format!("Уровень «{}» добавлен.", price_level.name)).send();
             redirect("/price-levels")

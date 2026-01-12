@@ -2,19 +2,24 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
+use std::collections::HashSet;
+
 use crate::domain::category::CategoryTreeQuery;
 use crate::domain::customer::{CustomerListQuery, NewCustomer, UpdateCustomer};
 use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
-use crate::domain::types::{HubId, PriceLevelId};
+use crate::domain::product::ProductListQuery;
+use crate::domain::product_price_level::NewProductPriceLevelRate;
+use crate::domain::types::{HubId, PriceCents, PriceLevelId};
 use crate::dto::price_levels::{
     ClientPriceLevelAssignment, ClientPriceLevelAssignments, PriceLevelsPageData, PriceLevelsQuery,
 };
 use crate::forms::price_levels::{
     AddPriceLevelForm, AssignClientPriceLevelForm, AssignClientPriceLevelPayload,
-    EditPriceLevelForm,
+    EditPriceLevelForm, PriceModifierKind,
 };
 use crate::repository::{
     CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter,
+    ProductReader, ProductWriter,
 };
 use crate::services::{ServiceError, ServiceResult};
 
@@ -120,16 +125,78 @@ pub fn create_price_level<R>(
     form: AddPriceLevelForm,
 ) -> ServiceResult<PriceLevel>
 where
-    R: PriceLevelWriter + ?Sized,
+    R: PriceLevelWriter + ProductReader + ProductWriter + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let new_price_level = form
-        .into_new_price_level(user.hub_id)
-        .map_err(|err| ServiceError::Form(err.to_string()))?;
+    let (new_price_level, modifier_input) = form.into_new_price_level_with_modifier(user.hub_id)?;
 
-    repo.create_price_level(&new_price_level)
-        .map_err(ServiceError::from)
+    let hub_id = HubId::new(user.hub_id)?;
+    let (_, mut products) = repo.list_products(ProductListQuery::new(hub_id))?;
+
+    if !modifier_input.use_all_categories {
+        let excluded: HashSet<_> = modifier_input.excluded_category_ids.into_iter().collect();
+        products.retain(|product| {
+            product
+                .category_id
+                .map(|category_id| !excluded.contains(&category_id))
+                .unwrap_or(true)
+        });
+    }
+
+    let mut seed_rates = Vec::new();
+    for product in products {
+        let base_rate = product
+            .price_levels
+            .iter()
+            .find(|rate| rate.price_level_id == modifier_input.base_price_level_id);
+
+        let Some(base_rate) = base_rate else {
+            continue;
+        };
+
+        let adjusted = apply_price_modifier(
+            base_rate.price_cents,
+            modifier_input.price_modifier,
+            modifier_input.price_modifier_kind,
+        )?;
+
+        seed_rates.push((product.id, adjusted));
+    }
+
+    let created = repo.create_price_level(&new_price_level)?;
+
+    if !seed_rates.is_empty() {
+        let rates: Vec<NewProductPriceLevelRate> = seed_rates
+            .into_iter()
+            .map(|(product_id, price_cents)| {
+                NewProductPriceLevelRate::new(product_id, created.id, price_cents)
+            })
+            .collect();
+
+        if let Err(err) = repo.create_product_price_levels(hub_id, &rates) {
+            let _ = repo.delete_price_level(created.id, hub_id);
+            return Err(ServiceError::from(err));
+        }
+    }
+
+    Ok(created)
+}
+
+fn apply_price_modifier(
+    base_price: PriceCents,
+    modifier: i32,
+    modifier_kind: PriceModifierKind,
+) -> ServiceResult<PriceCents> {
+    let base = i64::from(base_price.get());
+    let adjusted = match modifier_kind {
+        PriceModifierKind::Percent => base * i64::from(100 + modifier) / 100,
+        PriceModifierKind::Fixed => base + i64::from(modifier),
+    };
+
+    let adjusted = i32::try_from(adjusted).map_err(|_| ServiceError::Internal)?;
+    PriceCents::new(adjusted)
+        .map_err(|_| ServiceError::Form("price modifier results in non-positive price".to_string()))
 }
 
 /// Updates an existing price level for the authenticated user's hub.
@@ -226,9 +293,11 @@ mod tests {
     use crate::domain::category::{Category, CategoryTreeQuery};
     use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer, UpdateCustomer};
     use crate::domain::price_level::PriceLevel;
+    use crate::domain::product::{Product, ProductListQuery};
+    use crate::domain::product_price_level::ProductPriceLevelRate;
     use crate::domain::types::{
-        CategoryId, CategoryName, CustomerId, CustomerName, HubId, PhoneNumber, PriceLevelId,
-        PriceLevelName,
+        CategoryId, CategoryName, CurrencyCode, CustomerId, CustomerName, HubId, PhoneNumber,
+        PriceCents, PriceLevelId, PriceLevelName, ProductId, ProductName, ProductPriceLevelRateId,
     };
     use crate::dto::price_levels::{ClientPriceLevelAssignment, PriceLevelsQuery};
     use crate::forms::price_levels::{
@@ -236,9 +305,12 @@ mod tests {
     };
     use crate::repository::mock::{
         MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockPriceLevelReader,
-        MockPriceLevelWriter,
+        MockPriceLevelWriter, MockProductReader, MockProductWriter,
     };
-    use crate::repository::{CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader};
+    use crate::repository::{
+        CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader, ProductReader,
+        ProductWriter,
+    };
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
     struct CombinedCustomerRepo {
@@ -360,6 +432,132 @@ mod tests {
         }
     }
 
+    struct CombinedPriceLevelCreateRepo {
+        price_writer: MockPriceLevelWriter,
+        product_reader: MockProductReader,
+        product_writer: MockProductWriter,
+    }
+
+    impl CombinedPriceLevelCreateRepo {
+        fn new(
+            price_writer: MockPriceLevelWriter,
+            product_reader: MockProductReader,
+            product_writer: MockProductWriter,
+        ) -> Self {
+            Self {
+                price_writer,
+                product_reader,
+                product_writer,
+            }
+        }
+    }
+
+    impl PriceLevelWriter for CombinedPriceLevelCreateRepo {
+        fn create_price_level(
+            &self,
+            new_price_level: &crate::domain::price_level::NewPriceLevel,
+        ) -> RepositoryResult<PriceLevel> {
+            self.price_writer.create_price_level(new_price_level)
+        }
+
+        fn update_price_level(
+            &self,
+            price_level_id: PriceLevelId,
+            hub_id: HubId,
+            updates: &crate::domain::price_level::UpdatePriceLevel,
+        ) -> RepositoryResult<PriceLevel> {
+            self.price_writer
+                .update_price_level(price_level_id, hub_id, updates)
+        }
+
+        fn delete_price_level(
+            &self,
+            price_level_id: PriceLevelId,
+            hub_id: HubId,
+        ) -> RepositoryResult<()> {
+            self.price_writer.delete_price_level(price_level_id, hub_id)
+        }
+    }
+
+    impl ProductReader for CombinedPriceLevelCreateRepo {
+        fn get_product_by_id(
+            &self,
+            id: ProductId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Product>> {
+            self.product_reader.get_product_by_id(id, hub_id)
+        }
+
+        fn list_products(
+            &self,
+            query: ProductListQuery,
+        ) -> RepositoryResult<(usize, Vec<Product>)> {
+            self.product_reader.list_products(query)
+        }
+    }
+
+    impl ProductWriter for CombinedPriceLevelCreateRepo {
+        fn create_product(
+            &self,
+            new_product: &crate::domain::product::NewProduct,
+        ) -> RepositoryResult<Product> {
+            self.product_writer.create_product(new_product)
+        }
+
+        fn update_product(
+            &self,
+            product_id: ProductId,
+            hub_id: HubId,
+            updates: &crate::domain::product::UpdateProduct,
+        ) -> RepositoryResult<Product> {
+            self.product_writer
+                .update_product(product_id, hub_id, updates)
+        }
+
+        fn delete_product(&self, product_id: ProductId, hub_id: HubId) -> RepositoryResult<()> {
+            self.product_writer.delete_product(product_id, hub_id)
+        }
+
+        fn replace_product_price_levels(
+            &self,
+            product_id: ProductId,
+            hub_id: HubId,
+            rates: &[crate::domain::product_price_level::NewProductPriceLevelRate],
+        ) -> RepositoryResult<()> {
+            self.product_writer
+                .replace_product_price_levels(product_id, hub_id, rates)
+        }
+
+        fn create_product_price_levels(
+            &self,
+            hub_id: HubId,
+            rates: &[crate::domain::product_price_level::NewProductPriceLevelRate],
+        ) -> RepositoryResult<()> {
+            self.product_writer
+                .create_product_price_levels(hub_id, rates)
+        }
+
+        fn replace_product_tags(
+            &self,
+            product_id: ProductId,
+            hub_id: HubId,
+            tag_ids: &[crate::domain::types::TagId],
+        ) -> RepositoryResult<()> {
+            self.product_writer
+                .replace_product_tags(product_id, hub_id, tag_ids)
+        }
+
+        fn replace_product_images(
+            &self,
+            product_id: ProductId,
+            hub_id: HubId,
+            image_urls: &[crate::domain::types::ImageUrl],
+        ) -> RepositoryResult<()> {
+            self.product_writer
+                .replace_product_images(product_id, hub_id, image_urls)
+        }
+    }
+
     fn fixed_datetime() -> NaiveDateTime {
         match NaiveDate::from_ymd_opt(2024, 1, 1) {
             Some(date) => date.and_hms_opt(0, 0, 0).unwrap_or_default(),
@@ -398,6 +596,45 @@ mod tests {
             description: None,
             is_archived,
             image_url: None,
+            created_at: fixed_datetime(),
+            updated_at: fixed_datetime(),
+        }
+    }
+
+    fn sample_product(
+        id: i32,
+        hub_id: i32,
+        category_id: Option<i32>,
+        price_levels: Vec<(i32, i32)>,
+    ) -> Product {
+        let product_id = ProductId::new(id).unwrap();
+        let price_levels = price_levels
+            .into_iter()
+            .enumerate()
+            .map(|(idx, (level_id, price_cents))| ProductPriceLevelRate {
+                id: ProductPriceLevelRateId::new((idx + 1) as i32).unwrap(),
+                product_id,
+                price_level_id: PriceLevelId::new(level_id).unwrap(),
+                price_cents: PriceCents::new(price_cents).unwrap(),
+                created_at: fixed_datetime(),
+                updated_at: fixed_datetime(),
+            })
+            .collect();
+
+        Product {
+            id: product_id,
+            hub_id: HubId::new(hub_id).unwrap(),
+            name: ProductName::new(format!("Product {id}")).unwrap(),
+            sku: None,
+            description: None,
+            units: None,
+            currency: CurrencyCode::new("USD").unwrap(),
+            is_archived: false,
+            category_id: category_id.map(|value| CategoryId::new(value).unwrap()),
+            price_levels,
+            tags: Vec::new(),
+            image_urls: Vec::new(),
+            amount: None,
             created_at: fixed_datetime(),
             updated_at: fixed_datetime(),
         }
@@ -535,7 +772,11 @@ mod tests {
 
     #[test]
     fn create_price_level_requires_role() {
-        let repo = MockPriceLevelWriter::new();
+        let repo = CombinedPriceLevelCreateRepo::new(
+            MockPriceLevelWriter::new(),
+            MockProductReader::new(),
+            MockProductWriter::new(),
+        );
         let user = user_with_roles(&[]);
         let form = AddPriceLevelForm {
             name: "Retail".to_string(),
@@ -554,7 +795,9 @@ mod tests {
 
     #[test]
     fn create_price_level_persists_price_level() {
-        let mut repo = MockPriceLevelWriter::new();
+        let mut price_writer = MockPriceLevelWriter::new();
+        let mut product_reader = MockProductReader::new();
+        let mut product_writer = MockProductWriter::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "Retail".to_string(),
@@ -567,13 +810,23 @@ mod tests {
         };
 
         let expected_hub = user.hub_id;
-        repo.expect_create_price_level()
+        price_writer
+            .expect_create_price_level()
             .times(1)
             .withf(move |payload| {
                 payload.hub_id.get() == expected_hub && payload.name.as_str() == "Retail"
             })
             .returning(move |_| Ok(sample_level(5, expected_hub, "Retail")));
 
+        product_reader
+            .expect_list_products()
+            .times(1)
+            .withf(move |query| query.hub_id.get() == expected_hub)
+            .returning(|_| Ok((0, Vec::new())));
+
+        product_writer.expect_create_product_price_levels().times(0);
+
+        let repo = CombinedPriceLevelCreateRepo::new(price_writer, product_reader, product_writer);
         let result = create_price_level(&repo, &user, form).expect("expected success");
 
         assert_eq!(result.id.get(), 5);
@@ -583,7 +836,11 @@ mod tests {
 
     #[test]
     fn create_price_level_propagates_form_errors() {
-        let repo = MockPriceLevelWriter::new();
+        let repo = CombinedPriceLevelCreateRepo::new(
+            MockPriceLevelWriter::new(),
+            MockProductReader::new(),
+            MockProductWriter::new(),
+        );
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "   ".to_string(),
@@ -606,6 +863,107 @@ mod tests {
             }
             other => panic!("expected form error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn create_price_level_rejects_invalid_modifier_before_persisting() {
+        let mut price_writer = MockPriceLevelWriter::new();
+        let mut product_reader = MockProductReader::new();
+        let mut product_writer = MockProductWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = AddPriceLevelForm {
+            name: "Bad Discount".to_string(),
+            default: false,
+            base_price_level_id: 1,
+            price_modifier: -100,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: true,
+            excluded_category_ids: Vec::new(),
+        };
+
+        let expected_hub = user.hub_id;
+        price_writer.expect_create_price_level().times(0);
+
+        product_reader
+            .expect_list_products()
+            .times(1)
+            .withf(move |query| query.hub_id.get() == expected_hub)
+            .returning(|_| Ok((1, vec![sample_product(1, 42, None, vec![(1, 1000)])])));
+
+        product_writer.expect_create_product_price_levels().times(0);
+
+        let repo = CombinedPriceLevelCreateRepo::new(price_writer, product_reader, product_writer);
+        let result = create_price_level(&repo, &user, form);
+
+        match result {
+            Err(ServiceError::Form(message)) => {
+                assert!(
+                    message.contains("non-positive price"),
+                    "unexpected message: {message}"
+                );
+            }
+            other => panic!("expected form error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_price_level_applies_modifier_for_included_categories() {
+        let mut price_writer = MockPriceLevelWriter::new();
+        let mut product_reader = MockProductReader::new();
+        let mut product_writer = MockProductWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = AddPriceLevelForm {
+            name: "Bulk".to_string(),
+            default: false,
+            base_price_level_id: 1,
+            price_modifier: 10,
+            price_modifier_kind: PriceModifierKind::Percent,
+            use_all_categories: false,
+            excluded_category_ids: vec![11],
+        };
+
+        let expected_hub = user.hub_id;
+        price_writer
+            .expect_create_price_level()
+            .times(1)
+            .returning(move |_| Ok(sample_level(99, expected_hub, "Bulk")));
+
+        product_reader
+            .expect_list_products()
+            .times(1)
+            .withf(move |query| query.hub_id.get() == expected_hub)
+            .returning(|_| {
+                Ok((
+                    4,
+                    vec![
+                        sample_product(1, 42, Some(10), vec![(1, 1000)]),
+                        sample_product(2, 42, Some(11), vec![(1, 2000)]),
+                        sample_product(3, 42, None, vec![(1, 1500)]),
+                        sample_product(4, 42, Some(12), vec![(2, 1200)]),
+                    ],
+                ))
+            });
+
+        product_writer
+            .expect_create_product_price_levels()
+            .times(1)
+            .withf(|hub_id, rates| {
+                assert_eq!(hub_id.get(), 42);
+                assert_eq!(rates.len(), 2);
+                let mut totals = rates
+                    .iter()
+                    .map(|rate| (rate.product_id.get(), rate.price_cents.get()))
+                    .collect::<Vec<_>>();
+                totals.sort();
+                assert_eq!(totals, vec![(1, 1100), (3, 1650)]);
+                rates.iter().all(|rate| rate.price_level_id.get() == 99)
+            })
+            .returning(|_, _| Ok(()));
+
+        let repo = CombinedPriceLevelCreateRepo::new(price_writer, product_reader, product_writer);
+        let result = create_price_level(&repo, &user, form).expect("expected success");
+
+        assert_eq!(result.id.get(), 99);
     }
 
     #[test]
