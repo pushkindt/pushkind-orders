@@ -133,6 +133,12 @@ pub trait ProductWriter {
         hub_id: HubId,
         rates: &[NewProductPriceLevelRate],
     ) -> RepositoryResult<()>;
+    /// Batch insert price level associations for multiple products.
+    fn create_product_price_levels(
+        &self,
+        hub_id: HubId,
+        rates: &[NewProductPriceLevelRate],
+    ) -> RepositoryResult<()>;
     /// Replace all tag associations for a product.
     fn replace_product_tags(
         &self,

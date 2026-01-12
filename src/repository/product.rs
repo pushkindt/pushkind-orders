@@ -1,6 +1,6 @@
 //! Product repository implementation with Diesel and FTS support.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use diesel::dsl::exists;
 use diesel::prelude::*;
@@ -267,8 +267,8 @@ impl ProductWriter for DieselRepository {
         use crate::schema::price_levels;
         use crate::schema::product_price_levels;
         use crate::schema::products;
+        use diesel::dsl::insert_into;
         use diesel::dsl::{delete, exists};
-        use diesel::dsl::{insert_into, select};
 
         let mut conn = self.conn()?;
 
@@ -313,6 +313,61 @@ impl ProductWriter for DieselRepository {
                     .values(&rows)
                     .execute(conn)?;
             }
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    fn create_product_price_levels(
+        &self,
+        hub_id: HubId,
+        rates: &[DomainNewProductPriceLevelRate],
+    ) -> RepositoryResult<()> {
+        use crate::schema::price_levels;
+        use crate::schema::product_price_levels;
+        use crate::schema::products;
+        use diesel::dsl::insert_into;
+
+        if rates.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.conn()?;
+
+        conn.transaction::<_, RepositoryError, _>(|conn| {
+            let product_ids: BTreeSet<i32> =
+                rates.iter().map(|rate| rate.product_id.get()).collect();
+            let expected_products = product_ids.len() as i64;
+            let actual_products: i64 = products::table
+                .filter(products::id.eq_any(&product_ids))
+                .filter(products::hub_id.eq(hub_id.get()))
+                .count()
+                .get_result(conn)?;
+
+            if expected_products != actual_products {
+                return Err(RepositoryError::NotFound);
+            }
+
+            let price_level_ids: BTreeSet<i32> =
+                rates.iter().map(|rate| rate.price_level_id.get()).collect();
+            let expected_levels = price_level_ids.len() as i64;
+            let actual_levels: i64 = price_levels::table
+                .filter(price_levels::id.eq_any(&price_level_ids))
+                .filter(price_levels::hub_id.eq(hub_id.get()))
+                .count()
+                .get_result(conn)?;
+
+            if expected_levels != actual_levels {
+                return Err(RepositoryError::NotFound);
+            }
+
+            let rows: Vec<DbNewProductPriceLevel> =
+                rates.iter().map(DbNewProductPriceLevel::from).collect();
+            insert_into(product_price_levels::table)
+                .values(&rows)
+                .execute(conn)?;
 
             Ok(())
         })?;

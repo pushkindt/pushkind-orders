@@ -82,6 +82,16 @@ pub struct AddPriceLevelForm {
     pub excluded_category_ids: Vec<i32>,
 }
 
+/// Normalized payload describing how to apply a price modifier to products.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PriceLevelModifierInput {
+    pub base_price_level_id: PriceLevelId,
+    pub price_modifier: i32,
+    pub price_modifier_kind: PriceModifierKind,
+    pub use_all_categories: bool,
+    pub excluded_category_ids: Vec<CategoryId>,
+}
+
 /// Payload emitted when assigning a price level to a client.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AssignClientPriceLevelForm {
@@ -135,6 +145,14 @@ impl TryFrom<AssignClientPriceLevelForm> for AssignClientPriceLevelPayload {
 impl AddPriceLevelForm {
     /// Validates and sanitizes the payload into a domain `NewPriceLevel`.
     pub fn into_new_price_level(self, hub_id: i32) -> PriceLevelFormResult<NewPriceLevel> {
+        Ok(self.into_new_price_level_with_modifier(hub_id)?.0)
+    }
+
+    /// Validates and sanitizes the payload into a domain `NewPriceLevel` and modifier input.
+    pub fn into_new_price_level_with_modifier(
+        self,
+        hub_id: i32,
+    ) -> PriceLevelFormResult<(NewPriceLevel, PriceLevelModifierInput)> {
         self.validate()?;
 
         let hub_id = HubId::new(hub_id)
@@ -144,10 +162,10 @@ impl AddPriceLevelForm {
         let name =
             PriceLevelName::new(name).map_err(|_| PriceLevelFormError::InvalidPriceLevelName)?;
 
-        let _base_price_level_id = PriceLevelId::new(self.base_price_level_id)
+        let base_price_level_id = PriceLevelId::new(self.base_price_level_id)
             .map_err(|_| PriceLevelFormError::InvalidBasePriceLevelId)?;
 
-        let _price_modifier = match self.price_modifier_kind {
+        let price_modifier = match self.price_modifier_kind {
             PriceModifierKind::Percent => {
                 if (-100..=100).contains(&self.price_modifier) {
                     self.price_modifier
@@ -175,7 +193,18 @@ impl AddPriceLevelForm {
             return Err(PriceLevelFormError::ExcludedCategoriesRequired);
         }
 
-        Ok(NewPriceLevel::new(hub_id, name, self.default))
+        let modifier_input = PriceLevelModifierInput {
+            base_price_level_id,
+            price_modifier,
+            price_modifier_kind: self.price_modifier_kind,
+            use_all_categories: self.use_all_categories,
+            excluded_category_ids,
+        };
+
+        Ok((
+            NewPriceLevel::new(hub_id, name, self.default),
+            modifier_input,
+        ))
     }
 }
 

@@ -1363,6 +1363,15 @@ Banana,USD,7.50,
                 .replace_product_price_levels(product_id, hub_id, rates)
         }
 
+        fn create_product_price_levels(
+            &self,
+            hub_id: HubId,
+            rates: &[NewProductPriceLevelRate],
+        ) -> RepositoryResult<()> {
+            self.product_writer
+                .create_product_price_levels(hub_id, rates)
+        }
+
         fn replace_product_tags(
             &self,
             product_id: ProductId,
