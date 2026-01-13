@@ -99,10 +99,16 @@ pub struct AddProductForm {
     #[validate(length(min = 1))]
     pub name: String,
     /// Optional SKU supplied by the user.
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub sku: Option<String>,
     /// Optional longer description.
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub description: Option<String>,
     /// Optional unit of measure.
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub units: Option<String>,
     /// ISO 4217 currency code (e.g. `USD`).
     #[validate(length(equal = 3))]
@@ -117,12 +123,14 @@ pub struct AddProductForm {
     pub tag_ids: Vec<i32>,
     /// Optional newline-separated image URLs.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub image_urls: Option<String>,
     /// Optional price level amounts submitted with the product.
     #[serde(default)]
     pub price_levels: Vec<AddProductPriceLevelForm>,
     /// Optional amount per unit
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub amount: Option<f32>,
 }
 
@@ -449,16 +457,23 @@ pub struct EditProductForm {
     #[validate(length(min = 1))]
     pub name: String,
     /// Optional SKU update (empty string clears the existing SKU).
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub sku: Option<String>,
     /// Optional description update (empty string clears the existing description).
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub description: Option<String>,
     /// Optional units update (empty string clears the existing units).
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub units: Option<String>,
     /// Optional currency update.
     #[validate(length(equal = 3))]
     pub currency: String,
     /// Optional newline-separated image URLs.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub image_urls: Option<String>,
     /// Optional archive flag toggle.
     #[serde(default)]
@@ -475,6 +490,7 @@ pub struct EditProductForm {
     pub price_levels: Vec<EditProductPriceLevelForm>,
     /// Optional amount per unit
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub amount: Option<f32>,
 }
 
@@ -484,6 +500,7 @@ pub struct EditProductPriceLevelForm {
     #[validate(range(min = 1))]
     pub price_level_id: i32,
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub price: Option<String>,
 }
 

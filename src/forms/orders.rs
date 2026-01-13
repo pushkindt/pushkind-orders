@@ -1,3 +1,4 @@
+use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
@@ -53,21 +54,27 @@ pub struct EditOrderForm {
     pub status: String,
     /// Optional external reference displayed to customers.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub reference: Option<String>,
     /// Optional operator notes for the order.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub notes: Option<String>,
     /// Optional shipping address override.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub shipping_address: Option<String>,
     /// Optional consignee information.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub consignee: Option<String>,
     /// Optional delivery instructions.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub delivery_notes: Option<String>,
     /// Optional payer description.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub payer: Option<String>,
 }
 

@@ -1,4 +1,4 @@
-use pushkind_common::routes::{empty_string_as_none, empty_string_as_none_fromstr};
+use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
@@ -36,7 +36,7 @@ pub struct AddCategoryForm {
     pub name: String,
     /// Optional description for the category.
     #[serde(default)]
-    #[serde(deserialize_with = "empty_string_as_none")]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub description: Option<String>,
     /// Optional parent category identifier in string form.
     #[serde(default)]
@@ -45,7 +45,7 @@ pub struct AddCategoryForm {
     /// Optional image URL for the category
     #[serde(default)]
     #[validate(url)]
-    #[serde(deserialize_with = "empty_string_as_none")]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub image_url: Option<String>,
 }
 
@@ -104,7 +104,8 @@ pub struct EditCategoryForm {
     #[validate(length(min = 1))]
     pub name: String,
     /// Optional description update.
-    #[serde(deserialize_with = "empty_string_as_none")]
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub description: Option<String>,
     /// Optional archive toggle for the category.
     #[serde(default)]
@@ -112,7 +113,7 @@ pub struct EditCategoryForm {
     /// Optional image URL for the category
     #[serde(default)]
     #[validate(url)]
-    #[serde(deserialize_with = "empty_string_as_none")]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub image_url: Option<String>,
 }
 
