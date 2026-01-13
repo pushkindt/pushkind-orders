@@ -3,19 +3,7 @@ use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
-use crate::{
-    domain::category::{NewCategory, UpdateCategory},
-    domain::types::{CategoryDescription, CategoryName, HubId, ImageUrl},
-    forms::sanitize_text,
-};
-
-/// Maximum length allowed for a category name.
-const NAME_MAX_LEN: usize = 128;
-const NAME_MAX_LEN_VALIDATOR: u64 = NAME_MAX_LEN as u64;
-
-/// Maximum length allowed for a category description.
-const DESCRIPTION_MAX_LEN: usize = 2048;
-const DESCRIPTION_MAX_LEN_VALIDATOR: u64 = DESCRIPTION_MAX_LEN as u64;
+use crate::domain::types::{CategoryDescription, CategoryId, CategoryName, ImageUrl};
 
 /// Result type returned by the category form helpers.
 pub type CategoryFormResult<T> = Result<T, CategoryFormError>;
@@ -32,21 +20,25 @@ pub enum CategoryFormError {
     /// Invalid image URL format.
     #[error("invalid image URL format")]
     InvalidImageUrl,
+    /// Invalid category parent id.
+    #[error("invalid parent category id")]
+    InvalidParentId,
+    /// Invalid category description.
+    #[error("invalid category description")]
+    InvalidDescription,
 }
 
 /// Form payload emitted when submitting the "Add category" form.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddCategoryForm {
     /// Name entered by the user.
-    #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
+    #[validate(length(min = 1))]
     pub name: String,
     /// Optional description for the category.
-    #[validate(length(max = DESCRIPTION_MAX_LEN_VALIDATOR))]
     #[serde(default)]
     #[serde(deserialize_with = "empty_string_as_none")]
     pub description: Option<String>,
     /// Optional parent category identifier in string form.
-    #[validate(range(min = 1))]
     #[serde(default)]
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub parent_id: Option<i32>,
@@ -57,50 +49,51 @@ pub struct AddCategoryForm {
     pub image_url: Option<String>,
 }
 
-impl AddCategoryForm {
-    /// Validates and sanitizes the payload into a domain `NewCategory`.
-    pub fn into_new_category(self, hub_id: i32) -> CategoryFormResult<NewCategory> {
-        self.validate()?;
+/// Normalized payload for creating a category.
+#[derive(Debug, Clone)]
+pub struct AddCategoryPayload {
+    pub name: CategoryName,
+    pub description: Option<CategoryDescription>,
+    pub parent_id: Option<CategoryId>,
+    pub image_url: Option<ImageUrl>,
+}
 
-        let hub_id = HubId::new(hub_id)
-            .map_err(|_| CategoryFormError::Validation(ValidationErrors::new()))?;
+impl TryFrom<AddCategoryForm> for AddCategoryPayload {
+    type Error = CategoryFormError;
 
-        let sanitized_name = self.name.trim();
-        if sanitized_name.is_empty() {
-            return Err(CategoryFormError::EmptyName);
-        }
-        let category_name =
-            CategoryName::new(sanitized_name).map_err(|_| CategoryFormError::EmptyName)?;
+    fn try_from(value: AddCategoryForm) -> Result<Self, Self::Error> {
+        value.validate()?;
 
-        let sanitized_description = self
+        let name = CategoryName::new(value.name).map_err(|_| CategoryFormError::EmptyName)?;
+
+        let description = value
             .description
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(CategoryDescription::new)
+            .transpose()
+            .map_err(|_| CategoryFormError::InvalidDescription)?;
 
-        let sanitized_image_url = self
+        let parent_id = value
+            .parent_id
+            .map(CategoryId::new)
+            .transpose()
+            .map_err(|_| CategoryFormError::InvalidParentId)?;
+
+        let image_url = value
             .image_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(ImageUrl::new)
+            .transpose()
+            .map_err(|_| CategoryFormError::InvalidImageUrl)?;
 
-        let mut new_category = NewCategory::new(hub_id, category_name);
-        if let Some(description) = sanitized_description {
-            let description =
-                CategoryDescription::new(description).map_err(|_| CategoryFormError::EmptyName)?;
-            new_category = new_category.with_description(description);
-        }
-        if let Some(parent_id) = self.parent_id {
-            new_category = new_category
-                .try_with_parent_id(parent_id)
-                .map_err(|_| CategoryFormError::Validation(ValidationErrors::new()))?;
-        }
-        if let Some(image_url) = sanitized_image_url {
-            let image_url = ImageUrl::new(image_url)
-                .map_err(|_| CategoryFormError::Validation(ValidationErrors::new()))?;
-            new_category = new_category.with_image_url(image_url);
-        }
-        Ok(new_category)
+        Ok(Self {
+            name,
+            description,
+            parent_id,
+            image_url,
+        })
     }
 }
 
@@ -108,10 +101,9 @@ impl AddCategoryForm {
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditCategoryForm {
     /// Name submitted by the user.
-    #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
+    #[validate(length(min = 1))]
     pub name: String,
     /// Optional description update.
-    #[validate(length(max = DESCRIPTION_MAX_LEN_VALIDATOR))]
     #[serde(deserialize_with = "empty_string_as_none")]
     pub description: Option<String>,
     /// Optional archive toggle for the category.
@@ -124,37 +116,45 @@ pub struct EditCategoryForm {
     pub image_url: Option<String>,
 }
 
-impl EditCategoryForm {
-    /// Validates and sanitizes the payload into a domain `UpdateCategory`.
-    pub fn into_update_category(self) -> CategoryFormResult<UpdateCategory> {
-        self.validate()?;
+/// Normalized payload for updating a category.
+#[derive(Debug, Clone)]
+pub struct EditCategoryPayload {
+    pub name: CategoryName,
+    pub description: Option<CategoryDescription>,
+    pub is_archived: bool,
+    pub image_url: Option<ImageUrl>,
+}
 
-        let EditCategoryForm {
-            name,
-            description,
-            is_archived,
-            image_url,
-        } = self;
+impl TryFrom<EditCategoryForm> for EditCategoryPayload {
+    type Error = CategoryFormError;
 
-        let name = sanitize_text(&name).ok_or(CategoryFormError::EmptyName)?;
+    fn try_from(value: EditCategoryForm) -> Result<Self, Self::Error> {
+        value.validate()?;
 
-        let description = description.and_then(|x| sanitize_text(&x));
+        let name = CategoryName::new(value.name).map_err(|_| CategoryFormError::EmptyName)?;
 
-        let name = CategoryName::new(name).map_err(|_| CategoryFormError::EmptyName)?;
-        let description = description
-            .and_then(|x| sanitize_text(&x))
+        let description = value
+            .description
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
             .map(CategoryDescription::new)
             .transpose()
-            .map_err(|_| CategoryFormError::EmptyName)?;
-        let image_url = image_url
-            .and_then(|url| sanitize_text(&url))
+            .map_err(|_| CategoryFormError::InvalidDescription)?;
+
+        let image_url = value
+            .image_url
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
             .map(ImageUrl::new)
             .transpose()
             .map_err(|_| CategoryFormError::InvalidImageUrl)?;
 
-        let update = UpdateCategory::new(name, description, is_archived, image_url);
-
-        Ok(update)
+        Ok(Self {
+            name,
+            description,
+            is_archived: value.is_archived,
+            image_url,
+        })
     }
 }
 
@@ -171,17 +171,14 @@ mod tests {
             image_url: None,
         };
 
-        let new_category = form
-            .into_new_category(5)
-            .expect("expected conversion to succeed");
+        let payload: AddCategoryPayload = form.try_into().expect("expected conversion to succeed");
 
-        assert_eq!(new_category.hub_id.get(), 5);
-        assert_eq!(new_category.name.as_str(), "Fresh Produce");
+        assert_eq!(payload.name.as_str(), "Fresh Produce");
         assert_eq!(
-            new_category.description.as_ref().map(|desc| desc.as_str()),
+            payload.description.as_ref().map(|desc| desc.as_str()),
             Some("Fruits\n\n Vegetables")
         );
-        assert_eq!(new_category.parent_id.map(|id| id.get()), Some(12));
+        assert_eq!(payload.parent_id.map(|id| id.get()), Some(12));
     }
 
     #[test]
@@ -193,7 +190,7 @@ mod tests {
             image_url: None,
         };
 
-        let result = form.into_new_category(1);
+        let result: CategoryFormResult<AddCategoryPayload> = form.try_into();
 
         assert!(matches!(result, Err(CategoryFormError::EmptyName)));
     }
@@ -207,8 +204,8 @@ mod tests {
             image_url: None,
         };
 
-        let result = form.into_new_category(1);
-        assert!(matches!(result, Err(CategoryFormError::Validation(_))));
+        let result: CategoryFormResult<AddCategoryPayload> = form.try_into();
+        assert!(matches!(result, Err(CategoryFormError::InvalidParentId)));
     }
 
     #[test]
@@ -220,8 +217,8 @@ mod tests {
             image_url: None,
         };
 
-        let update = form
-            .into_update_category()
+        let update: EditCategoryPayload = form
+            .try_into()
             .expect("expected payload conversion to succeed");
 
         assert_eq!(update.name.as_str(), "Pantry");
@@ -241,7 +238,7 @@ mod tests {
             image_url: None,
         };
 
-        let result = form.into_update_category();
+        let result: CategoryFormResult<EditCategoryPayload> = form.try_into();
 
         assert!(matches!(result, Err(CategoryFormError::EmptyName)));
     }
@@ -255,8 +252,8 @@ mod tests {
             image_url: None,
         };
 
-        let update = form
-            .into_update_category()
+        let update: EditCategoryPayload = form
+            .try_into()
             .expect("expected payload conversion to succeed");
 
         assert!(update.description.is_none());

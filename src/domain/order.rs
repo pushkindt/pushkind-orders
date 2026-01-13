@@ -1,6 +1,6 @@
 //! Order domain models with product snapshots and status lifecycle.
 
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 use pushkind_common::pagination::Pagination;
 use serde::{Deserialize, Serialize};
 
@@ -292,6 +292,58 @@ pub struct UpdateOrder {
     pub delivery_notes: Option<OrderDeliveryNotes>,
     /// Optional payer.
     pub payer: Option<OrderPayer>,
+}
+
+impl UpdateOrder {
+    /// Create a new update payload with required status and fresh timestamp.
+    pub fn new(status: OrderStatus) -> Self {
+        Self {
+            status,
+            notes: None,
+            reference: None,
+            updated_at: Utc::now().naive_utc(),
+            shipping_address: None,
+            consignee: None,
+            delivery_notes: None,
+            payer: None,
+        }
+    }
+
+    /// Set notes update value.
+    pub fn with_notes(mut self, notes: Option<OrderNotes>) -> Self {
+        self.notes = notes;
+        self
+    }
+
+    /// Set reference update value.
+    pub fn with_reference(mut self, reference: Option<OrderReference>) -> Self {
+        self.reference = reference;
+        self
+    }
+
+    /// Set shipping address update value.
+    pub fn with_shipping_address(mut self, shipping_address: Option<OrderShippingAddress>) -> Self {
+        self.shipping_address = shipping_address;
+        self
+    }
+
+    /// Set consignee update value.
+    pub fn with_consignee(mut self, consignee: Option<OrderConsignee>) -> Self {
+        self.consignee = consignee;
+        self
+    }
+
+    /// Set delivery notes update value.
+    pub fn with_delivery_notes(mut self, delivery_notes: Option<OrderDeliveryNotes>) -> Self {
+        self.delivery_notes = delivery_notes;
+        self
+    }
+
+    /// Set payer update value.
+    pub fn with_payer(mut self, payer: Option<OrderPayer>) -> Self {
+        self.payer = payer;
+        self
+    }
 }
 
 /// Query definition used to list orders for a hub.

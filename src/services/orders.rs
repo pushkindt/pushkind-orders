@@ -5,10 +5,10 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::order::{Order, OrderProductApprovalUpdate};
+use crate::domain::order::{Order, OrderProductApprovalUpdate, UpdateOrder as DomainUpdateOrder};
 use crate::domain::types::{HubId, OrderId, PriceCents, ProductId, ProductQuantity};
 use crate::dto::orders::{OrderDetails, OrderProductApprovalPayload};
-use crate::forms::orders::EditOrderForm;
+use crate::forms::orders::{EditOrderForm, EditOrderPayload};
 use crate::repository::{CustomerReader, OrderReader, OrderWriter};
 use crate::services::{ServiceError, ServiceResult};
 
@@ -53,7 +53,14 @@ where
     let order_id = OrderId::new(order_id)?;
     let hub_id = HubId::new(user.hub_id)?;
 
-    let updates = form.into_update_order()?;
+    let payload: EditOrderPayload = form.try_into()?;
+    let updates = DomainUpdateOrder::new(payload.status)
+        .with_notes(payload.notes)
+        .with_reference(payload.reference)
+        .with_shipping_address(payload.shipping_address)
+        .with_consignee(payload.consignee)
+        .with_delivery_notes(payload.delivery_notes)
+        .with_payer(payload.payer);
 
     Ok(repo.update_order(order_id, hub_id, &updates)?)
 }

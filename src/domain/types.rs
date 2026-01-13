@@ -8,7 +8,7 @@ use phonenumber::{Mode, parse};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
-use validator::ValidateEmail;
+use validator::{ValidateEmail, ValidateUrl};
 
 /// Errors produced when attempting to construct a constrained value object.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -40,6 +40,9 @@ pub enum TypeConstraintError {
     /// Order status string failed to parse to a valid enum.
     #[error("invalid order status")]
     InvalidOrderStatus,
+    /// Provided url failed format validation.
+    #[error("invalid url address")]
+    InvalidUrl,
 }
 
 /// Macro to generate lightweight newtypes for positive identifiers.
@@ -542,8 +545,6 @@ impl From<ProductAmount> for f32 {
     }
 }
 
-non_empty_string_newtype!(ImageUrl, "Validated image URL wrapper.");
-
 /// Normalizes a phone number string to E.164 format.
 pub fn normalize_phone_to_e164(value: &str) -> Result<String, TypeConstraintError> {
     let trimmed = value.trim();
@@ -750,3 +751,58 @@ html_string_newtype!(
     ProductDescription,
     "Task description wrapper for optional HTML content."
 );
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Non-empty, trimmed menu URL.
+pub struct ImageUrl(String);
+
+impl ImageUrl {
+    /// Ensures a trimmed menu URL is non-empty before wrapping.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
+        let url = NonEmptyString::new(value)?;
+
+        if !url.as_str().validate_url() {
+            Err(TypeConstraintError::InvalidUrl)
+        } else {
+            Ok(Self(url.into_inner()))
+        }
+    }
+
+    /// Borrow the menu URL.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Extract the owned menu URL.
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Display for ImageUrl {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for ImageUrl {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for ImageUrl {
+    type Error = TypeConstraintError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<ImageUrl> for String {
+    fn from(value: ImageUrl) -> Self {
+        value.0
+    }
+}

@@ -15,7 +15,7 @@ use crate::domain::{
 };
 use crate::dto::products::{ProductView, ProductsPageData, ProductsQuery};
 use crate::forms::products::{
-    AddProductForm, EditProductForm, EditProductUpdate, NewProductUpload, UploadProductsForm,
+    AddProductForm, AddProductPayload, EditProductForm, EditProductPayload, UploadProductsForm,
 };
 use crate::repository::{
     CategoryReader, CategoryWriter, PriceLevelReader, ProductReader, ProductWriter, TagReader,
@@ -103,7 +103,7 @@ where
 
     let price_levels = fetch_all_price_levels(repo, user.hub_id)?;
 
-    let payload = form.into_new_product_with_prices(user.hub_id, &price_levels)?;
+    let payload: AddProductPayload = (form, user.hub_id, &price_levels[..]).try_into()?;
 
     persist_new_product(repo, user.hub_id, payload)
 }
@@ -156,9 +156,9 @@ where
 
     let available_price_levels = fetch_all_price_levels(repo, user.hub_id)?;
 
-    let payload = form.into_update_product_with_prices(&available_price_levels)?;
+    let payload: EditProductPayload = (form, &available_price_levels[..]).try_into()?;
 
-    let EditProductUpdate {
+    let EditProductPayload {
         product: updates,
         tag_ids,
         image_urls,
@@ -204,13 +204,13 @@ where
 fn persist_new_product<R>(
     repo: &R,
     hub_id: i32,
-    payload: NewProductUpload,
+    payload: AddProductPayload,
 ) -> ServiceResult<Product>
 where
     R: ProductWriter + CategoryReader + CategoryWriter + ?Sized,
 {
     let hub_id = HubId::new(hub_id)?;
-    let NewProductUpload {
+    let AddProductPayload {
         mut product,
         price_levels,
         image_urls,

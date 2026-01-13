@@ -3,10 +3,10 @@ use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::tag::{Tag, TagListQuery};
+use crate::domain::tag::{NewTag, Tag, TagListQuery, UpdateTag};
 use crate::domain::types::{HubId, TagId};
 use crate::dto::tags::{TagQuery, TagsPageData};
-use crate::forms::tags::{AddTagForm, EditTagForm};
+use crate::forms::tags::{AddTagForm, AddTagPayload, EditTagForm, EditTagPayload};
 use crate::repository::{TagReader, TagWriter};
 use crate::services::{ServiceError, ServiceResult};
 
@@ -62,7 +62,9 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let new_tag = form.into_new_tag(user.hub_id)?;
+    let payload: AddTagPayload = form.try_into()?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let new_tag = NewTag::new(hub_id, payload.name);
 
     Ok(repo.create_tag(&new_tag)?)
 }
@@ -74,11 +76,11 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let tag_id = TagId::new(form.tag_id)?;
-    let update = form.into_update_tag()?;
+    let payload: EditTagPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
+    let update = UpdateTag::new(payload.name);
 
-    Ok(repo.update_tag(tag_id, hub_id, &update)?)
+    Ok(repo.update_tag(payload.tag_id, hub_id, &update)?)
 }
 
 /// Deletes a tag for the authenticated user's hub.

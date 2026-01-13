@@ -1,12 +1,14 @@
+use std::collections::HashSet;
+
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use std::collections::HashSet;
-
 use crate::domain::category::CategoryTreeQuery;
 use crate::domain::customer::{CustomerListQuery, NewCustomer, UpdateCustomer};
-use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
+use crate::domain::price_level::{
+    NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel,
+};
 use crate::domain::product::ProductListQuery;
 use crate::domain::product_price_level::NewProductPriceLevelRate;
 use crate::domain::types::{HubId, PriceCents, PriceLevelId};
@@ -14,8 +16,8 @@ use crate::dto::price_levels::{
     ClientPriceLevelAssignment, ClientPriceLevelAssignments, PriceLevelsPageData, PriceLevelsQuery,
 };
 use crate::forms::price_levels::{
-    AddPriceLevelForm, AssignClientPriceLevelForm, AssignClientPriceLevelPayload,
-    EditPriceLevelForm, PriceModifierKind,
+    AddPriceLevelForm, AddPriceLevelPayload, AssignClientPriceLevelForm,
+    AssignClientPriceLevelPayload, EditPriceLevelForm, EditPriceLevelPayload, PriceModifierKind,
 };
 use crate::repository::{
     CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter,
@@ -118,9 +120,11 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let (new_price_level, modifier_input) = form.into_new_price_level_with_modifier(user.hub_id)?;
-
     let hub_id = HubId::new(user.hub_id)?;
+    let payload: AddPriceLevelPayload = form.try_into()?;
+    let new_price_level = NewPriceLevel::new(hub_id, payload.name, payload.default);
+    let modifier_input = payload.modifier_input;
+
     let (_, mut products) = repo.list_products(ProductListQuery::new(hub_id))?;
 
     if !modifier_input.use_all_categories {
@@ -200,7 +204,8 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let updates = form.into_update_price_level()?;
+    let payload: EditPriceLevelPayload = form.try_into()?;
+    let updates = UpdatePriceLevel::new(payload.name, payload.default);
 
     let hub_id = HubId::new(user.hub_id)?;
     let price_level_id = PriceLevelId::new(price_level_id)?;

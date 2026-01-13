@@ -4,10 +4,14 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::category::{Category, CategoryTreeNode, CategoryTreeQuery, NewCategory};
+use crate::domain::category::{
+    Category, CategoryTreeNode, CategoryTreeQuery, NewCategory, UpdateCategory,
+};
 use crate::domain::types::{CategoryId, CategoryName, HubId};
 use crate::dto::categories::CategoryTreeData;
-use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
+use crate::forms::categories::{
+    AddCategoryForm, AddCategoryPayload, EditCategoryForm, EditCategoryPayload,
+};
 use crate::repository::{CategoryReader, CategoryWriter};
 use crate::services::{ServiceError, ServiceResult};
 
@@ -63,7 +67,19 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let new_category = form.into_new_category(user.hub_id)?;
+    let payload: AddCategoryPayload = form.try_into()?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let mut new_category = NewCategory::new(hub_id, payload.name);
+
+    if let Some(description) = payload.description {
+        new_category = new_category.with_description(description);
+    }
+    if let Some(parent_id) = payload.parent_id {
+        new_category = new_category.with_parent_id(parent_id);
+    }
+    if let Some(image_url) = payload.image_url {
+        new_category = new_category.with_image_url(image_url);
+    }
 
     Ok(repo.create_category(&new_category)?)
 }
@@ -80,7 +96,13 @@ where
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let update = form.into_update_category()?;
+    let payload: EditCategoryPayload = form.try_into()?;
+    let update = UpdateCategory::new(
+        payload.name,
+        payload.description,
+        payload.is_archived,
+        payload.image_url,
+    );
 
     let hub_id = HubId::new(user.hub_id)?;
     let category_id = CategoryId::new(category_id)?;

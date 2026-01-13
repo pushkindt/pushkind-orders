@@ -63,6 +63,11 @@ cargo fmt --all -- --check
 - Perform trimming, case normalisation, and other input clean-up before
   constructing domain types; domain builders assume callers supply sanitised
   values.
+- Forms should have a strongly typed `*Payload` counterpart in the same module
+  and a `TryFrom<*Form>` implementation that calls `validate()` and constructs
+  strong domain types, mapping type-construction failures to the form error.
+  Services should call `try_into()` on incoming forms, then build domain objects
+  from the payload plus any contextual ids.
 - Prefer dependency injection through function parameters over global state.
 - For Diesel update models, avoid nested optionals; prefer single-layer `Option<T>`
   fields and rely on `#[diesel(treat_none_as_null = true)]` when nullable columns
