@@ -23,7 +23,7 @@ pub async fn show_products(
     server_config: web::Data<CommonServerConfig>,
     tera: web::Data<Tera>,
 ) -> impl Responder {
-    match products::load_products_page(repo.get_ref(), &user, params.0) {
+    match products::load_products_page(params.0, &user, repo.get_ref()) {
         Ok(data) => {
             let mut context = base_context(
                 &flash_messages,
@@ -81,7 +81,7 @@ pub async fn add_product(
         }
     };
 
-    match products::create_product(repo.get_ref(), &user, form) {
+    match products::create_product(form, &user, repo.get_ref()) {
         Ok(product) => {
             FlashMessage::success(format!("Товар «{}» добавлен.", product.name)).send();
             redirect("/products")
@@ -111,7 +111,7 @@ pub async fn upload_products(
     repo: web::Data<DieselRepository>,
     MultipartForm(form): MultipartForm<UploadProductsForm>,
 ) -> impl Responder {
-    match products::import_products(repo.get_ref(), &user, form) {
+    match products::import_products(form, &user, repo.get_ref()) {
         Ok(created) => {
             FlashMessage::success(format!("Загружено товаров: {created}.")).send();
             redirect("/products")
@@ -157,7 +157,7 @@ pub async fn edit_product(
 
     let product_id = form.product_id;
 
-    match products::update_product(repo.get_ref(), &user, product_id, form) {
+    match products::update_product(product_id, form, &user, repo.get_ref()) {
         Ok(product) => {
             FlashMessage::success(format!("Товар «{}» обновлён.", product.name)).send();
             redirect("/products")

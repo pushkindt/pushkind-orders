@@ -1,15 +1,10 @@
+use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
-use crate::{
-    domain::{
-        price_level::{NewPriceLevel, UpdatePriceLevel},
-        types::{
-            CategoryId, CustomerName, HubId, PhoneNumber, PriceLevelId, PriceLevelName, PublicId,
-        },
-    },
-    forms::sanitize_text,
+use crate::domain::types::{
+    CategoryId, CustomerName, PhoneNumber, PriceLevelId, PriceLevelName, PublicId,
 };
 
 /// Result type returned by the price level form helpers.
@@ -82,6 +77,14 @@ pub struct AddPriceLevelForm {
     pub excluded_category_ids: Vec<i32>,
 }
 
+/// Normalized payload for creating a price level.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddPriceLevelPayload {
+    pub name: PriceLevelName,
+    pub default: bool,
+    pub modifier_input: PriceLevelModifierInput,
+}
+
 /// Normalized payload describing how to apply a price modifier to products.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PriceLevelModifierInput {
@@ -107,6 +110,7 @@ pub struct AssignClientPriceLevelForm {
     /// Selected price level identifier. `None` restores the default hub level.
     #[validate(range(min = 1))]
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub price_level_id: Option<i32>,
 }
 
@@ -142,69 +146,59 @@ impl TryFrom<AssignClientPriceLevelForm> for AssignClientPriceLevelPayload {
     }
 }
 
-impl AddPriceLevelForm {
-    /// Validates and sanitizes the payload into a domain `NewPriceLevel`.
-    pub fn into_new_price_level(self, hub_id: i32) -> PriceLevelFormResult<NewPriceLevel> {
-        Ok(self.into_new_price_level_with_modifier(hub_id)?.0)
-    }
+impl TryFrom<AddPriceLevelForm> for AddPriceLevelPayload {
+    type Error = PriceLevelFormError;
 
-    /// Validates and sanitizes the payload into a domain `NewPriceLevel` and modifier input.
-    pub fn into_new_price_level_with_modifier(
-        self,
-        hub_id: i32,
-    ) -> PriceLevelFormResult<(NewPriceLevel, PriceLevelModifierInput)> {
-        self.validate()?;
+    fn try_from(value: AddPriceLevelForm) -> Result<Self, Self::Error> {
+        value.validate()?;
 
-        let hub_id = HubId::new(hub_id)
-            .map_err(|_| PriceLevelFormError::Validation(ValidationErrors::new()))?;
+        let name = PriceLevelName::new(value.name)
+            .map_err(|_| PriceLevelFormError::InvalidPriceLevelName)?;
 
-        let name = sanitize_text(&self.name).ok_or(PriceLevelFormError::InvalidPriceLevelName)?;
-        let name =
-            PriceLevelName::new(name).map_err(|_| PriceLevelFormError::InvalidPriceLevelName)?;
-
-        let base_price_level_id = PriceLevelId::new(self.base_price_level_id)
+        let base_price_level_id = PriceLevelId::new(value.base_price_level_id)
             .map_err(|_| PriceLevelFormError::InvalidBasePriceLevelId)?;
 
-        let price_modifier = match self.price_modifier_kind {
+        let price_modifier = match value.price_modifier_kind {
             PriceModifierKind::Percent => {
-                if (-100..=100).contains(&self.price_modifier) {
-                    self.price_modifier
+                if (-100..=100).contains(&value.price_modifier) {
+                    value.price_modifier
                 } else {
                     return Err(PriceLevelFormError::InvalidPriceModifier);
                 }
             }
             PriceModifierKind::Fixed => {
-                if (-1_000_000..=1_000_000).contains(&self.price_modifier) {
-                    self.price_modifier
+                if (-1_000_000..=1_000_000).contains(&value.price_modifier) {
+                    value.price_modifier
                 } else {
                     return Err(PriceLevelFormError::InvalidPriceModifier);
                 }
             }
         };
 
-        let excluded_category_ids: Vec<CategoryId> = self
+        let excluded_category_ids: Vec<CategoryId> = value
             .excluded_category_ids
             .into_iter()
             .map(CategoryId::new)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| PriceLevelFormError::InvalidExcludedCategoryId)?;
 
-        if !self.use_all_categories && excluded_category_ids.is_empty() {
+        if !value.use_all_categories && excluded_category_ids.is_empty() {
             return Err(PriceLevelFormError::ExcludedCategoriesRequired);
         }
 
         let modifier_input = PriceLevelModifierInput {
             base_price_level_id,
             price_modifier,
-            price_modifier_kind: self.price_modifier_kind,
-            use_all_categories: self.use_all_categories,
+            price_modifier_kind: value.price_modifier_kind,
+            use_all_categories: value.use_all_categories,
             excluded_category_ids,
         };
 
-        Ok((
-            NewPriceLevel::new(hub_id, name, self.default),
+        Ok(Self {
+            name,
+            default: value.default,
             modifier_input,
-        ))
+        })
     }
 }
 
@@ -219,16 +213,26 @@ pub struct EditPriceLevelForm {
     pub default: bool,
 }
 
-impl EditPriceLevelForm {
-    /// Validates and sanitizes the payload into a domain `UpdatePriceLevel`.
-    pub fn into_update_price_level(self) -> PriceLevelFormResult<UpdatePriceLevel> {
-        self.validate()?;
+/// Normalized payload for updating a price level.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditPriceLevelPayload {
+    pub name: PriceLevelName,
+    pub default: bool,
+}
 
-        let name = sanitize_text(&self.name).ok_or(PriceLevelFormError::InvalidPriceLevelName)?;
-        let name =
-            PriceLevelName::new(name).map_err(|_| PriceLevelFormError::InvalidPriceLevelName)?;
+impl TryFrom<EditPriceLevelForm> for EditPriceLevelPayload {
+    type Error = PriceLevelFormError;
 
-        Ok(UpdatePriceLevel::new(name, self.default))
+    fn try_from(value: EditPriceLevelForm) -> Result<Self, Self::Error> {
+        value.validate()?;
+
+        let name = PriceLevelName::new(value.name)
+            .map_err(|_| PriceLevelFormError::InvalidPriceLevelName)?;
+
+        Ok(Self {
+            name,
+            default: value.default,
+        })
     }
 }
 
@@ -248,10 +252,15 @@ mod tests {
             excluded_category_ids: Vec::new(),
         };
 
-        let new_level = form.into_new_price_level(5).expect("expected success");
+        let payload: AddPriceLevelPayload = form.try_into().expect("expected success");
 
-        assert_eq!(new_level.hub_id.get(), 5);
-        assert_eq!(new_level.name.as_str(), "Premium\tLevel");
+        assert_eq!(payload.name.as_str(), "Premium\tLevel");
+        assert_eq!(payload.modifier_input.base_price_level_id.get(), 1);
+        assert_eq!(payload.modifier_input.price_modifier, 10);
+        assert_eq!(
+            payload.modifier_input.price_modifier_kind,
+            PriceModifierKind::Percent
+        );
     }
 
     #[test]
@@ -312,7 +321,7 @@ mod tests {
             excluded_category_ids: Vec::new(),
         };
 
-        let result = form.into_new_price_level(1);
+        let result: PriceLevelFormResult<AddPriceLevelPayload> = form.try_into();
 
         assert!(matches!(
             result,
@@ -332,7 +341,7 @@ mod tests {
             excluded_category_ids: Vec::new(),
         };
 
-        let result = form.into_new_price_level(1);
+        let result: PriceLevelFormResult<AddPriceLevelPayload> = form.try_into();
 
         assert!(matches!(
             result,
@@ -352,7 +361,7 @@ mod tests {
             excluded_category_ids: Vec::new(),
         };
 
-        let result = form.into_new_price_level(1);
+        let result: PriceLevelFormResult<AddPriceLevelPayload> = form.try_into();
 
         assert!(matches!(
             result,
@@ -367,10 +376,10 @@ mod tests {
             default: true,
         };
 
-        let update = form.into_update_price_level().expect("expected success");
+        let update: EditPriceLevelPayload = form.try_into().expect("expected success");
 
         assert_eq!(update.name.as_str(), "Updated\nName");
-        assert!(update.is_default);
+        assert!(update.default);
     }
 
     #[test]
@@ -380,7 +389,7 @@ mod tests {
             default: false,
         };
 
-        let result = form.into_update_price_level();
+        let result: PriceLevelFormResult<EditPriceLevelPayload> = form.try_into();
 
         assert!(matches!(
             result,

@@ -1,12 +1,14 @@
+use std::collections::HashSet;
+
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use std::collections::HashSet;
-
 use crate::domain::category::CategoryTreeQuery;
 use crate::domain::customer::{CustomerListQuery, NewCustomer, UpdateCustomer};
-use crate::domain::price_level::{PriceLevel, PriceLevelListQuery};
+use crate::domain::price_level::{
+    NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel,
+};
 use crate::domain::product::ProductListQuery;
 use crate::domain::product_price_level::NewProductPriceLevelRate;
 use crate::domain::types::{HubId, PriceCents, PriceLevelId};
@@ -14,8 +16,8 @@ use crate::dto::price_levels::{
     ClientPriceLevelAssignment, ClientPriceLevelAssignments, PriceLevelsPageData, PriceLevelsQuery,
 };
 use crate::forms::price_levels::{
-    AddPriceLevelForm, AssignClientPriceLevelForm, AssignClientPriceLevelPayload,
-    EditPriceLevelForm, PriceModifierKind,
+    AddPriceLevelForm, AddPriceLevelPayload, AssignClientPriceLevelForm,
+    AssignClientPriceLevelPayload, EditPriceLevelForm, EditPriceLevelPayload, PriceModifierKind,
 };
 use crate::repository::{
     CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter,
@@ -25,9 +27,9 @@ use crate::services::{ServiceError, ServiceResult};
 
 /// Loads the price levels list for the index page.
 pub fn load_price_levels<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     query: PriceLevelsQuery,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<PriceLevelsPageData>
 where
     R: PriceLevelReader + CategoryReader + ?Sized,
@@ -56,9 +58,9 @@ where
 
 /// Loads a single price level for the authenticated user's hub.
 pub fn load_price_level_for_edit<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     price_level_id: i32,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<PriceLevel>
 where
     R: PriceLevelReader + ?Sized,
@@ -76,8 +78,8 @@ where
 
 /// Loads saved price level assignments for all hub customers.
 pub fn load_client_price_level_assignments<R>(
-    repo: &R,
     user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<ClientPriceLevelAssignments>
 where
     R: PriceLevelReader + CustomerReader + ?Sized,
@@ -109,18 +111,20 @@ where
 
 /// Creates a new price level for the authenticated user's hub.
 pub fn create_price_level<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     form: AddPriceLevelForm,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<PriceLevel>
 where
     R: PriceLevelWriter + ProductReader + ProductWriter + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let (new_price_level, modifier_input) = form.into_new_price_level_with_modifier(user.hub_id)?;
-
     let hub_id = HubId::new(user.hub_id)?;
+    let payload: AddPriceLevelPayload = form.try_into()?;
+    let new_price_level = NewPriceLevel::new(hub_id, payload.name, payload.default);
+    let modifier_input = payload.modifier_input;
+
     let (_, mut products) = repo.list_products(ProductListQuery::new(hub_id))?;
 
     if !modifier_input.use_all_categories {
@@ -190,17 +194,18 @@ fn apply_price_modifier(
 
 /// Updates an existing price level for the authenticated user's hub.
 pub fn update_price_level<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     price_level_id: i32,
     form: EditPriceLevelForm,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<PriceLevel>
 where
     R: PriceLevelWriter + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let updates = form.into_update_price_level()?;
+    let payload: EditPriceLevelPayload = form.try_into()?;
+    let updates = UpdatePriceLevel::new(payload.name, payload.default);
 
     let hub_id = HubId::new(user.hub_id)?;
     let price_level_id = PriceLevelId::new(price_level_id)?;
@@ -210,9 +215,9 @@ where
 
 /// Deletes a price level for the authenticated user's hub.
 pub fn remove_price_level<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     price_level_id: i32,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<()>
 where
     R: PriceLevelWriter + ?Sized,
@@ -227,9 +232,9 @@ where
 
 /// Persists a price level assignment for a single customer.
 pub fn assign_price_level_to_client<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     payload: AssignClientPriceLevelForm,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<()>
 where
     R: CustomerReader + CustomerWriter + ?Sized,
@@ -642,7 +647,7 @@ mod tests {
             CombinedPriceLevelRepo::new(MockPriceLevelReader::new(), MockCategoryReader::new());
         let user = user_with_roles(&[]);
 
-        let result = load_price_levels(&repo, &user, PriceLevelsQuery::default());
+        let result = load_price_levels(PriceLevelsQuery::default(), &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -652,7 +657,7 @@ mod tests {
         let repo = MockPriceLevelReader::new();
         let user = user_with_roles(&[]);
 
-        let result = load_price_level_for_edit(&repo, &user, 3);
+        let result = load_price_level_for_edit(3, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -671,7 +676,7 @@ mod tests {
             })
             .returning(|_, _| Ok(None));
 
-        let result = load_price_level_for_edit(&repo, &user, 9);
+        let result = load_price_level_for_edit(9, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -690,7 +695,7 @@ mod tests {
             })
             .returning(|_, _| Ok(Some(sample_level(11, 42, "Retail"))));
 
-        let result = load_price_level_for_edit(&repo, &user, 11).expect("expected price level");
+        let result = load_price_level_for_edit(11, &user, &repo).expect("expected price level");
 
         assert_eq!(result.id.get(), 11);
         assert_eq!(result.name.as_str(), "Retail");
@@ -743,7 +748,7 @@ mod tests {
             });
 
         let repo = CombinedPriceLevelRepo::new(price_reader, category_reader);
-        let result = load_price_levels(&repo, &user, query);
+        let result = load_price_levels(query, &user, &repo);
 
         let data = match result {
             Ok(value) => value,
@@ -773,7 +778,7 @@ mod tests {
             excluded_category_ids: Vec::new(),
         };
 
-        let result = create_price_level(&repo, &user, form);
+        let result = create_price_level(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -812,7 +817,7 @@ mod tests {
         product_writer.expect_create_product_price_levels().times(0);
 
         let repo = CombinedPriceLevelCreateRepo::new(price_writer, product_reader, product_writer);
-        let result = create_price_level(&repo, &user, form).expect("expected success");
+        let result = create_price_level(form, &user, &repo).expect("expected success");
 
         assert_eq!(result.id.get(), 5);
         assert_eq!(result.hub_id.get(), expected_hub);
@@ -837,7 +842,7 @@ mod tests {
             excluded_category_ids: Vec::new(),
         };
 
-        let result = create_price_level(&repo, &user, form);
+        let result = create_price_level(form, &user, &repo);
 
         match result {
             Err(ServiceError::Form(message)) => {
@@ -878,7 +883,7 @@ mod tests {
         product_writer.expect_create_product_price_levels().times(0);
 
         let repo = CombinedPriceLevelCreateRepo::new(price_writer, product_reader, product_writer);
-        let result = create_price_level(&repo, &user, form);
+        let result = create_price_level(form, &user, &repo);
 
         match result {
             Err(ServiceError::Form(message)) => {
@@ -946,7 +951,7 @@ mod tests {
             .returning(|_, _| Ok(()));
 
         let repo = CombinedPriceLevelCreateRepo::new(price_writer, product_reader, product_writer);
-        let result = create_price_level(&repo, &user, form).expect("expected success");
+        let result = create_price_level(form, &user, &repo).expect("expected success");
 
         assert_eq!(result.id.get(), 99);
     }
@@ -960,7 +965,7 @@ mod tests {
             default: false,
         };
 
-        let result = update_price_level(&repo, &user, 7, form);
+        let result = update_price_level(7, form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -985,7 +990,7 @@ mod tests {
             })
             .return_once(move |_, _, _| Ok(sample_level(7, expected_hub, "Retail Plus")));
 
-        let result = update_price_level(&repo, &user, 7, form).expect("expected success");
+        let result = update_price_level(7, form, &user, &repo).expect("expected success");
 
         assert_eq!(result.id.get(), 7);
         assert_eq!(result.name.as_str(), "Retail Plus");
@@ -1000,7 +1005,7 @@ mod tests {
             default: false,
         };
 
-        let result = update_price_level(&repo, &user, 3, form);
+        let result = update_price_level(3, form, &user, &repo);
 
         match result {
             Err(ServiceError::Form(message)) => {
@@ -1026,7 +1031,7 @@ mod tests {
             .times(1)
             .return_once(|_, _, _| Err(RepositoryError::NotFound));
 
-        let result = update_price_level(&repo, &user, 11, form);
+        let result = update_price_level(11, form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -1092,7 +1097,7 @@ mod tests {
         let repo = ClientAssignmentRepo::new();
         let user = user_with_roles(&[]);
 
-        let result = load_client_price_level_assignments(&repo, &user);
+        let result = load_client_price_level_assignments(&user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -1133,7 +1138,7 @@ mod tests {
             });
 
         let assignments =
-            load_client_price_level_assignments(&repo, &user).expect("expected success");
+            load_client_price_level_assignments(&user, &repo).expect("expected success");
 
         assert_eq!(assignments.hub_id, hub_id);
         assert_eq!(assignments.default_price_level_id, Some(10));
@@ -1165,7 +1170,7 @@ mod tests {
             public_id: "public-123".to_string(),
         };
 
-        let result = assign_price_level_to_client(&repo, &user, payload);
+        let result = assign_price_level_to_client(payload, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -1210,7 +1215,7 @@ mod tests {
             public_id: expected_public_id.to_string(),
         };
 
-        assign_price_level_to_client(&repo, &user, payload).expect("expected success");
+        assign_price_level_to_client(payload, &user, &repo).expect("expected success");
     }
 
     #[test]
@@ -1263,7 +1268,7 @@ mod tests {
             public_id: expected_public_id.to_string(),
         };
 
-        assign_price_level_to_client(&repo, &user, payload).expect("expected success");
+        assign_price_level_to_client(payload, &user, &repo).expect("expected success");
     }
 
     #[test]
@@ -1312,7 +1317,7 @@ mod tests {
             public_id: expected_public_id.to_string(),
         };
 
-        assign_price_level_to_client(&repo, &user, payload).expect("expected success");
+        assign_price_level_to_client(payload, &user, &repo).expect("expected success");
     }
 
     #[test]
@@ -1326,7 +1331,7 @@ mod tests {
             public_id: "".to_string(),
         };
 
-        let result = assign_price_level_to_client(&repo, &user, payload);
+        let result = assign_price_level_to_client(payload, &user, &repo);
 
         match result {
             Err(ServiceError::Form(message)) => {
@@ -1345,7 +1350,7 @@ mod tests {
         let repo = MockPriceLevelWriter::new();
         let user = user_with_roles(&[]);
 
-        let result = remove_price_level(&repo, &user, 42);
+        let result = remove_price_level(42, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -1360,7 +1365,7 @@ mod tests {
             .withf(|id, hub| id.get() == 99 && hub.get() == 42)
             .return_once(|_, _| Err(RepositoryError::NotFound));
 
-        let result = remove_price_level(&repo, &user, 99);
+        let result = remove_price_level(99, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -1375,6 +1380,6 @@ mod tests {
             .withf(|id, hub| id.get() == 7 && hub.get() == 42)
             .return_once(|_, _| Ok(()));
 
-        remove_price_level(&repo, &user, 7).expect("expected success");
+        remove_price_level(7, &user, &repo).expect("expected success");
     }
 }

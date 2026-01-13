@@ -3,18 +3,18 @@ use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 use pushkind_common::routes::ensure_role;
 
 use crate::SERVICE_ACCESS_ROLE;
-use crate::domain::tag::{Tag, TagListQuery};
+use crate::domain::tag::{NewTag, Tag, TagListQuery, UpdateTag};
 use crate::domain::types::{HubId, TagId};
 use crate::dto::tags::{TagQuery, TagsPageData};
-use crate::forms::tags::{AddTagForm, EditTagForm};
+use crate::forms::tags::{AddTagForm, AddTagPayload, EditTagForm, EditTagPayload};
 use crate::repository::{TagReader, TagWriter};
 use crate::services::{ServiceError, ServiceResult};
 
 /// Fetches paginated tags for the authenticated user's hub.
 pub fn load_tags<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     query: TagQuery,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<TagsPageData>
 where
     R: TagReader + ?Sized,
@@ -40,7 +40,7 @@ where
 }
 
 /// Fetches a single tag for the authenticated user's hub.
-pub fn load_tag_for_edit<R>(repo: &R, user: &AuthenticatedUser, tag_id: i32) -> ServiceResult<Tag>
+pub fn load_tag_for_edit<R>(tag_id: i32, user: &AuthenticatedUser, repo: &R) -> ServiceResult<Tag>
 where
     R: TagReader + ?Sized,
 {
@@ -56,33 +56,35 @@ where
 }
 
 /// Creates a new tag for the authenticated user's hub.
-pub fn create_tag<R>(repo: &R, user: &AuthenticatedUser, form: AddTagForm) -> ServiceResult<Tag>
+pub fn create_tag<R>(form: AddTagForm, user: &AuthenticatedUser, repo: &R) -> ServiceResult<Tag>
 where
     R: TagWriter + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let new_tag = form.into_new_tag(user.hub_id)?;
+    let payload: AddTagPayload = form.try_into()?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let new_tag = NewTag::new(hub_id, payload.name);
 
     Ok(repo.create_tag(&new_tag)?)
 }
 
 /// Updates an existing tag for the authenticated user's hub.
-pub fn modify_tag<R>(repo: &R, user: &AuthenticatedUser, form: EditTagForm) -> ServiceResult<Tag>
+pub fn modify_tag<R>(form: EditTagForm, user: &AuthenticatedUser, repo: &R) -> ServiceResult<Tag>
 where
     R: TagWriter + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let tag_id = TagId::new(form.tag_id)?;
-    let update = form.into_update_tag()?;
+    let payload: EditTagPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
+    let update = UpdateTag::new(payload.name);
 
-    Ok(repo.update_tag(tag_id, hub_id, &update)?)
+    Ok(repo.update_tag(payload.tag_id, hub_id, &update)?)
 }
 
 /// Deletes a tag for the authenticated user's hub.
-pub fn remove_tag<R>(repo: &R, user: &AuthenticatedUser, tag_id: i32) -> ServiceResult<()>
+pub fn remove_tag<R>(tag_id: i32, user: &AuthenticatedUser, repo: &R) -> ServiceResult<()>
 where
     R: TagWriter + ?Sized,
 {
@@ -137,7 +139,7 @@ mod tests {
         let repo = MockTagReader::new();
         let user = user_with_roles(&[]);
 
-        let result = load_tags(&repo, &user, TagQuery::default());
+        let result = load_tags(TagQuery::default(), &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -177,7 +179,7 @@ mod tests {
                 ))
             });
 
-        let result = load_tags(&repo, &user, query);
+        let result = load_tags(query, &user, &repo);
         let data = result.expect("expected success");
 
         assert_eq!(data.search.as_deref(), Some("sea"));
@@ -226,7 +228,7 @@ mod tests {
             name: "Retail".to_string(),
         };
 
-        let result = create_tag(&repo, &user, form);
+        let result = create_tag(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -236,7 +238,7 @@ mod tests {
         let repo = MockTagReader::new();
         let user = user_with_roles(&[]);
 
-        let result = load_tag_for_edit(&repo, &user, 3);
+        let result = load_tag_for_edit(3, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -255,7 +257,7 @@ mod tests {
             })
             .returning(|_, _| Ok(None));
 
-        let result = load_tag_for_edit(&repo, &user, 9);
+        let result = load_tag_for_edit(9, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -274,7 +276,7 @@ mod tests {
             })
             .returning(|_, _| Ok(Some(sample_tag(12, 7, "Signature"))));
 
-        let result = load_tag_for_edit(&repo, &user, 12).expect("expected tag");
+        let result = load_tag_for_edit(12, &user, &repo).expect("expected tag");
 
         assert_eq!(result.id.get(), 12);
         assert_eq!(result.name.as_str(), "Signature");
@@ -298,7 +300,7 @@ mod tests {
             name: "  Seasonal\tPicks  ".to_string(),
         };
 
-        let created = create_tag(&repo, &user, form).expect("expected success");
+        let created = create_tag(form, &user, &repo).expect("expected success");
 
         assert_eq!(created.id.get(), 3);
         assert_eq!(created.name.as_str(), "Seasonal\tPicks");
@@ -312,7 +314,7 @@ mod tests {
             name: "   ".to_string(),
         };
 
-        let result = create_tag(&repo, &user, form);
+        let result = create_tag(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
     }
@@ -326,7 +328,7 @@ mod tests {
             name: "Updated".to_string(),
         };
 
-        let result = modify_tag(&repo, &user, form);
+        let result = modify_tag(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -351,7 +353,7 @@ mod tests {
             name: "  Limited\nEdition  ".to_string(),
         };
 
-        let updated = modify_tag(&repo, &user, form).expect("expected success");
+        let updated = modify_tag(form, &user, &repo).expect("expected success");
 
         assert_eq!(updated.id.get(), 5);
         assert_eq!(updated.name.as_str(), "Limited\nEdition");
@@ -366,7 +368,7 @@ mod tests {
             name: "   ".to_string(),
         };
 
-        let result = modify_tag(&repo, &user, form);
+        let result = modify_tag(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
     }
@@ -376,7 +378,7 @@ mod tests {
         let repo = MockTagWriter::new();
         let user = user_with_roles(&[]);
 
-        let result = remove_tag(&repo, &user, 1);
+        let result = remove_tag(1, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -395,7 +397,7 @@ mod tests {
             })
             .returning(|_, _| Ok(()));
 
-        let result = remove_tag(&repo, &user, 4);
+        let result = remove_tag(4, &user, &repo);
 
         assert!(matches!(result, Ok(())));
     }

@@ -25,7 +25,7 @@ pub async fn show_order(
 ) -> impl Responder {
     let order_id = path.into_inner();
 
-    match order_service::load_order_details(repo.get_ref(), &user, order_id) {
+    match order_service::load_order_details(order_id, &user, repo.get_ref()) {
         Ok(details) => {
             let mut context = base_context(
                 &flash_messages,
@@ -74,7 +74,7 @@ pub async fn edit_order(
         return redirect(order_path.as_str());
     }
 
-    match order_service::update_order(repo.get_ref(), &user, order_id, form) {
+    match order_service::update_order(order_id, form, &user, repo.get_ref()) {
         Ok(_) => {
             FlashMessage::success("Заказ обновлён.").send();
             redirect(order_path.as_str())
@@ -111,7 +111,7 @@ pub async fn show_edit_order_modal(
 ) -> impl Responder {
     let order_id = path.into_inner();
 
-    match order_service::load_order_details(repo.get_ref(), &user, order_id) {
+    match order_service::load_order_details(order_id, &user, repo.get_ref()) {
         Ok(details) => {
             let mut context = Context::new();
             context.insert("order", &details.order);
@@ -137,10 +137,10 @@ pub async fn update_order_product_approvals_handler(
     let order_id = path.into_inner();
 
     match order_service::update_order_product_approvals(
-        repo.get_ref(),
-        &user,
         order_id,
         payload.into_inner(),
+        &user,
+        repo.get_ref(),
     ) {
         Ok(details) => HttpResponse::Ok().json(details),
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),

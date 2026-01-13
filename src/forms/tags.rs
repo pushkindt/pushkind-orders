@@ -2,14 +2,7 @@ use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
-use crate::{
-    domain::tag::{NewTag, UpdateTag},
-    forms::sanitize_text,
-};
-
-/// Maximum allowed length for a tag name.
-const NAME_MAX_LEN: usize = 128;
-const NAME_MAX_LEN_VALIDATOR: u64 = NAME_MAX_LEN as u64;
+use crate::domain::types::{TagId, TagName};
 
 /// Result type returned by the tag form helpers.
 pub type TagFormResult<T> = Result<T, TagFormError>;
@@ -20,32 +13,37 @@ pub enum TagFormError {
     /// Validation failures from the `validator` crate.
     #[error("validation failed: {0}")]
     Validation(#[from] ValidationErrors),
-    /// The provided name is empty after sanitization.
-    #[error("tag name cannot be empty")]
-    EmptyName,
-    /// Domain constraint validation failed.
-    #[error("invalid tag data: {0}")]
-    Constraint(String),
+    /// The provided tag id is invalid.
+    #[error("tag id is invalid")]
+    InvalidTagId,
+    /// The provided name is invalid.
+    #[error("tag name is invalid")]
+    InvalidTagName,
 }
 
 /// Form payload emitted when submitting the "Add tag" form.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddTagForm {
     /// Name entered by the user.
-    #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
+    #[validate(length(min = 1))]
     pub name: String,
 }
 
-impl AddTagForm {
-    /// Validates and sanitizes the payload into a domain `NewTag`.
-    pub fn into_new_tag(self, hub_id: i32) -> TagFormResult<NewTag> {
-        self.validate()?;
+/// Normalized payload for creating a tag.
+#[derive(Debug, Clone)]
+pub struct AddTagPayload {
+    pub name: TagName,
+}
 
-        match sanitize_text(&self.name) {
-            Some(sanitized_name) => NewTag::try_new(hub_id, sanitized_name)
-                .map_err(|err| TagFormError::Constraint(err.to_string())),
-            None => Err(TagFormError::EmptyName),
-        }
+impl TryFrom<AddTagForm> for AddTagPayload {
+    type Error = TagFormError;
+
+    fn try_from(value: AddTagForm) -> Result<Self, Self::Error> {
+        value.validate()?;
+
+        TagName::new(value.name)
+            .map(|name| Self { name })
+            .map_err(|_| TagFormError::InvalidTagName)
     }
 }
 
@@ -56,20 +54,27 @@ pub struct EditTagForm {
     #[validate(range(min = 1))]
     pub tag_id: i32,
     /// Updated name supplied by the user.
-    #[validate(length(min = 1, max = NAME_MAX_LEN_VALIDATOR))]
+    #[validate(length(min = 1))]
     pub name: String,
 }
 
-impl EditTagForm {
-    /// Validates and sanitizes the payload into a domain `UpdateTag`.
-    pub fn into_update_tag(self) -> TagFormResult<UpdateTag> {
-        self.validate()?;
+/// Normalized payload for updating a tag.
+#[derive(Debug, Clone)]
+pub struct EditTagPayload {
+    pub tag_id: TagId,
+    pub name: TagName,
+}
 
-        match sanitize_text(&self.name) {
-            Some(sanitized_name) => UpdateTag::try_new(sanitized_name)
-                .map_err(|err| TagFormError::Constraint(err.to_string())),
-            None => Err(TagFormError::EmptyName),
-        }
+impl TryFrom<EditTagForm> for EditTagPayload {
+    type Error = TagFormError;
+
+    fn try_from(value: EditTagForm) -> Result<Self, Self::Error> {
+        value.validate()?;
+
+        let tag_id = TagId::new(value.tag_id).map_err(|_| TagFormError::InvalidTagId)?;
+        let name = TagName::new(value.name).map_err(|_| TagFormError::InvalidTagName)?;
+
+        Ok(Self { tag_id, name })
     }
 }
 
@@ -83,12 +88,9 @@ mod tests {
             name: "  Seasonal \t Specials  ".to_string(),
         };
 
-        let new_tag = form
-            .into_new_tag(5)
-            .expect("expected conversion to succeed");
+        let payload: AddTagPayload = form.try_into().expect("expected conversion to succeed");
 
-        assert_eq!(new_tag.hub_id.get(), 5);
-        assert_eq!(new_tag.name.as_str(), "Seasonal \t Specials");
+        assert_eq!(payload.name.as_str(), "Seasonal \t Specials");
     }
 
     #[test]
@@ -97,9 +99,9 @@ mod tests {
             name: "   ".to_string(),
         };
 
-        let result = form.into_new_tag(1);
+        let result: TagFormResult<AddTagPayload> = form.try_into();
 
-        assert!(matches!(result, Err(TagFormError::EmptyName)));
+        assert!(matches!(result, Err(TagFormError::InvalidTagName)));
     }
 
     #[test]
@@ -109,13 +111,12 @@ mod tests {
             name: "  Limited\nEdition  ".to_string(),
         };
 
-        let tag_id = form.tag_id;
-        let update = form
-            .into_update_tag()
+        let payload: EditTagPayload = form
+            .try_into()
             .expect("expected payload conversion to succeed");
 
-        assert_eq!(tag_id, 9);
-        assert_eq!(update.name.as_str(), "Limited\nEdition");
+        assert_eq!(payload.tag_id.get(), 9);
+        assert_eq!(payload.name.as_str(), "Limited\nEdition");
     }
 
     #[test]
@@ -125,8 +126,8 @@ mod tests {
             name: "  ".to_string(),
         };
 
-        let result = form.into_update_tag();
+        let result: TagFormResult<EditTagPayload> = form.try_into();
 
-        assert!(matches!(result, Err(TagFormError::EmptyName)));
+        assert!(matches!(result, Err(TagFormError::InvalidTagName)));
     }
 }

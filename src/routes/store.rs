@@ -91,7 +91,7 @@ pub async fn list_store_products(
         }
     };
 
-    match load_store_products(repo.get_ref(), hub_id, filters, store_customer.as_ref()) {
+    match load_store_products(hub_id, filters, store_customer.as_ref(), repo.get_ref()) {
         Ok(products) => HttpResponse::Ok().json(products),
         Err(err) => {
             error!("Failed to load storefront products for hub {hub_id}: {err}");
@@ -127,7 +127,7 @@ pub async fn get_store_product(
         }
     };
 
-    match load_store_product(repo.get_ref(), hub_id, product_id, store_customer.as_ref()) {
+    match load_store_product(hub_id, product_id, store_customer.as_ref(), repo.get_ref()) {
         Ok(Some(product)) => HttpResponse::Ok().json(product),
         Ok(None) => HttpResponse::NotFound().finish(),
         Err(err) => {
@@ -153,7 +153,7 @@ pub async fn list_store_categories(
             parent_id: query.parent_id,
         })
         .unwrap_or_default();
-    match load_store_categories(repo.get_ref(), hub_id, filters) {
+    match load_store_categories(hub_id, filters, repo.get_ref()) {
         Ok(categories) => HttpResponse::Ok().json(categories),
         Err(err) => {
             error!("Failed to load storefront categories for hub {hub_id}: {err}");
@@ -172,7 +172,7 @@ pub async fn list_store_tags(
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
-    match load_store_tags(repo.get_ref(), hub_id) {
+    match load_store_tags(hub_id, repo.get_ref()) {
         Ok(tags) => HttpResponse::Ok().json(tags),
         Err(err) => {
             error!("Failed to load storefront tags for hub {hub_id}: {err}");
@@ -200,11 +200,11 @@ pub async fn request_store_auth_otp(
     let zmq_sender = &zmq_senders.get_ref().sms;
 
     match request_store_otp(
-        repo.get_ref(),
         hub_id,
+        payload.into_inner(),
+        repo.get_ref(),
         zmq_sender,
         &server_config.sms_sender,
-        payload.into_inner(),
     )
     .await
     {
@@ -244,7 +244,7 @@ pub async fn verify_store_auth_otp(
 
     let zmq_sender = &zmq_senders.get_ref().clients;
 
-    match verify_store_otp(repo.get_ref(), hub_id, zmq_sender, payload.into_inner()).await {
+    match verify_store_otp(hub_id, payload.into_inner(), repo.get_ref(), zmq_sender).await {
         Ok(response) => {
             if let Err(err) = set_store_customer(&session, &response.customer) {
                 error!("Failed to persist store customer for hub {hub_id}: {err}");
@@ -288,10 +288,10 @@ pub async fn create_store_order_handler(
     };
 
     match create_store_order(
-        repo.get_ref(),
         hub_id,
-        &store_customer,
         payload.into_inner(),
+        &store_customer,
+        repo.get_ref(),
     ) {
         Ok(order) => HttpResponse::Created().json(StoreOrder::from(order)),
         Err(ServiceError::Form(message)) => {
@@ -331,7 +331,7 @@ pub async fn list_store_orders_handler(
 
     let page = params.and_then(|query| query.page);
 
-    match list_store_orders(repo.get_ref(), hub_id, &store_customer, page) {
+    match list_store_orders(hub_id, page, &store_customer, repo.get_ref()) {
         Ok(orders) => HttpResponse::Ok().json(orders),
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
         Err(err) => {
@@ -377,7 +377,7 @@ pub async fn update_store_order_handler(
         }
     };
 
-    match update_store_order(repo.get_ref(), hub_id, order_id, &store_customer, values) {
+    match update_store_order(hub_id, order_id, values, &store_customer, repo.get_ref()) {
         Ok(order) => HttpResponse::Ok().json(order),
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
         Err(ServiceError::NotFound) => HttpResponse::NotFound().finish(),

@@ -1,15 +1,14 @@
-use chrono::Utc;
+use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
 use crate::{
-    domain::order::{OrderStatus, UpdateOrder as DomainUpdateOrder},
+    domain::order::OrderStatus,
     domain::types::{
         OrderConsignee, OrderDeliveryNotes, OrderNotes, OrderPayer, OrderReference,
         OrderShippingAddress,
     },
-    forms::sanitize_text,
 };
 
 /// Result type returned by the order form helpers.
@@ -55,82 +54,94 @@ pub struct EditOrderForm {
     pub status: String,
     /// Optional external reference displayed to customers.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub reference: Option<String>,
     /// Optional operator notes for the order.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub notes: Option<String>,
     /// Optional shipping address override.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub shipping_address: Option<String>,
     /// Optional consignee information.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub consignee: Option<String>,
     /// Optional delivery instructions.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub delivery_notes: Option<String>,
     /// Optional payer description.
     #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub payer: Option<String>,
 }
 
-impl EditOrderForm {
-    /// Validates and converts the payload into a domain `UpdateOrder`.
-    pub fn into_update_order(self) -> OrderFormResult<DomainUpdateOrder> {
-        self.validate()?;
+/// Normalized payload for editing orders.
+#[derive(Debug, Clone)]
+pub struct EditOrderPayload {
+    pub status: OrderStatus,
+    pub reference: Option<OrderReference>,
+    pub notes: Option<OrderNotes>,
+    pub shipping_address: Option<OrderShippingAddress>,
+    pub consignee: Option<OrderConsignee>,
+    pub delivery_notes: Option<OrderDeliveryNotes>,
+    pub payer: Option<OrderPayer>,
+}
 
-        let status = OrderStatus::try_from(self.status.trim())
+impl TryFrom<EditOrderForm> for EditOrderPayload {
+    type Error = EditOrderFormError;
+
+    fn try_from(value: EditOrderForm) -> Result<Self, Self::Error> {
+        value.validate()?;
+
+        let status = OrderStatus::try_from(value.status.trim())
             .map_err(|_| EditOrderFormError::InvalidStatus)?;
 
-        let reference = self
+        let reference = value
             .reference
-            .and_then(|value| sanitize_text(&value))
             .map(|value| {
                 OrderReference::new(value).map_err(|_| EditOrderFormError::InvalidReference)
             })
             .transpose()?;
 
-        let notes = self
+        let notes = value
             .notes
-            .and_then(|value| sanitize_text(&value))
             .map(|value| OrderNotes::new(value).map_err(|_| EditOrderFormError::InvalidNotes))
             .transpose()?;
 
-        let shipping_address = self
+        let shipping_address = value
             .shipping_address
-            .and_then(|value| sanitize_text(&value))
             .map(|value| {
                 OrderShippingAddress::new(value)
                     .map_err(|_| EditOrderFormError::InvalidShippingAddress)
             })
             .transpose()?;
 
-        let consignee = self
+        let consignee = value
             .consignee
-            .and_then(|value| sanitize_text(&value))
             .map(|value| {
                 OrderConsignee::new(value).map_err(|_| EditOrderFormError::InvalidConsignee)
             })
             .transpose()?;
 
-        let delivery_notes = self
+        let delivery_notes = value
             .delivery_notes
-            .and_then(|value| sanitize_text(&value))
             .map(|value| {
                 OrderDeliveryNotes::new(value).map_err(|_| EditOrderFormError::InvalidDeliveryNotes)
             })
             .transpose()?;
 
-        let payer = self
+        let payer = value
             .payer
-            .and_then(|value| sanitize_text(&value))
             .map(|value| OrderPayer::new(value).map_err(|_| EditOrderFormError::InvalidPayer))
             .transpose()?;
 
-        Ok(DomainUpdateOrder {
+        Ok(Self {
             status,
-            notes,
             reference,
-            updated_at: Utc::now().naive_utc(),
+            notes,
             shipping_address,
             consignee,
             delivery_notes,
@@ -156,9 +167,7 @@ mod tests {
             payer: Some("  Company  ".to_string()),
         };
 
-        let updates = form
-            .into_update_order()
-            .expect("expected conversion to succeed");
+        let updates: EditOrderPayload = form.try_into().expect("expected conversion to succeed");
 
         assert_eq!(updates.status, OrderStatus::Processing);
         assert_eq!(
@@ -203,7 +212,7 @@ mod tests {
             payer: None,
         };
 
-        let result = form.into_update_order();
+        let result: OrderFormResult<EditOrderPayload> = form.try_into();
 
         assert!(matches!(result, Err(EditOrderFormError::InvalidStatus)));
     }

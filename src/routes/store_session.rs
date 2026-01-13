@@ -82,7 +82,7 @@ pub async fn get_store_session(
         }
     };
 
-    match load_store_session_customer(repo.get_ref(), &session_customer) {
+    match load_store_session_customer(&session_customer, repo.get_ref()) {
         Ok(customer) => HttpResponse::Ok().json(customer),
         Err(ServiceError::Unauthorized) => {
             if let Err(err) = clear_store_customer(&session) {

@@ -55,6 +55,8 @@ cargo fmt --all -- --check
   live in `src/dto` and are optimized for template rendering or JSON serialization.
 - Service functions should accept trait bounds (e.g., `OrderReader + OrderWriter`)
   so the `DieselRepository` and `mockall`-powered fakes remain interchangeable.
+- Service function signatures should follow the parameter order:
+  target, input data, actor/auth context, persistence, messaging/integrations.
 - Domain structs must not perform validation or normalization (e.g., no
   `to_lowercase`); assume inputs are already sanitized and transformed by forms
   or services before reaching the domain layer.
@@ -63,6 +65,11 @@ cargo fmt --all -- --check
 - Perform trimming, case normalisation, and other input clean-up before
   constructing domain types; domain builders assume callers supply sanitised
   values.
+- Forms should have a strongly typed `*Payload` counterpart in the same module
+  and a `TryFrom<*Form>` implementation that calls `validate()` and constructs
+  strong domain types, mapping type-construction failures to the form error.
+  Services should call `try_into()` on incoming forms, then build domain objects
+  from the payload plus any contextual ids.
 - Prefer dependency injection through function parameters over global state.
 - For Diesel update models, avoid nested optionals; prefer single-layer `Option<T>`
   fields and rely on `#[diesel(treat_none_as_null = true)]` when nullable columns

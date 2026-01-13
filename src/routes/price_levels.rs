@@ -28,7 +28,7 @@ pub async fn show_price_levels(
     server_config: web::Data<ServerConfig>,
     tera: web::Data<Tera>,
 ) -> impl Responder {
-    match load_price_levels(repo.get_ref(), &user, params.0) {
+    match load_price_levels(params.0, &user, repo.get_ref()) {
         Ok(data) => {
             let mut context = base_context(
                 &flash_messages,
@@ -72,7 +72,7 @@ pub async fn add_price_level(
         }
     };
 
-    match create_price_level(repo.get_ref(), &user, form) {
+    match create_price_level(form, &user, repo.get_ref()) {
         Ok(price_level) => {
             FlashMessage::success(format!("Уровень «{}» добавлен.", price_level.name)).send();
             redirect("/price-levels")
@@ -109,7 +109,7 @@ pub async fn edit_price_level(
 ) -> impl Responder {
     let price_level_id = path.into_inner();
 
-    match update_price_level(repo.get_ref(), &user, price_level_id, form.into_inner()) {
+    match update_price_level(price_level_id, form.into_inner(), &user, repo.get_ref()) {
         Ok(price_level) => {
             FlashMessage::success(format!("Уровень «{}» обновлен.", price_level.name)).send();
             redirect("/price-levels")
@@ -150,7 +150,7 @@ pub async fn show_edit_price_level_modal(
 ) -> impl Responder {
     let price_level_id = path.into_inner();
 
-    match load_price_level_for_edit(repo.get_ref(), &user, price_level_id) {
+    match load_price_level_for_edit(price_level_id, &user, repo.get_ref()) {
         Ok(price_level) => {
             let mut context = Context::new();
             context.insert("price_level", &price_level);
@@ -176,7 +176,7 @@ pub async fn delete_price_level(
 ) -> impl Responder {
     let price_level_id = path.into_inner();
 
-    match remove_price_level(repo.get_ref(), &user, price_level_id) {
+    match remove_price_level(price_level_id, &user, repo.get_ref()) {
         Ok(()) => {
             FlashMessage::success("Уровень удален.").send();
             redirect("/price-levels")

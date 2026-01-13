@@ -23,7 +23,7 @@ pub async fn show_tags(
     server_config: web::Data<CommonServerConfig>,
     tera: web::Data<Tera>,
 ) -> impl Responder {
-    match load_tags(repo.get_ref(), &user, params.0) {
+    match load_tags(params.0, &user, repo.get_ref()) {
         Ok(data) => {
             let mut context = base_context(
                 &flash_messages,
@@ -56,7 +56,7 @@ pub async fn add_tag(
     repo: web::Data<DieselRepository>,
     form: web::Form<AddTagForm>,
 ) -> impl Responder {
-    match create_tag(repo.get_ref(), &user, form.into_inner()) {
+    match create_tag(form.into_inner(), &user, repo.get_ref()) {
         Ok(tag) => {
             FlashMessage::success(format!("Тег «{}» добавлен.", tag.name)).send();
             redirect("/tags")
@@ -90,7 +90,7 @@ pub async fn edit_tag(
     repo: web::Data<DieselRepository>,
     form: web::Form<EditTagForm>,
 ) -> impl Responder {
-    match modify_tag(repo.get_ref(), &user, form.into_inner()) {
+    match modify_tag(form.into_inner(), &user, repo.get_ref()) {
         Ok(tag) => {
             FlashMessage::success(format!("Тег «{}» изменен.", tag.name)).send();
             redirect("/tags")
@@ -127,7 +127,7 @@ pub async fn show_edit_tag_modal(
 ) -> impl Responder {
     let tag_id = path.into_inner();
 
-    match load_tag_for_edit(repo.get_ref(), &user, tag_id) {
+    match load_tag_for_edit(tag_id, &user, repo.get_ref()) {
         Ok(tag) => {
             let mut context = Context::new();
             context.insert("tag", &tag);
@@ -153,7 +153,7 @@ pub async fn delete_tag(
 ) -> impl Responder {
     let tag_id = path.into_inner();
 
-    match remove_tag(repo.get_ref(), &user, tag_id) {
+    match remove_tag(tag_id, &user, repo.get_ref()) {
         Ok(()) => {
             FlashMessage::success("Тег удален.").send();
             redirect("/tags")
