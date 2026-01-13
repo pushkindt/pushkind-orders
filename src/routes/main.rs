@@ -21,7 +21,7 @@ pub async fn show_index(
     server_config: web::Data<CommonServerConfig>,
     tera: web::Data<Tera>,
 ) -> impl Responder {
-    match main_service::load_index_page(repo.get_ref(), &user, params.0) {
+    match main_service::load_index_page(params.0, &user, repo.get_ref()) {
         Ok(data) => {
             let mut context = base_context(
                 &flash_messages,

@@ -538,8 +538,7 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
         if let Some(sku) = sku {
             let trimmed = sku.trim();
             if !trimmed.is_empty() {
-                let sku =
-                    ProductSku::new(trimmed).map_err(|_| ProductFormError::InvalidSku)?;
+                let sku = ProductSku::new(trimmed).map_err(|_| ProductFormError::InvalidSku)?;
                 updates = updates.with_sku(sku);
             }
         }
@@ -553,7 +552,8 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
         if let Some(units) = units {
             let trimmed = units.trim();
             if !trimmed.is_empty() {
-                let units = ProductUnits::new(trimmed).map_err(|_| ProductFormError::InvalidUnits)?;
+                let units =
+                    ProductUnits::new(trimmed).map_err(|_| ProductFormError::InvalidUnits)?;
                 updates = updates.with_units(units);
             }
         }

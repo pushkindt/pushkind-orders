@@ -11,9 +11,9 @@ use crate::services::ServiceResult;
 
 /// Loads the orders list for the main index page.
 pub fn load_index_page<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     query: IndexQuery,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<IndexPageData>
 where
     R: OrderReader + ?Sized,
@@ -95,7 +95,7 @@ mod tests {
         let repo = MockOrderReader::new();
         let user = user_with_roles(&[]);
 
-        let result = load_index_page(&repo, &user, IndexQuery::default());
+        let result = load_index_page(IndexQuery::default(), &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -135,7 +135,7 @@ mod tests {
                 ))
             });
 
-        let result = load_index_page(&repo, &user, query);
+        let result = load_index_page(query, &user, &repo);
 
         let data = match result {
             Ok(value) => value,

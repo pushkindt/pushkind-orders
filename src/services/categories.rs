@@ -16,7 +16,7 @@ use crate::repository::{CategoryReader, CategoryWriter};
 use crate::services::{ServiceError, ServiceResult};
 
 /// Loads the categories overview page.
-pub fn load_categories<R>(repo: &R, user: &AuthenticatedUser) -> ServiceResult<CategoryTreeData>
+pub fn load_categories<R>(user: &AuthenticatedUser, repo: &R) -> ServiceResult<CategoryTreeData>
 where
     R: CategoryReader + ?Sized,
 {
@@ -38,9 +38,9 @@ where
 
 /// Loads a single category for the authenticated user's hub.
 pub fn load_category_for_edit<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     category_id: i32,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<Category>
 where
     R: CategoryReader + ?Sized,
@@ -58,9 +58,9 @@ where
 
 /// Creates a new category for the authenticated user's hub.
 pub fn create_category<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     form: AddCategoryForm,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<Category>
 where
     R: CategoryWriter + ?Sized,
@@ -86,10 +86,10 @@ where
 
 /// Updates an existing category for the authenticated user's hub.
 pub fn modify_category<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
-    form: EditCategoryForm,
     category_id: i32,
+    form: EditCategoryForm,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<Category>
 where
     R: CategoryReader + CategoryWriter + ?Sized,
@@ -111,7 +111,7 @@ where
 }
 
 /// Deletes a category for the authenticated user's hub.
-pub fn remove_category<R>(repo: &R, user: &AuthenticatedUser, category_id: i32) -> ServiceResult<()>
+pub fn remove_category<R>(category_id: i32, user: &AuthenticatedUser, repo: &R) -> ServiceResult<()>
 where
     R: CategoryWriter + ?Sized,
 {
@@ -297,7 +297,7 @@ mod tests {
         let repo = MockCategoryReader::new();
         let user = user_with_roles(&[]);
 
-        let result = load_categories(&repo, &user);
+        let result = load_categories(&user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -307,7 +307,7 @@ mod tests {
         let repo = MockCategoryReader::new();
         let user = user_with_roles(&[]);
 
-        let result = load_category_for_edit(&repo, &user, 3);
+        let result = load_category_for_edit(3, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -327,7 +327,7 @@ mod tests {
             })
             .returning(|_, _| Ok(None));
 
-        let result = load_category_for_edit(&repo, &user, 9);
+        let result = load_category_for_edit(9, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -347,7 +347,7 @@ mod tests {
             })
             .returning(move |_, _| Ok(Some(sample_category(11, expected_hub, "Drinks"))));
 
-        let result = load_category_for_edit(&repo, &user, 11).expect("expected category");
+        let result = load_category_for_edit(11, &user, &repo).expect("expected category");
 
         assert_eq!(result.id.get(), 11);
         assert_eq!(result.name.as_str(), "Drinks");
@@ -377,7 +377,7 @@ mod tests {
                 Ok((3, vec![beverages, hot_drinks, coffee]))
             });
 
-        let data = load_categories(&repo, &user).expect("expected success");
+        let data = load_categories(&user, &repo).expect("expected success");
 
         assert_eq!(data.tree.len(), 1);
         let root = &data.tree[0];
@@ -402,7 +402,7 @@ mod tests {
             image_url: None,
         };
 
-        let result = create_category(&repo, &user, form);
+        let result = create_category(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -418,7 +418,7 @@ mod tests {
             image_url: None,
         };
 
-        let result = create_category(&repo, &user, form);
+        let result = create_category(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
     }
@@ -445,7 +445,7 @@ mod tests {
             image_url: None,
         };
 
-        let created = create_category(&repo, &user, form).expect("expected success");
+        let created = create_category(form, &user, &repo).expect("expected success");
 
         assert_eq!(created.id.get(), 10);
         assert_eq!(created.name.as_str(), "Fresh   Produce");
@@ -462,7 +462,7 @@ mod tests {
             image_url: None,
         };
 
-        let result = modify_category(&repo, &user, form, 1);
+        let result = modify_category(1, form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -494,7 +494,7 @@ mod tests {
             image_url: None,
         };
 
-        let updated = modify_category(&repo, &user, form, 3).expect("expected success");
+        let updated = modify_category(3, form, &user, &repo).expect("expected success");
 
         assert_eq!(updated.id.get(), 3);
     }
@@ -504,7 +504,7 @@ mod tests {
         let repo = MockCategoryWriter::new();
         let user = user_with_roles(&[]);
 
-        let result = remove_category(&repo, &user, 2);
+        let result = remove_category(2, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -523,7 +523,7 @@ mod tests {
             })
             .returning(|_, _| Ok(()));
 
-        let result = remove_category(&repo, &user, 2);
+        let result = remove_category(2, &user, &repo);
 
         assert!(result.is_ok());
     }

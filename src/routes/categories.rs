@@ -23,7 +23,7 @@ pub async fn show_categories(
     server_config: web::Data<CommonServerConfig>,
     tera: web::Data<Tera>,
 ) -> impl Responder {
-    match load_categories(repo.get_ref(), &user) {
+    match load_categories(&user, repo.get_ref()) {
         Ok(data) => {
             let mut context = base_context(
                 &flash_messages,
@@ -54,7 +54,7 @@ pub async fn add_category(
     repo: web::Data<DieselRepository>,
     form: web::Form<AddCategoryForm>,
 ) -> impl Responder {
-    match create_category(repo.get_ref(), &user, form.into_inner()) {
+    match create_category(form.into_inner(), &user, repo.get_ref()) {
         Ok(category) => {
             FlashMessage::success(format!("Категория «{}» добавлена.", category.name)).send();
             redirect("/categories")
@@ -89,7 +89,7 @@ pub async fn edit_category(
     repo: web::Data<DieselRepository>,
     form: web::Form<EditCategoryForm>,
 ) -> impl Responder {
-    match modify_category(repo.get_ref(), &user, form.into_inner(), path.into_inner()) {
+    match modify_category(path.into_inner(), form.into_inner(), &user, repo.get_ref()) {
         Ok(category) => {
             FlashMessage::success(format!("Категория «{}» изменена.", category.name)).send();
             redirect("/categories")
@@ -122,7 +122,7 @@ pub async fn show_edit_category_modal(
 ) -> impl Responder {
     let category_id = path.into_inner();
 
-    match load_category_for_edit(repo.get_ref(), &user, category_id) {
+    match load_category_for_edit(category_id, &user, repo.get_ref()) {
         Ok(category) => {
             let mut context = Context::new();
             context.insert("category", &category);
@@ -148,7 +148,7 @@ pub async fn delete_category(
 ) -> impl Responder {
     let category_id = path.into_inner();
 
-    match remove_category(repo.get_ref(), &user, category_id) {
+    match remove_category(category_id, &user, repo.get_ref()) {
         Ok(()) => {
             FlashMessage::success("Категория удалена.").send();
             redirect("/categories")

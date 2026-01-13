@@ -19,7 +19,7 @@ pub async fn api_v1_orders(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
 ) -> impl Responder {
-    match main_service::load_index_page(repo.get_ref(), &user, params.0) {
+    match main_service::load_index_page(params.0, &user, repo.get_ref()) {
         Ok(response) => HttpResponse::Ok().json(response.orders),
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
         Err(err) => {
@@ -37,7 +37,7 @@ pub async fn api_v1_client_price_levels(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
 ) -> impl Responder {
-    match load_client_price_level_assignments(repo.get_ref(), &user) {
+    match load_client_price_level_assignments(&user, repo.get_ref()) {
         Ok(assignments) => HttpResponse::Ok().json(assignments),
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
         Err(err) => {
@@ -59,7 +59,7 @@ pub async fn api_v1_update_client_price_level(
     let payload = payload.into_inner();
     let log_phone = payload.phone.clone();
 
-    match assign_price_level_to_client(repo.get_ref(), &user, payload) {
+    match assign_price_level_to_client(payload, &user, repo.get_ref()) {
         Ok(()) => HttpResponse::NoContent().finish(),
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
         Err(ServiceError::NotFound) => HttpResponse::NotFound().finish(),

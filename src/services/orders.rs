@@ -14,9 +14,9 @@ use crate::services::{ServiceError, ServiceResult};
 
 /// Loads a single order owned by the authenticated user's hub.
 pub fn load_order_details<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     order_id: i32,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<OrderDetails>
 where
     R: OrderReader + CustomerReader + ?Sized,
@@ -40,10 +40,10 @@ where
 
 /// Updates editable metadata for an existing order.
 pub fn update_order<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     order_id: i32,
     form: EditOrderForm,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<Order>
 where
     R: OrderWriter + ?Sized,
@@ -67,10 +67,10 @@ where
 
 /// Updates approved quantities for order products and recalculates the order total.
 pub fn update_order_product_approvals<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     order_id: i32,
     approvals: Vec<OrderProductApprovalPayload>,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<OrderDetails>
 where
     R: OrderReader + OrderWriter + CustomerReader + ?Sized,
@@ -339,7 +339,7 @@ mod tests {
         let repo = OrderServiceRepo::new();
         let user = user_with_roles(&[]);
 
-        let result = load_order_details(&repo, &user, 5);
+        let result = load_order_details(5, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -356,7 +356,7 @@ mod tests {
             .withf(move |id, hub_id| id.get() == 5 && hub_id.get() == expected_hub)
             .returning(|_, _| Ok(None));
 
-        let result = load_order_details(&repo, &user, 5);
+        let result = load_order_details(5, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -373,7 +373,7 @@ mod tests {
             .withf(move |id, hub_id| id.get() == 3 && hub_id.get() == expected_hub)
             .returning(move |id, hub_id| Ok(Some(sample_order(id.get(), hub_id.get(), None))));
 
-        let result = load_order_details(&repo, &user, 3);
+        let result = load_order_details(3, &user, &repo);
 
         let details = match result {
             Ok(details) => details,
@@ -403,7 +403,7 @@ mod tests {
             .withf(move |id, hub_id| id.get() == 11 && hub_id.get() == expected_hub)
             .returning(move |id, hub_id| Ok(Some(sample_customer(id.get(), hub_id.get()))));
 
-        let result = load_order_details(&repo, &user, 4);
+        let result = load_order_details(4, &user, &repo);
 
         let details = match result {
             Ok(details) => details,
@@ -422,7 +422,7 @@ mod tests {
         let user = user_with_roles(&[]);
         let form = sample_edit_form("Pending");
 
-        let result = update_order(&repo, &user, 5, form);
+        let result = update_order(5, form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -445,7 +445,7 @@ mod tests {
             })
             .returning(move |_, _, _| Ok(sample_order(5, expected_hub, None)));
 
-        let result = update_order(&repo, &user, 5, form);
+        let result = update_order(5, form, &user, &repo);
 
         let order = match result {
             Ok(order) => order,
@@ -465,7 +465,7 @@ mod tests {
         repo.expect_update_order()
             .returning(|_, _, _| Err(RepositoryError::NotFound));
 
-        let result = update_order(&repo, &user, 5, form);
+        let result = update_order(5, form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -485,7 +485,7 @@ mod tests {
             payer: None,
         };
 
-        let result = update_order(&repo, &user, 5, form);
+        let result = update_order(5, form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
     }
@@ -496,13 +496,13 @@ mod tests {
         let user = user_with_roles(&[]);
 
         let result = update_order_product_approvals(
-            &repo,
-            &user,
             1,
             vec![OrderProductApprovalPayload {
                 product_id: 10,
                 approved_quantity: 2,
             }],
+            &user,
+            &repo,
         );
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
@@ -555,13 +555,13 @@ mod tests {
             });
 
         let result = update_order_product_approvals(
-            &repo,
-            &user,
             1,
             vec![OrderProductApprovalPayload {
                 product_id: 10,
                 approved_quantity: 2,
             }],
+            &user,
+            &repo,
         )
         .expect("expected successful update");
 
@@ -637,13 +637,13 @@ mod tests {
             });
 
         let result = update_order_product_approvals(
-            &repo,
-            &user,
             1,
             vec![OrderProductApprovalPayload {
                 product_id: 10,
                 approved_quantity: 3,
             }],
+            &user,
+            &repo,
         )
         .expect("expected successful update");
 
@@ -664,13 +664,13 @@ mod tests {
             .returning(move |_, _| Ok(Some(order.clone())));
 
         let result = update_order_product_approvals(
-            &repo,
-            &user,
             1,
             vec![OrderProductApprovalPayload {
                 product_id: 99,
                 approved_quantity: 1,
             }],
+            &user,
+            &repo,
         );
 
         assert!(matches!(result, Err(ServiceError::NotFound)));

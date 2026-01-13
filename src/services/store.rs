@@ -38,11 +38,11 @@ const OTP_INVALID_MESSAGE: &str = "Invalid or expired OTP";
 
 /// Accepts an OTP request for the given hub.
 pub async fn request_store_otp<R>(
-    repo: &R,
     hub_id: i32,
+    payload: StoreOtpRequestPayload,
+    repo: &R,
     zmq_sender: &impl ZmqSenderTrait,
     sms_sender: &str,
-    payload: StoreOtpRequestPayload,
 ) -> ServiceResult<StoreOtpAcceptResponse>
 where
     R: StoreOtpRepository,
@@ -84,10 +84,10 @@ where
 
 /// Verifies an OTP submission for the given hub.
 pub async fn verify_store_otp<R>(
-    repo: &R,
     hub_id: i32,
-    zmq_sender: &impl ZmqSenderTrait,
     payload: StoreOtpVerifyPayload,
+    repo: &R,
+    zmq_sender: &impl ZmqSenderTrait,
 ) -> ServiceResult<StoreOtpVerifyResponse>
 where
     R: CustomerReader + CustomerWriter + StoreOtpRepository,
@@ -143,7 +143,7 @@ where
     })
 }
 /// Resolves the default price level ID for a hub.
-fn resolve_default_price_level_id<R>(repo: &R, hub_id: i32) -> ServiceResult<Option<i32>>
+fn resolve_default_price_level_id<R>(hub_id: i32, repo: &R) -> ServiceResult<Option<i32>>
 where
     R: PriceLevelReader + ?Sized,
 {
@@ -158,10 +158,10 @@ where
 
 /// Create a storefront order for the authenticated customer.
 pub fn create_store_order<R>(
-    repo: &R,
     hub_id: i32,
-    customer: &Customer,
     payloads: Vec<StoreOrderLinePayload>,
+    customer: &Customer,
+    repo: &R,
 ) -> ServiceResult<Order>
 where
     R: ProductReader + PriceLevelReader + OrderWriter + ?Sized,
@@ -169,7 +169,7 @@ where
     let hub_id = HubId::new(hub_id)?;
     let items = validate_store_order_lines(payloads)?;
 
-    let default_price_level_id = resolve_default_price_level_id(repo, hub_id.get())?;
+    let default_price_level_id = resolve_default_price_level_id(hub_id.get(), repo)?;
     let customer_price_level_id = customer.price_level_id.map(|id| id.get());
 
     let mut currency: Option<String> = None;
@@ -253,10 +253,10 @@ where
 
 /// Load orders placed by a storefront customer for the provided hub.
 pub fn list_store_orders<R>(
-    repo: &R,
     hub_id: i32,
-    customer: &Customer,
     page: Option<usize>,
+    customer: &Customer,
+    repo: &R,
 ) -> ServiceResult<Vec<StoreOrder>>
 where
     R: OrderReader + ?Sized,
@@ -275,11 +275,11 @@ where
 
 /// Apply storefront-provided metadata to an existing customer order.
 pub fn update_store_order<R>(
-    repo: &R,
     hub_id: i32,
     order_id: i32,
-    customer: &Customer,
     values: StoreOrderUpdateValues,
+    customer: &Customer,
+    repo: &R,
 ) -> ServiceResult<StoreOrder>
 where
     R: OrderReader + OrderWriter + ?Sized,
@@ -325,9 +325,9 @@ fn merge_updates<T>(incoming: Option<Option<T>>, existing: Option<T>) -> Option<
 
 /// Load categories available to a storefront for the provided hub.
 pub fn load_store_categories<R>(
-    repo: &R,
     hub_id: i32,
     filters: StoreCategoryFilters,
+    repo: &R,
 ) -> ServiceResult<Vec<StoreCategory>>
 where
     R: CategoryReader + ?Sized,
@@ -352,17 +352,17 @@ where
 
 /// Load products available to a storefront for the provided hub.
 pub fn load_store_products<R>(
-    repo: &R,
     hub_id: i32,
     filters: StoreProductFilters,
     store_customer: Option<&Customer>,
+    repo: &R,
 ) -> ServiceResult<Vec<StoreProduct>>
 where
     R: ProductReader + PriceLevelReader + ?Sized,
 {
     let hub_id = HubId::new(hub_id)?;
 
-    let default_price_level_id = resolve_default_price_level_id(repo, hub_id.get())?;
+    let default_price_level_id = resolve_default_price_level_id(hub_id.get(), repo)?;
     let customer_price_level_id =
         store_customer.and_then(|customer| customer.price_level_id.map(|id| id.get()));
 
@@ -381,10 +381,10 @@ where
 
 /// Load a single product available to a storefront for the provided hub.
 pub fn load_store_product<R>(
-    repo: &R,
     hub_id: i32,
     product_id: i32,
     store_customer: Option<&Customer>,
+    repo: &R,
 ) -> ServiceResult<Option<StoreProduct>>
 where
     R: ProductReader + PriceLevelReader + ?Sized,
@@ -399,7 +399,7 @@ where
         _ => return Ok(None),
     };
 
-    let default_price_level_id = resolve_default_price_level_id(repo, hub_id.get())?;
+    let default_price_level_id = resolve_default_price_level_id(hub_id.get(), repo)?;
     let customer_price_level_id =
         store_customer.and_then(|customer| customer.price_level_id.map(|id| id.get()));
 
@@ -411,7 +411,7 @@ where
 }
 
 /// Load tags available to a storefront for the provided hub.
-pub fn load_store_tags<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<StoreTag>>
+pub fn load_store_tags<R>(hub_id: i32, repo: &R) -> ServiceResult<Vec<StoreTag>>
 where
     R: TagReader + ?Sized,
 {
@@ -425,8 +425,8 @@ where
 
 /// Ensures the customer stored in the store session still exists in the database.
 pub fn load_store_session_customer<R>(
-    repo: &R,
     session_customer: &Customer,
+    repo: &R,
 ) -> ServiceResult<Customer>
 where
     R: CustomerReader + ?Sized,
@@ -726,7 +726,7 @@ mod tests {
             },
         ];
 
-        let result = create_store_order(&repo, 1, &customer, payload);
+        let result = create_store_order(1, payload, &customer, &repo);
 
         assert!(result.is_ok());
     }
@@ -756,7 +756,7 @@ mod tests {
             quantity: 1,
         }];
 
-        let result = create_store_order(&repo, 1, &customer, payload);
+        let result = create_store_order(1, payload, &customer, &repo);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
     }
@@ -794,7 +794,7 @@ mod tests {
             quantity: 1,
         }];
 
-        let result = create_store_order(&repo, 1, &customer, payload);
+        let result = create_store_order(1, payload, &customer, &repo);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
     }
@@ -834,7 +834,7 @@ mod tests {
             },
         ];
 
-        let result = create_store_order(&repo, 1, &customer, payload);
+        let result = create_store_order(1, payload, &customer, &repo);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
     }
@@ -856,7 +856,7 @@ mod tests {
             quantity: 0,
         }];
 
-        let result = create_store_order(&repo, 1, &customer, payload);
+        let result = create_store_order(1, payload, &customer, &repo);
 
         assert!(matches!(result, Err(ServiceError::Form(_))));
     }
@@ -1017,11 +1017,11 @@ mod tests {
         };
 
         let response = update_store_order(
-            &repo,
             existing.hub_id.get(),
             existing.id.get(),
-            &customer,
             values,
+            &customer,
+            &repo,
         )
         .expect("expected update");
 
@@ -1046,11 +1046,11 @@ mod tests {
         let values = StoreOrderUpdateValues::default();
 
         let result = update_store_order(
-            &repo,
             customer.hub_id.get(),
             order_id.get(),
-            &customer,
             values,
+            &customer,
+            &repo,
         );
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
@@ -1068,7 +1068,7 @@ mod tests {
 
         let values = StoreOrderUpdateValues::default();
 
-        let result = update_store_order(&repo, customer.hub_id.get(), 10, &customer, values);
+        let result = update_store_order(customer.hub_id.get(), 10, values, &customer, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -1097,7 +1097,7 @@ mod tests {
                 ))
             });
 
-        let orders = list_store_orders(&repo, customer.hub_id.get(), &customer, None)
+        let orders = list_store_orders(customer.hub_id.get(), None, &customer, &repo)
             .expect("expected orders");
 
         assert_eq!(orders.len(), 1);
@@ -1119,7 +1119,7 @@ mod tests {
             })
             .return_once(|_| Ok((0, Vec::new())));
 
-        let orders = list_store_orders(&repo, customer.hub_id.get(), &customer, Some(2))
+        let orders = list_store_orders(customer.hub_id.get(), Some(2), &customer, &repo)
             .expect("expected empty orders");
 
         assert!(orders.is_empty());
@@ -1226,7 +1226,7 @@ mod tests {
             })
             .return_once(move |_, _| Ok(Some(return_sample)));
 
-        let customer = load_store_session_customer(&repo, &expected).expect("expected customer");
+        let customer = load_store_session_customer(&expected, &repo).expect("expected customer");
 
         assert_eq!(customer, expected);
     }
@@ -1237,7 +1237,7 @@ mod tests {
         repo.expect_get_customer_by_id()
             .return_once(|_, _| Ok(None));
 
-        let result = load_store_session_customer(&repo, &sample_customer());
+        let result = load_store_session_customer(&sample_customer(), &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -1375,7 +1375,7 @@ mod tests {
         let zmq_sender = TestZmqSender::new();
         let sms_sender = "test-sms-sender".to_string();
 
-        let response = request_store_otp(&repo, 99, &zmq_sender, &sms_sender, payload)
+        let response = request_store_otp(99, payload, &repo, &zmq_sender, &sms_sender)
             .await
             .expect("expected success");
 
@@ -1411,7 +1411,7 @@ mod tests {
         let zmq_sender = TestZmqSender::new();
         let sms_sender = "test-sms-sender".to_string();
 
-        let result = request_store_otp(&repo, 99, &zmq_sender, &sms_sender, payload).await;
+        let result = request_store_otp(99, payload, &repo, &zmq_sender, &sms_sender).await;
 
         match result {
             Err(ServiceError::Form(message)) => assert_eq!(message, OTP_THROTTLE_MESSAGE),
@@ -1452,7 +1452,7 @@ mod tests {
 
         let zmq_sender = TestZmqClientSender::new();
 
-        let response = verify_store_otp(&repo, 1, &zmq_sender, payload)
+        let response = verify_store_otp(1, payload, &repo, &zmq_sender)
             .await
             .expect("expected success");
 
@@ -1511,7 +1511,7 @@ mod tests {
 
         let zmq_sender = TestZmqClientSender::new();
 
-        let response = verify_store_otp(&repo, 1, &zmq_sender, payload)
+        let response = verify_store_otp(1, payload, &repo, &zmq_sender)
             .await
             .expect("expected success");
 
@@ -1556,7 +1556,7 @@ mod tests {
 
         let zmq_sender = TestZmqClientSender::new();
 
-        let result = verify_store_otp(&repo, 1, &zmq_sender, payload).await;
+        let result = verify_store_otp(1, payload, &repo, &zmq_sender).await;
 
         match result {
             Err(ServiceError::Form(message)) => assert_eq!(message, OTP_INVALID_MESSAGE),
@@ -1588,7 +1588,7 @@ mod tests {
 
         let zmq_sender = TestZmqClientSender::new();
 
-        let result = verify_store_otp(&repo, 1, &zmq_sender, payload).await;
+        let result = verify_store_otp(1, payload, &repo, &zmq_sender).await;
 
         match result {
             Err(ServiceError::Form(message)) => assert_eq!(message, OTP_INVALID_MESSAGE),
@@ -1679,7 +1679,7 @@ mod tests {
             .withf(|query| query.hub_id.get() == 1 && !query.include_archived)
             .return_once(move |_| Ok((2, categories.clone())));
 
-        let result = load_store_categories(&repo, 1, StoreCategoryFilters::default())
+        let result = load_store_categories(1, StoreCategoryFilters::default(), &repo)
             .expect("load categories");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1);
@@ -1720,12 +1720,12 @@ mod tests {
             .times(2)
             .returning(move |_| Ok((2, categories_clone.clone())));
 
-        let roots = load_store_categories(&repo, 1, StoreCategoryFilters::default())
+        let roots = load_store_categories(1, StoreCategoryFilters::default(), &repo)
             .expect("load root categories");
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].id, 1);
 
-        let children = load_store_categories(&repo, 1, StoreCategoryFilters { parent_id: Some(1) })
+        let children = load_store_categories(1, StoreCategoryFilters { parent_id: Some(1) }, &repo)
             .expect("load child categories");
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].id, 2);
@@ -1806,7 +1806,7 @@ mod tests {
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
 
-        let result = load_store_products(&repo, 1, StoreProductFilters::default(), None)
+        let result = load_store_products(1, StoreProductFilters::default(), None, &repo)
             .expect("load products");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1);
@@ -1900,7 +1900,7 @@ mod tests {
         customer.hub_id = HubId::new(1).unwrap();
         customer.price_level_id = Some(PriceLevelId::new(11).unwrap());
 
-        let result = load_store_products(&repo, 1, StoreProductFilters::default(), Some(&customer))
+        let result = load_store_products(1, StoreProductFilters::default(), Some(&customer), &repo)
             .expect("load products for authenticated customer");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].price_cents, Some(500));
@@ -1976,7 +1976,7 @@ mod tests {
         customer.hub_id = HubId::new(1).unwrap();
         customer.price_level_id = Some(PriceLevelId::new(11).unwrap());
 
-        let result = load_store_products(&repo, 1, StoreProductFilters::default(), Some(&customer))
+        let result = load_store_products(1, StoreProductFilters::default(), Some(&customer), &repo)
             .expect("load products for authenticated customer");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].price_cents, Some(450));
@@ -2051,7 +2051,7 @@ mod tests {
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
 
-        let result = load_store_product(&repo, 1, 7, None).expect("load single product");
+        let result = load_store_product(1, 7, None, &repo).expect("load single product");
         let product = result.expect("product should be present");
         assert_eq!(product.id, 7);
         assert_eq!(product.price_cents, Some(450));
@@ -2136,7 +2136,7 @@ mod tests {
         customer.hub_id = HubId::new(1).unwrap();
         customer.price_level_id = Some(PriceLevelId::new(11).unwrap());
 
-        let result = load_store_product(&repo, 1, 7, Some(&customer)).expect("load single product");
+        let result = load_store_product(1, 7, Some(&customer), &repo).expect("load single product");
         let product = result.expect("product should be present");
         assert_eq!(product.price_cents, Some(500));
     }
@@ -2204,7 +2204,7 @@ mod tests {
         customer.hub_id = HubId::new(1).unwrap();
         customer.price_level_id = Some(PriceLevelId::new(11).unwrap());
 
-        let result = load_store_product(&repo, 1, 7, Some(&customer)).expect("load single product");
+        let result = load_store_product(1, 7, Some(&customer), &repo).expect("load single product");
         let product = result.expect("product should be present");
         assert_eq!(product.price_cents, Some(450));
     }
@@ -2242,10 +2242,10 @@ mod tests {
         let price_level_reader = MockPriceLevelReader::new();
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
 
-        let missing = load_store_product(&repo, 1, 8, None).expect("load missing product");
+        let missing = load_store_product(1, 8, None, &repo).expect("load missing product");
         assert!(missing.is_none());
 
-        let archived = load_store_product(&repo, 1, 9, None).expect("load archived product");
+        let archived = load_store_product(1, 9, None, &repo).expect("load archived product");
         assert!(archived.is_none());
     }
 
@@ -2288,7 +2288,7 @@ mod tests {
 
         let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
 
-        let result = load_store_products(&repo, 1, StoreProductFilters::default(), None)
+        let result = load_store_products(1, StoreProductFilters::default(), None, &repo)
             .expect("load products");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].category_id, None);
@@ -2330,7 +2330,7 @@ mod tests {
             tag_id: None,
         };
 
-        let result = load_store_products(&repo, 1, filters, None).expect("load products");
+        let result = load_store_products(1, filters, None, &repo).expect("load products");
         assert!(result.is_empty());
     }
 }

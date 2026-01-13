@@ -25,9 +25,9 @@ use crate::services::{ServiceError, ServiceResult};
 
 /// Loads the products overview page.
 pub fn load_products_page<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     query: ProductsQuery,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<ProductsPageData>
 where
     R: ProductReader + PriceLevelReader + CategoryReader + TagReader + ?Sized,
@@ -92,40 +92,40 @@ where
 
 /// Creates a new product for the authenticated user's hub.
 pub fn create_product<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     form: AddProductForm,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<Product>
 where
     R: ProductWriter + PriceLevelReader + CategoryReader + CategoryWriter + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let price_levels = fetch_all_price_levels(repo, user.hub_id)?;
+    let price_levels = fetch_all_price_levels(user.hub_id, repo)?;
 
     let payload: AddProductPayload = (form, user.hub_id, &price_levels[..]).try_into()?;
 
-    persist_new_product(repo, user.hub_id, payload)
+    persist_new_product(user.hub_id, payload, repo)
 }
 
 /// Imports products from an uploaded CSV file.
 pub fn import_products<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     mut form: UploadProductsForm,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<usize>
 where
     R: ProductWriter + PriceLevelReader + CategoryReader + CategoryWriter + ?Sized,
 {
     ensure_role(user, SERVICE_ACCESS_ROLE)?;
 
-    let price_levels = fetch_all_price_levels(repo, user.hub_id)?;
+    let price_levels = fetch_all_price_levels(user.hub_id, repo)?;
 
     let uploads = form.into_new_products(user.hub_id, &price_levels)?;
 
     let mut created = 0usize;
     for upload in uploads {
-        persist_new_product(repo, user.hub_id, upload)?;
+        persist_new_product(user.hub_id, upload, repo)?;
         created += 1;
     }
 
@@ -134,10 +134,10 @@ where
 
 /// Updates an existing product for the authenticated user's hub.
 pub fn update_product<R>(
-    repo: &R,
-    user: &AuthenticatedUser,
     product_id: i32,
     form: EditProductForm,
+    user: &AuthenticatedUser,
+    repo: &R,
 ) -> ServiceResult<Product>
 where
     R: ProductReader + ProductWriter + PriceLevelReader + ?Sized,
@@ -154,7 +154,7 @@ where
         ));
     }
 
-    let available_price_levels = fetch_all_price_levels(repo, user.hub_id)?;
+    let available_price_levels = fetch_all_price_levels(user.hub_id, repo)?;
 
     let payload: EditProductPayload = (form, &available_price_levels[..]).try_into()?;
 
@@ -191,7 +191,7 @@ where
 }
 
 /// Fetches all price levels for a hub.
-fn fetch_all_price_levels<R>(repo: &R, hub_id: i32) -> ServiceResult<Vec<PriceLevel>>
+fn fetch_all_price_levels<R>(hub_id: i32, repo: &R) -> ServiceResult<Vec<PriceLevel>>
 where
     R: PriceLevelReader + ?Sized,
 {
@@ -202,9 +202,9 @@ where
 
 /// Persists a new product with associated price levels, images, tags, and category.
 fn persist_new_product<R>(
-    repo: &R,
     hub_id: i32,
     payload: AddProductPayload,
+    repo: &R,
 ) -> ServiceResult<Product>
 where
     R: ProductWriter + CategoryReader + CategoryWriter + ?Sized,
@@ -375,7 +375,7 @@ mod tests {
             exp: 0,
         };
 
-        let result = load_products_page(&repo, &user, ProductsQuery::default());
+        let result = load_products_page(ProductsQuery::default(), &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -491,7 +491,7 @@ mod tests {
             })
             .returning(move |_| Ok((tags_len, tags_response.clone())));
 
-        let result = load_products_page(&repo, &user, query);
+        let result = load_products_page(query, &user, &repo);
 
         let data = result.expect("expected success");
         assert_eq!(data.search.as_deref(), Some("coffee"));
@@ -587,13 +587,13 @@ mod tests {
             .returning(move |_| Ok((0, Vec::new())));
 
         let result = load_products_page(
-            &repo,
-            &user,
             ProductsQuery {
                 search: None,
                 page: None,
                 show_archived: true,
             },
+            &user,
+            &repo,
         );
 
         let data = result.expect("expected success");
@@ -627,7 +627,7 @@ mod tests {
             amount: None,
         };
 
-        let result = create_product(&repo, &user, form);
+        let result = create_product(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -716,7 +716,7 @@ mod tests {
             amount: None,
         };
 
-        let result = create_product(&repo, &user, form).expect("expected success");
+        let result = create_product(form, &user, &repo).expect("expected success");
         assert_eq!(result.id.get(), 101);
         assert_eq!(result.hub_id.get(), hub_id);
         assert_eq!(result.name.as_str(), "Widget");
@@ -789,7 +789,7 @@ mod tests {
             amount: None,
         };
 
-        let result = create_product(&repo, &user, form);
+        let result = create_product(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -847,7 +847,7 @@ mod tests {
             amount: None,
         };
 
-        let result = create_product(&repo, &user, form);
+        let result = create_product(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }
@@ -947,7 +947,7 @@ Banana,USD,7.50,
 ";
         let form = build_upload_form(csv);
 
-        let result = import_products(&repo, &user, form).expect("expected success");
+        let result = import_products(form, &user, &repo).expect("expected success");
 
         assert_eq!(result, 2);
     }
@@ -966,7 +966,7 @@ Banana,USD,7.50,
 
         let form = build_upload_form("name,currency\nWidget,USD\n");
 
-        let result = import_products(&repo, &user, form);
+        let result = import_products(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -998,7 +998,7 @@ Banana,USD,7.50,
             amount: None,
         };
 
-        let result = update_product(&repo, &user, 1, form);
+        let result = update_product(1, form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -1031,7 +1031,7 @@ Banana,USD,7.50,
             amount: None,
         };
 
-        let result = update_product(&repo, &user, product_id, form);
+        let result = update_product(product_id, form, &user, &repo);
 
         assert!(matches!(
             result,
@@ -1190,7 +1190,7 @@ Banana,USD,7.50,
         };
 
         let result =
-            update_product(&repo, &user, product_id, form).expect("expected update to succeed");
+            update_product(product_id, form, &user, &repo).expect("expected update to succeed");
 
         assert_eq!(result.name.as_str(), "Espresso Deluxe");
         assert_eq!(result.currency.as_str(), "EUR");

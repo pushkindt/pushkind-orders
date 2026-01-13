@@ -40,7 +40,7 @@ fn create_product_stores_price_levels() {
         amount: None,
     };
 
-    let result = products::create_product(&repo, &user, form);
+    let result = products::create_product(form, &user, &repo);
     assert!(
         result.is_ok(),
         "expected product creation to succeed: {result:?}"
@@ -85,6 +85,6 @@ fn create_product_requires_service_role() {
         amount: None,
     };
 
-    let result = products::create_product(&repo, &user, form);
+    let result = products::create_product(form, &user, &repo);
     assert!(matches!(result, Err(ServiceError::Unauthorized)));
 }
