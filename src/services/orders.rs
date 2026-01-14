@@ -304,7 +304,7 @@ mod tests {
             id: CustomerId::new(id).unwrap(),
             hub_id: HubId::new(hub_id).unwrap(),
             name: CustomerName::new("Sample Customer").unwrap(),
-            phone: PhoneNumber::new("+10000000000").unwrap(),
+            phone: PhoneNumber::new("+12025550123").unwrap(),
             price_level_id: None,
             public_id: None,
         }

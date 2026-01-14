@@ -1,8 +1,12 @@
 {% extends 'base.html' %}
 
 {% block styles %}
-    {{ super() }}
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.4.3/dist/css/tom-select.css" rel="stylesheet">
     <style>
+        .ts-control {
+            border: none;
+            padding: 0;
+        }
         .price-level-default {
             border-left: 4px solid var(--bs-success);
             background-color: rgba(var(--bs-success-rgb), 0.08);
@@ -66,7 +70,7 @@
 {% endblock %}
 
 {% block scripts %}
-    {{ super() }}
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.4.3/dist/js/tom-select.complete.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const clientsTableBody = document.getElementById('clientsTableBody');
@@ -82,6 +86,32 @@
             }
 
             createFilter('clientsFilterInput', 'clientsTableBody', 'tr');
+
+            let tomSelectInstance = new TomSelect('#excludedProducts', {
+                valueField: "id",
+                labelField: "name",
+                searchField: ["name", "sku"],
+                render: {
+                    option: function (item, escape) {
+                        let result = `<div class="border-bottom"><strong>${escape(item.name)} (${escape(item.sku ?? '')})</strong>`;
+                        result += '</div>';
+                        return result
+                    }
+                },
+                load: function(query, callback) {
+
+                    var url = '/api/v1/store/{{current_user.hub_id}}/products?page=1&search=' + encodeURIComponent(query);
+                    fetch(url)
+                        .then(response => response.json())
+                        .then(json => {
+                            console.log(json);
+                            callback(json.slice(0, 20));
+                        }).catch(()=>{
+                            callback();
+                        });
+
+                },
+            });
 
             if (useAllCategoriesToggle && excludedCategoriesSection) {
                 const syncCategorySelection = () => {

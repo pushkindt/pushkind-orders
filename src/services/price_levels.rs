@@ -137,6 +137,11 @@ where
         });
     }
 
+    if !modifier_input.excluded_product_ids.is_empty() {
+        let excluded: HashSet<_> = modifier_input.excluded_product_ids.into_iter().collect();
+        products.retain(|product| !excluded.contains(&product.id));
+    }
+
     let mut seed_rates = Vec::new();
     for product in products {
         let base_rate = product
@@ -775,6 +780,7 @@ mod tests {
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
             excluded_category_ids: Vec::new(),
+            excluded_product_ids: Vec::new(),
         };
 
         let result = create_price_level(form, &user, &repo);
@@ -795,6 +801,7 @@ mod tests {
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
             excluded_category_ids: Vec::new(),
+            excluded_product_ids: Vec::new(),
         };
 
         let expected_hub = user.hub_id;
@@ -837,6 +844,7 @@ mod tests {
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
             excluded_category_ids: Vec::new(),
+            excluded_product_ids: Vec::new(),
         };
 
         let result = create_price_level(form, &user, &repo);
@@ -865,6 +873,7 @@ mod tests {
             price_modifier: -100,
             price_modifier_kind: PriceModifierKind::Percent,
             excluded_category_ids: Vec::new(),
+            excluded_product_ids: Vec::new(),
         };
 
         let expected_hub = user.hub_id;
@@ -905,6 +914,7 @@ mod tests {
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
             excluded_category_ids: vec![11],
+            excluded_product_ids: Vec::new(),
         };
 
         let expected_hub = user.hub_id;
@@ -949,6 +959,66 @@ mod tests {
         let result = create_price_level(form, &user, &repo).expect("expected success");
 
         assert_eq!(result.id.get(), 99);
+    }
+
+    #[test]
+    fn create_price_level_excludes_products_by_id() {
+        let mut price_writer = MockPriceLevelWriter::new();
+        let mut product_reader = MockProductReader::new();
+        let mut product_writer = MockProductWriter::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let form = AddPriceLevelForm {
+            name: "VIP".to_string(),
+            default: false,
+            base_price_level_id: 1,
+            price_modifier: 20,
+            price_modifier_kind: PriceModifierKind::Percent,
+            excluded_category_ids: Vec::new(),
+            excluded_product_ids: vec![2, 4],
+        };
+
+        let expected_hub = user.hub_id;
+        price_writer
+            .expect_create_price_level()
+            .times(1)
+            .returning(move |_| Ok(sample_level(77, expected_hub, "VIP")));
+
+        product_reader
+            .expect_list_products()
+            .times(1)
+            .withf(move |query| query.hub_id.get() == expected_hub)
+            .returning(|_| {
+                Ok((
+                    4,
+                    vec![
+                        sample_product(1, 42, Some(10), vec![(1, 1000)]),
+                        sample_product(2, 42, Some(10), vec![(1, 2000)]),
+                        sample_product(3, 42, None, vec![(1, 1500)]),
+                        sample_product(4, 42, Some(12), vec![(1, 1200)]),
+                    ],
+                ))
+            });
+
+        product_writer
+            .expect_create_product_price_levels()
+            .times(1)
+            .withf(|hub_id, rates| {
+                assert_eq!(hub_id.get(), 42);
+                assert_eq!(rates.len(), 2);
+                let mut totals = rates
+                    .iter()
+                    .map(|rate| (rate.product_id.get(), rate.price_cents.get()))
+                    .collect::<Vec<_>>();
+                totals.sort();
+                assert_eq!(totals, vec![(1, 1200), (3, 1800)]);
+                rates.iter().all(|rate| rate.price_level_id.get() == 77)
+            })
+            .returning(|_, _| Ok(()));
+
+        let repo = CombinedPriceLevelCreateRepo::new(price_writer, product_reader, product_writer);
+        let result = create_price_level(form, &user, &repo).expect("expected success");
+
+        assert_eq!(result.id.get(), 77);
     }
 
     #[test]
