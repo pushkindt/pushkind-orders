@@ -127,7 +127,7 @@ where
 
     let (_, mut products) = repo.list_products(ProductListQuery::new(hub_id))?;
 
-    if !modifier_input.use_all_categories {
+    if !modifier_input.excluded_category_ids.is_empty() {
         let excluded: HashSet<_> = modifier_input.excluded_category_ids.into_iter().collect();
         products.retain(|product| {
             product
@@ -774,7 +774,6 @@ mod tests {
             base_price_level_id: 1,
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
-            use_all_categories: true,
             excluded_category_ids: Vec::new(),
         };
 
@@ -795,7 +794,6 @@ mod tests {
             base_price_level_id: 1,
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
-            use_all_categories: true,
             excluded_category_ids: Vec::new(),
         };
 
@@ -838,7 +836,6 @@ mod tests {
             base_price_level_id: 1,
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
-            use_all_categories: true,
             excluded_category_ids: Vec::new(),
         };
 
@@ -867,7 +864,6 @@ mod tests {
             base_price_level_id: 1,
             price_modifier: -100,
             price_modifier_kind: PriceModifierKind::Percent,
-            use_all_categories: true,
             excluded_category_ids: Vec::new(),
         };
 
@@ -908,7 +904,6 @@ mod tests {
             base_price_level_id: 1,
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
-            use_all_categories: false,
             excluded_category_ids: vec![11],
         };
 

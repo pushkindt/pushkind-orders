@@ -37,9 +37,6 @@ pub enum PriceLevelFormError {
     /// Price modifier is out of supported range.
     #[error("price modifier is outside of the allowed range")]
     InvalidPriceModifier,
-    /// Excluded categories list must not be empty when not using all categories.
-    #[error("at least one excluded category must be selected")]
-    ExcludedCategoriesRequired,
     /// Excluded category ids must be positive.
     #[error("excluded category id must be a positive integer")]
     InvalidExcludedCategoryId,
@@ -69,9 +66,6 @@ pub struct AddPriceLevelForm {
     pub price_modifier: i32,
     /// Determines if modifier is percentage or fixed amount.
     pub price_modifier_kind: PriceModifierKind,
-    /// Apply to all categories.
-    #[serde(default)]
-    pub use_all_categories: bool,
     /// Category ids excluded from modifier.
     #[serde(default)]
     pub excluded_category_ids: Vec<i32>,
@@ -91,7 +85,6 @@ pub struct PriceLevelModifierInput {
     pub base_price_level_id: PriceLevelId,
     pub price_modifier: i32,
     pub price_modifier_kind: PriceModifierKind,
-    pub use_all_categories: bool,
     pub excluded_category_ids: Vec<CategoryId>,
 }
 
@@ -182,15 +175,10 @@ impl TryFrom<AddPriceLevelForm> for AddPriceLevelPayload {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| PriceLevelFormError::InvalidExcludedCategoryId)?;
 
-        if !value.use_all_categories && excluded_category_ids.is_empty() {
-            return Err(PriceLevelFormError::ExcludedCategoriesRequired);
-        }
-
         let modifier_input = PriceLevelModifierInput {
             base_price_level_id,
             price_modifier,
             price_modifier_kind: value.price_modifier_kind,
-            use_all_categories: value.use_all_categories,
             excluded_category_ids,
         };
 
@@ -248,7 +236,6 @@ mod tests {
             base_price_level_id: 1,
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
-            use_all_categories: true,
             excluded_category_ids: Vec::new(),
         };
 
@@ -317,7 +304,6 @@ mod tests {
             base_price_level_id: 1,
             price_modifier: 10,
             price_modifier_kind: PriceModifierKind::Percent,
-            use_all_categories: true,
             excluded_category_ids: Vec::new(),
         };
 
@@ -330,26 +316,6 @@ mod tests {
     }
 
     #[test]
-    fn add_price_level_form_requires_excluded_categories_when_disabled() {
-        let form = AddPriceLevelForm {
-            name: "Retail".to_string(),
-            default: false,
-            base_price_level_id: 1,
-            price_modifier: 5,
-            price_modifier_kind: PriceModifierKind::Percent,
-            use_all_categories: false,
-            excluded_category_ids: Vec::new(),
-        };
-
-        let result: PriceLevelFormResult<AddPriceLevelPayload> = form.try_into();
-
-        assert!(matches!(
-            result,
-            Err(PriceLevelFormError::ExcludedCategoriesRequired)
-        ));
-    }
-
-    #[test]
     fn add_price_level_form_rejects_out_of_range_modifier() {
         let form = AddPriceLevelForm {
             name: "Wholesale".to_string(),
@@ -357,7 +323,6 @@ mod tests {
             base_price_level_id: 1,
             price_modifier: 500,
             price_modifier_kind: PriceModifierKind::Percent,
-            use_all_categories: true,
             excluded_category_ids: Vec::new(),
         };
 
