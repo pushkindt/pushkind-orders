@@ -67,7 +67,7 @@ impl ProductReader for DieselRepository {
         &self,
         query: ProductListQuery,
     ) -> RepositoryResult<(usize, Vec<DomainProduct>)> {
-        use crate::schema::{product_fts, product_tags, products, tags};
+        use crate::schema::{product_fts, product_price_levels, product_tags, products, tags};
 
         let mut conn = self.conn()?;
 
@@ -85,6 +85,15 @@ impl ProductReader for DieselRepository {
 
             if let Some(category_id) = query.category_id {
                 items = items.filter(products::category_id.eq(Some(category_id.get())));
+            }
+
+            if let Some(price_level_id) = query.price_level_id {
+                let has_assignment = exists(
+                    product_price_levels::table
+                        .filter(product_price_levels::product_id.eq(products::id))
+                        .filter(product_price_levels::price_level_id.eq(price_level_id.get())),
+                );
+                items = items.filter(has_assignment);
             }
 
             if let Some(tag_id) = query.tag_id {

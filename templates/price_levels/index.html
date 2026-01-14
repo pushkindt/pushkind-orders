@@ -237,7 +237,7 @@
                             hub_id: contact.hubId,
                             name: contact.name,
                             phone: contact.phone,
-                            price_level_id: parsedValue,
+                            price_level_id: rawValue === '' ? null : rawValue,
                             public_id: contact.public_id,
                         }),
                     })
