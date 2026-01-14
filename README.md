@@ -35,6 +35,11 @@ The service exposes REST endpoints under `/api/v1/store/{hub_id}` for customer-f
 - **OTP authentication** – `POST /auth/otp` requests a one-time password sent via SMS, and `POST /auth/otp/verify` establishes a customer session.
 - **Order management** – `POST /orders` creates orders for authenticated customers, and `GET /orders` lists their order history.
 
+Storefront product pricing rules:
+
+- When no store session exists (or the authenticated customer has no `price_level_id`), the store API returns all products priced using the hub default price level.
+- When the authenticated customer has a `price_level_id`, the store API only returns products with a price level assignment matching the customer's level; `price_cents` reflects the customer's price, and `base_price_cents` reflects the hub default price so storefronts can display the difference (it may be `null` when equal to `price_cents`).
+
 Store sessions are managed separately from hub user sessions using dedicated cookie-based storage.
 
 ## Architecture at a Glance

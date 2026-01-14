@@ -188,11 +188,15 @@ where
             .filter(|product| !product.is_archived)
             .ok_or_else(|| ServiceError::Form("product not found".to_string()))?;
 
-        let price_cents = StoreProduct::resolve_price_cents(
-            &product.price_levels,
-            customer_price_level_id,
-            default_price_level_id,
-        )
+        let price_cents = if let Some(customer_price_level_id) = customer_price_level_id {
+            StoreProduct::resolve_price_cents(
+                &product.price_levels,
+                Some(customer_price_level_id),
+                None,
+            )
+        } else {
+            StoreProduct::resolve_price_cents(&product.price_levels, None, default_price_level_id)
+        }
         .ok_or_else(|| ServiceError::Form("price unavailable".to_string()))?;
 
         let default_price_cents =
@@ -363,14 +367,26 @@ where
     let hub_id = HubId::new(hub_id)?;
 
     let default_price_level_id = resolve_default_price_level_id(hub_id.get(), repo)?;
-    let customer_price_level_id =
-        store_customer.and_then(|customer| customer.price_level_id.map(|id| id.get()));
+    let customer_price_level = store_customer.and_then(|customer| customer.price_level_id);
+    let customer_price_level_id = customer_price_level.map(|id| id.get());
 
-    let products = repo.list_products(filters.into_query(hub_id))?.1;
+    let mut query = filters.into_query(hub_id);
+    if let Some(price_level_id) = customer_price_level {
+        query = query.with_price_level_id(price_level_id);
+    }
+
+    let products = repo.list_products(query)?.1;
 
     let filtered = products
         .into_iter()
         .filter(|product| !product.is_archived)
+        .filter(|product| match customer_price_level_id {
+            Some(level_id) => product
+                .price_levels
+                .iter()
+                .any(|rate| rate.price_level_id.get() == level_id),
+            None => true,
+        })
         .map(|product| {
             StoreProduct::from_domain(product, customer_price_level_id, default_price_level_id)
         })
@@ -402,6 +418,15 @@ where
     let default_price_level_id = resolve_default_price_level_id(hub_id.get(), repo)?;
     let customer_price_level_id =
         store_customer.and_then(|customer| customer.price_level_id.map(|id| id.get()));
+
+    if let Some(level_id) = customer_price_level_id
+        && !product
+            .price_levels
+            .iter()
+            .any(|rate| rate.price_level_id.get() == level_id)
+    {
+        return Ok(None);
+    }
 
     Ok(Some(StoreProduct::from_domain(
         product,
@@ -729,6 +754,138 @@ mod tests {
         let result = create_store_order(1, payload, &customer, &repo);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn create_store_order_uses_customer_price_level_when_present() {
+        let mut repo = MockStoreOrderRepo::new();
+        let customer = Customer {
+            id: CustomerId::new(10).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: CustomerName::new("Customer").unwrap(),
+            phone: PhoneNumber::new("+111").unwrap(),
+            price_level_id: Some(PriceLevelId::new(11).unwrap()),
+            public_id: None,
+        };
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|query| {
+                assert_eq!(query.hub_id.get(), 1);
+                Ok((
+                    2,
+                    vec![sample_price_level(10, true), sample_price_level(11, false)],
+                ))
+            });
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .returning(|product_id, hub_id| {
+                let mut product = sample_product(product_id.get(), hub_id.get(), 10, 450, "USD");
+                product.price_levels.push(ProductPriceLevelRate {
+                    id: ProductPriceLevelRateId::new(999).unwrap(),
+                    product_id: product.id,
+                    price_level_id: PriceLevelId::new(11).unwrap(),
+                    price_cents: PriceCents::new(500).unwrap(),
+                    created_at: sample_timestamp(),
+                    updated_at: sample_timestamp(),
+                });
+                Ok(Some(product))
+            });
+
+        repo.order_writer
+            .expect_create_order()
+            .times(1)
+            .withf(|new_order| {
+                assert_eq!(new_order.hub_id.get(), 1);
+                assert_eq!(new_order.customer_id.map(|id| id.get()), Some(10));
+                assert_eq!(new_order.total_cents.get(), 500);
+                assert_eq!(new_order.currency.as_str(), "USD");
+                assert_eq!(new_order.products.len(), 1);
+                assert_eq!(new_order.products[0].price_cents.get(), 500);
+                assert_eq!(
+                    new_order.products[0]
+                        .default_price_cents
+                        .map(|price| price.get()),
+                    Some(450)
+                );
+                true
+            })
+            .returning(|new_order| {
+                use crate::domain::types::OrderId;
+                Ok(DomainOrder {
+                    id: OrderId::new(99).unwrap(),
+                    hub_id: new_order.hub_id,
+                    customer_id: new_order.customer_id,
+                    reference: None,
+                    status: DomainOrderStatus::Pending,
+                    notes: None,
+                    total_cents: new_order.total_cents,
+                    currency: new_order.currency.clone(),
+                    products: new_order.products.clone(),
+                    created_at: sample_timestamp(),
+                    updated_at: sample_timestamp(),
+                    shipping_address: None,
+                    consignee: None,
+                    delivery_notes: None,
+                    payer: None,
+                })
+            });
+
+        let payload = vec![StoreOrderLinePayload {
+            product_id: 1,
+            quantity: 1,
+        }];
+
+        let result = create_store_order(1, payload, &customer, &repo);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn create_store_order_rejects_missing_customer_price_level_rate() {
+        let mut repo = MockStoreOrderRepo::new();
+        let customer = Customer {
+            id: CustomerId::new(10).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: CustomerName::new("Customer").unwrap(),
+            phone: PhoneNumber::new("+111").unwrap(),
+            price_level_id: Some(PriceLevelId::new(11).unwrap()),
+            public_id: None,
+        };
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|query| {
+                assert_eq!(query.hub_id.get(), 1);
+                Ok((
+                    2,
+                    vec![sample_price_level(10, true), sample_price_level(11, false)],
+                ))
+            });
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .returning(|product_id, hub_id| {
+                Ok(Some(sample_product(
+                    product_id.get(),
+                    hub_id.get(),
+                    10,
+                    450,
+                    "USD",
+                )))
+            });
+
+        repo.order_writer.expect_create_order().times(0);
+
+        let payload = vec![StoreOrderLinePayload {
+            product_id: 1,
+            quantity: 1,
+        }];
+
+        let result = create_store_order(1, payload, &customer, &repo);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
     }
 
     #[test]
@@ -1859,13 +2016,15 @@ mod tests {
         }];
 
         let product_clone = products.clone();
+        let expected_price_level_id = PriceLevelId::new(11).unwrap();
         product_reader
             .expect_list_products()
-            .withf(|query| {
+            .withf(move |query| {
                 query.hub_id == HubId::new(1).unwrap()
                     && !query.include_archived
                     && query.only_without_category
                     && query.category_id.is_none()
+                    && query.price_level_id == Some(expected_price_level_id)
             })
             .return_once(move |_| Ok((1, product_clone)));
 
@@ -1904,10 +2063,11 @@ mod tests {
             .expect("load products for authenticated customer");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].price_cents, Some(500));
+        assert_eq!(result[0].base_price_cents, Some(450));
     }
 
     #[test]
-    fn load_store_products_falls_back_to_default_when_customer_rate_absent() {
+    fn load_store_products_hides_products_without_customer_price_level_rate() {
         let mut product_reader = MockProductReader::new();
         let products = vec![Product {
             id: ProductId::new(1).unwrap(),
@@ -1935,13 +2095,15 @@ mod tests {
         }];
 
         let product_clone = products.clone();
+        let expected_price_level_id = PriceLevelId::new(11).unwrap();
         product_reader
             .expect_list_products()
-            .withf(|query| {
+            .withf(move |query| {
                 query.hub_id == HubId::new(1).unwrap()
                     && !query.include_archived
                     && query.only_without_category
                     && query.category_id.is_none()
+                    && query.price_level_id == Some(expected_price_level_id)
             })
             .return_once(move |_| Ok((1, product_clone)));
 
@@ -1978,8 +2140,7 @@ mod tests {
 
         let result = load_store_products(1, StoreProductFilters::default(), Some(&customer), &repo)
             .expect("load products for authenticated customer");
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].price_cents, Some(450));
+        assert_eq!(result.len(), 0);
     }
 
     #[test]
@@ -2139,10 +2300,11 @@ mod tests {
         let result = load_store_product(1, 7, Some(&customer), &repo).expect("load single product");
         let product = result.expect("product should be present");
         assert_eq!(product.price_cents, Some(500));
+        assert_eq!(product.base_price_cents, Some(450));
     }
 
     #[test]
-    fn load_store_product_falls_back_to_default_when_customer_rate_absent() {
+    fn load_store_product_hides_product_without_customer_price_level_rate() {
         let mut product_reader = MockProductReader::new();
         let product = Product {
             id: ProductId::new(7).unwrap(),
@@ -2205,8 +2367,7 @@ mod tests {
         customer.price_level_id = Some(PriceLevelId::new(11).unwrap());
 
         let result = load_store_product(1, 7, Some(&customer), &repo).expect("load single product");
-        let product = result.expect("product should be present");
-        assert_eq!(product.price_cents, Some(450));
+        assert!(result.is_none());
     }
 
     #[test]
