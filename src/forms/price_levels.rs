@@ -109,6 +109,7 @@ pub struct AssignClientPriceLevelForm {
     pub public_id: String,
     /// Selected price level identifier. `None` restores the default hub level.
     #[validate(range(min = 1))]
+    #[serde(default)]
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub price_level_id: Option<i32>,
 }
