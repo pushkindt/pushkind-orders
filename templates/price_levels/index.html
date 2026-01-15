@@ -87,13 +87,50 @@
 
             createFilter('clientsFilterInput', 'clientsTableBody', 'tr');
 
+            const formatterCache = new Map();
+            const getFormatter = (currency) => {
+                if (formatterCache.has(currency)) {
+                    return formatterCache.get(currency);
+                }
+
+                try {
+                    const formatter = new Intl.NumberFormat("ru-RU", {
+                        style: "currency",
+                        currency,
+                    });
+                    formatterCache.set(currency, formatter);
+                } catch {
+                    formatterCache.set(currency, null);
+                }
+
+                return formatterCache.get(currency);
+            };
+
             let tomSelectInstance = new TomSelect('#excludedProducts', {
+                plugins: {
+                    checkbox_options: {},
+                    clear_button: {
+                        title: "Убрать все",
+                    },
+                    remove_button: {
+                        title: "Убрать",
+                    }
+                },
                 valueField: "id",
                 labelField: "name",
-                searchField: ["name", "sku"],
+                searchField: ["name", "sku", "description"],
                 render: {
                     option: function (item, escape) {
                         let result = `<div class="border-bottom"><strong>${escape(item.name)} (${escape(item.sku ?? '')})</strong>`;
+                        result += '<br><small>';
+                        const priceCents = typeof item.priceCents === 'number' ? item.priceCents : null;
+                        const currency = typeof item.currency === 'string' ? item.currency : null;
+                        const formatter = currency ? getFormatter(currency) : null;
+                        const priceText = (priceCents !== null && formatter)
+                            ? formatter.format(priceCents / 100)
+                            : `${priceCents !== null ? priceCents / 100 : ''} ${currency ?? ''}`.trim();
+                        result += `${escape(priceText)} / ${escape(item.amount ?? '')} ${escape(item.units ?? '')}`;
+                        result += '</small>';
                         result += '</div>';
                         return result
                     }
@@ -101,10 +138,9 @@
                 load: function(query, callback) {
 
                     var url = '/api/v1/store/{{current_user.hub_id}}/products?page=1&search=' + encodeURIComponent(query);
-                    fetch(url)
+                    fetch(url, {credentials: 'omit'})
                         .then(response => response.json())
                         .then(json => {
-                            console.log(json);
                             callback(json.slice(0, 20));
                         }).catch(()=>{
                             callback();
