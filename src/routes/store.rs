@@ -28,6 +28,8 @@ struct StoreProductsQuery {
     category_id: Option<i32>,
     tag_id: Option<i32>,
     search: Option<String>,
+    min_amount: Option<f32>,
+    max_amount: Option<f32>,
     page: Option<usize>,
 }
 
@@ -38,6 +40,8 @@ impl From<StoreProductsQuery> for StoreProductFilters {
             search: value.search,
             page: value.page,
             tag_id: value.tag_id,
+            min_amount: value.min_amount,
+            max_amount: value.max_amount,
         }
     }
 }

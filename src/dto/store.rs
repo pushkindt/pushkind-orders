@@ -10,7 +10,7 @@ use crate::domain::{
     product::{Product, ProductListQuery},
     product_price_level::ProductPriceLevelRate,
     tag::Tag,
-    types::{CategoryId, HubId, TagId},
+    types::{CategoryId, HubId, ProductAmount, TagId},
 };
 
 /// Minimal representation of a category exposed to the storefront.
@@ -212,6 +212,10 @@ pub struct StoreProductFilters {
     pub tag_id: Option<i32>,
     /// Filter products by a search term applied to the name and description.
     pub search: Option<String>,
+    /// Only include products with an amount greater than or equal to this value.
+    pub min_amount: Option<f32>,
+    /// Only include products with an amount less than or equal to this value.
+    pub max_amount: Option<f32>,
     /// Fetch a specific page of products.
     pub page: Option<usize>,
 }
@@ -236,6 +240,20 @@ impl StoreProductFilters {
             .filter(|value| !value.is_empty())
         {
             query = query.search(search);
+        }
+
+        if let Some(min_amount) = self
+            .min_amount
+            .and_then(|value| ProductAmount::new(value).ok())
+        {
+            query = query.with_min_amount(min_amount);
+        }
+
+        if let Some(max_amount) = self
+            .max_amount
+            .and_then(|value| ProductAmount::new(value).ok())
+        {
+            query = query.with_max_amount(max_amount);
         }
 
         if let Some(page) = self.page.filter(|page| *page > 0) {

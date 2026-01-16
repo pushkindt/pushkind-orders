@@ -466,7 +466,7 @@ mod tests {
     use crate::domain::types::{
         CategoryId, CategoryName, CurrencyCode, CustomerId, CustomerName, HubId, ImageUrl,
         OrderConsignee, OrderDeliveryNotes, OrderId, OrderPayer, OrderShippingAddress, PriceCents,
-        PriceLevelId, PriceLevelName, ProductDescription, ProductId, ProductName,
+        PriceLevelId, PriceLevelName, ProductAmount, ProductDescription, ProductId, ProductName,
         ProductPriceLevelRateId, ProductSku, ProductUnits, TagId, TagName,
     };
     use crate::domain::{
@@ -2467,6 +2467,8 @@ mod tests {
                     && query.category_id == Some(CategoryId::new(3).unwrap())
                     && !query.only_without_category
                     && query.search.as_deref() == Some("coffee")
+                    && query.min_amount == Some(ProductAmount::new(1.5).unwrap())
+                    && query.max_amount == Some(ProductAmount::new(3.0).unwrap())
                     && matches!(
                         query.pagination.as_ref(),
                         Some(pagination)
@@ -2489,6 +2491,8 @@ mod tests {
             search: Some(" coffee ".to_string()),
             page: Some(2),
             tag_id: None,
+            min_amount: Some(1.5),
+            max_amount: Some(3.0),
         };
 
         let result = load_store_products(1, filters, None, &repo).expect("load products");

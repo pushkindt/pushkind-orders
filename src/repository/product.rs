@@ -120,6 +120,14 @@ impl ProductReader for DieselRepository {
                 items = items.filter(fts_filter);
             }
 
+            if let Some(min_amount) = query.min_amount {
+                items = items.filter(products::amount.ge(min_amount.get()));
+            }
+
+            if let Some(max_amount) = query.max_amount {
+                items = items.filter(products::amount.le(max_amount.get()));
+            }
+
             if let Some(sku) = query.sku.as_ref() {
                 items = items.filter(products::sku.eq(sku.as_str()));
             }
