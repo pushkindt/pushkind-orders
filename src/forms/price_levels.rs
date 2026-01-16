@@ -43,6 +43,9 @@ pub enum PriceLevelFormError {
     /// Excluded product ids must be positive.
     #[error("excluded product id must be a positive integer")]
     InvalidExcludedProductId,
+    /// Included product ids must be positive.
+    #[error("included product id must be a positive integer")]
+    InvalidIncludedProductId,
 }
 
 /// Modifier type for price level adjustments.
@@ -75,6 +78,9 @@ pub struct AddPriceLevelForm {
     /// Product ids excluded from modifier.
     #[serde(default)]
     pub excluded_product_ids: Vec<i32>,
+    /// Product ids explicitly included regardless of exclusions.
+    #[serde(default)]
+    pub included_product_ids: Vec<i32>,
 }
 
 /// Normalized payload for creating a price level.
@@ -93,6 +99,7 @@ pub struct PriceLevelModifierInput {
     pub price_modifier_kind: PriceModifierKind,
     pub excluded_category_ids: Vec<CategoryId>,
     pub excluded_product_ids: Vec<ProductId>,
+    pub included_product_ids: Vec<ProductId>,
 }
 
 /// Payload emitted when assigning a price level to a client.
@@ -189,12 +196,20 @@ impl TryFrom<AddPriceLevelForm> for AddPriceLevelPayload {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| PriceLevelFormError::InvalidExcludedProductId)?;
 
+        let included_product_ids: Vec<ProductId> = value
+            .included_product_ids
+            .into_iter()
+            .map(ProductId::new)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| PriceLevelFormError::InvalidIncludedProductId)?;
+
         let modifier_input = PriceLevelModifierInput {
             base_price_level_id,
             price_modifier,
             price_modifier_kind: value.price_modifier_kind,
             excluded_category_ids,
             excluded_product_ids,
+            included_product_ids,
         };
 
         Ok(Self {
@@ -253,6 +268,7 @@ mod tests {
             price_modifier_kind: PriceModifierKind::Percent,
             excluded_category_ids: Vec::new(),
             excluded_product_ids: Vec::new(),
+            included_product_ids: Vec::new(),
         };
 
         let payload: AddPriceLevelPayload = form.try_into().expect("expected success");
@@ -322,6 +338,7 @@ mod tests {
             price_modifier_kind: PriceModifierKind::Percent,
             excluded_category_ids: Vec::new(),
             excluded_product_ids: Vec::new(),
+            included_product_ids: Vec::new(),
         };
 
         let result: PriceLevelFormResult<AddPriceLevelPayload> = form.try_into();
@@ -342,6 +359,7 @@ mod tests {
             price_modifier_kind: PriceModifierKind::Percent,
             excluded_category_ids: Vec::new(),
             excluded_product_ids: Vec::new(),
+            included_product_ids: Vec::new(),
         };
 
         let result: PriceLevelFormResult<AddPriceLevelPayload> = form.try_into();
