@@ -225,6 +225,10 @@ pub struct ProductListQuery {
     pub only_without_category: bool,
     /// Optional name or description search term.
     pub search: Option<String>,
+    /// Optional lower bound for product amount.
+    pub min_amount: Option<ProductAmount>,
+    /// Optional upper bound for product amount.
+    pub max_amount: Option<ProductAmount>,
     /// Optional exact SKU filter.
     pub sku: Option<ProductSku>,
     /// Optional price level identifier used to require a matching price level assignment.
@@ -243,6 +247,8 @@ impl ProductListQuery {
             category_id: None,
             only_without_category: false,
             search: None,
+            min_amount: None,
+            max_amount: None,
             sku: None,
             price_level_id: None,
             include_archived: false,
@@ -260,6 +266,18 @@ impl ProductListQuery {
     pub fn search(mut self, term: impl Into<String>) -> Self {
         self.only_without_category = false;
         self.search = Some(term.into());
+        self
+    }
+
+    /// Filter results by a minimum amount (inclusive).
+    pub fn with_min_amount(mut self, amount: ProductAmount) -> Self {
+        self.min_amount = Some(amount);
+        self
+    }
+
+    /// Filter results by a maximum amount (inclusive).
+    pub fn with_max_amount(mut self, amount: ProductAmount) -> Self {
+        self.max_amount = Some(amount);
         self
     }
 
