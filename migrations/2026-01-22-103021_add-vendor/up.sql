@@ -20,3 +20,5 @@ CREATE TABLE vendor_order (
 ALTER TABLE products ADD COLUMN vendor_id INTEGER REFERENCES vendors(id) ON DELETE SET NULL;
 CREATE INDEX idx_vendors_hub_id_name ON vendors(hub_id, name);
 CREATE INDEX idx_vendors_hub_id_id ON vendors(hub_id, id);
+CREATE UNIQUE INDEX idx_vendor_user_user_id ON vendor_user(user_id);
+CREATE UNIQUE INDEX idx_vendor_order_order_id ON vendor_order(order_id);

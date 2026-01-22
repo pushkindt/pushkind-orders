@@ -237,11 +237,22 @@ impl ProductWriter for DieselRepository {
             }
         }
 
-        let db_updates = DbUpdateProduct::from(updates);
-
         let target = products::table
             .filter(products::id.eq(product_id.get()))
             .filter(products::hub_id.eq(hub_id.get()));
+
+        let existing_vendor_id = products::table
+            .filter(products::id.eq(product_id.get()))
+            .filter(products::hub_id.eq(hub_id.get()))
+            .select(products::vendor_id)
+            .first::<Option<i32>>(&mut conn)
+            .optional()?;
+        let Some(existing_vendor_id) = existing_vendor_id else {
+            return Err(RepositoryError::NotFound);
+        };
+
+        let mut db_updates = DbUpdateProduct::from(updates);
+        db_updates.vendor_id = existing_vendor_id;
 
         let updated = diesel::update(target)
             .set(&db_updates)

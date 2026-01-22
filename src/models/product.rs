@@ -45,6 +45,7 @@ pub struct NewProduct<'a> {
     pub currency: &'a str,
     pub category_id: Option<i32>,
     pub amount: Option<f32>,
+    pub vendor_id: Option<i32>,
 }
 
 /// Payload for updating an existing product record.
@@ -61,6 +62,7 @@ pub struct UpdateProduct<'a> {
     pub updated_at: NaiveDateTime,
     pub category_id: Option<i32>,
     pub amount: Option<f32>,
+    pub vendor_id: Option<i32>,
 }
 
 impl TryFrom<Product> for DomainProduct {
@@ -98,6 +100,7 @@ impl<'a> From<&'a DomainNewProduct> for NewProduct<'a> {
             currency: value.currency.as_str(),
             category_id: value.category_id.map(|id| id.get()),
             amount: value.amount.map(|a| a.get()),
+            vendor_id: None,
         }
     }
 }
@@ -114,6 +117,7 @@ impl<'a> From<&'a DomainUpdateProduct> for UpdateProduct<'a> {
             updated_at: value.updated_at,
             category_id: value.category_id.map(|id| id.get()),
             amount: value.amount.map(|a| a.get()),
+            vendor_id: None,
         }
     }
 }

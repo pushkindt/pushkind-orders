@@ -13,3 +13,5 @@ pub mod store_otp;
 pub mod tag;
 pub mod user;
 pub mod vendor;
+pub mod vendor_order;
+pub mod vendor_user;
