@@ -107,6 +107,8 @@ id_newtype!(
 id_newtype!(PriceLevelId, "Unique identifier for a price level.");
 id_newtype!(OrderId, "Unique identifier for an order.");
 
+id_newtype!(VendorId, "Unique identifier for a vendor.");
+
 /// Price stored in the smallest currency unit; must be positive.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct PriceCents(i32);
@@ -311,6 +313,11 @@ macro_rules! non_empty_string_newtype {
 non_empty_string_newtype!(
     UserName,
     "Optional user name wrapper enforcing non-empty values."
+);
+
+non_empty_string_newtype!(
+    VendorName,
+    "Vendor name wrapper enforcing non-empty values."
 );
 
 non_empty_string_newtype!(TagName, "Tag name wrapper enforcing non-empty values.");

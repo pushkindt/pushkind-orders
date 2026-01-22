@@ -7,5 +7,6 @@ pub mod price_levels;
 pub mod products;
 pub mod store;
 pub mod tags;
+pub mod vendors;
 
 pub use pushkind_common::services::errors::{ServiceError, ServiceResult};

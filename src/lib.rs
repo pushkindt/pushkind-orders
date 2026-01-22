@@ -49,7 +49,8 @@ pub mod routes;
 pub mod schema;
 pub mod services;
 
-pub const SERVICE_ACCESS_ROLE: &str = "admin";
+pub const SERVICE_ACCESS_ROLE: &str = "orders";
+pub const VENDOR_ACCESS_ROLE: &str = "orders_vendor";
 
 /// Builds and runs the Actix-Web HTTP server using the provided configuration.
 pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {

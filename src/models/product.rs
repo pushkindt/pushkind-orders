@@ -30,6 +30,7 @@ pub struct Product {
     pub units: Option<String>,
     pub category_id: Option<i32>,
     pub amount: Option<f32>,
+    pub vendor_id: Option<i32>,
 }
 
 /// Payload for inserting a new product record.

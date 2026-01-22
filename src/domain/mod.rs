@@ -11,3 +11,4 @@ pub mod store_otp;
 pub mod tag;
 pub mod types;
 pub mod user;
+pub mod vendor;

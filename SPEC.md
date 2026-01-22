@@ -14,8 +14,22 @@ The system is implemented as an Actix Web application with Diesel (SQLite) and f
 ### Hub user (operator)
 
 - Authenticated via `pushkind-common` identity/session middleware and the Pushkind auth service (`ServerConfig.auth_service_url`).
-- Must have `SERVICE_ACCESS_ROLE` (`src/lib.rs`: `admin`) to access hub pages and `/api/v1/*` JSON endpoints.
+- Must have `SERVICE_ACCESS_ROLE` (`src/lib.rs`: `orders`) to access hub pages and `/api/v1/*` JSON endpoints.
+- Only hub operators with `SERVICE_ACCESS_ROLE` can create vendors and assign users to vendors.
 - Users lacking access are redirected to `/na` (served by `pushkind_common::routes::not_assigned`).
+
+### Vendor hub user
+
+- Authenticated via the same hub identity/session middleware as hub operators.
+- Must have `VENDOR_ACCESS_ROLE` (`src/lib.rs`: `orders_vendor`).
+- Must be assigned to exactly one `Vendor` (see `vendor_user` under the data model).
+- Cannot create vendors or assign/unassign users to vendors.
+- Authorization is vendor-scoped:
+  - Vendor users can only see products that are associated with their vendor (`products.vendor_id`).
+  - Vendor users can only see orders associated with their vendor (orders are linked to vendors via `vendor_order` when they contain vendor-owned products).
+- Vendor users have read-only access to hub-wide catalog configuration:
+  - Can view tags, categories, and price levels.
+  - Cannot create/update/delete these; write actions are restricted to hub operators with `SERVICE_ACCESS_ROLE`.
 
 ### Store customer (end user)
 
@@ -53,15 +67,18 @@ Key settings (`src/models/config.rs`):
 
 ## Data Model (SQLite)
 
-Primary tables (`src/schema.rs`):
+Primary tables (SQLite schema; see `src/schema.rs` and `migrations/`):
 
 - `orders` + `order_products`: orders with captured product snapshots (name/SKU/description/price/currency/quantity).
-- `products`: catalog items; `is_archived` hides items from store.
+- `products`: catalog items; `is_archived` hides items from store; optional `vendor_id` associates a product with the vendor that created/owns it.
 - `product_price_levels`: price overrides per (product, price_level).
 - `price_levels`: named pricing tiers; one can be marked `is_default` per hub.
 - `customers`: phone-based customers; may have `price_level_id` and optional `public_id`.
 - `categories` (tree via `parent_id`) and `tags` (+ join tables).
 - `store_otps`: OTP records keyed by `(hub_id, phone)` with expiry + throttle timestamp.
+- `vendors`: vendor entities per hub.
+- `vendor_user`: assignment of hub users to vendors (one vendor per user).
+- `vendor_order`: association between a vendor and an order (derived from order line items that reference vendor-owned products; an order may be linked to at most one vendor).
 - `product_fts*`: SQLite FTS structures for catalog search (used by repository query builders).
 
 ## Domain Invariants
@@ -73,16 +90,24 @@ This section states invariants as *hard rules* when they are enforced by code/DB
 - **Hub scoping (hard rule)**: core records are scoped by `hub_id` (orders/products/categories/tags/price levels/customers/users).
 - **Customer phone uniqueness (hard rule)**: phone numbers are unique **per hub** (`UNIQUE(hub_id, phone)`), and Store API normalizes inputs to E.164 before lookup/creation.
 - **Store OTP uniqueness (hard rule)**: OTP records are unique per `(hub_id, phone)`; new OTP requests overwrite the existing record (upsert).
+- **Vendor scoping (required behavior)**: vendors are scoped by `hub_id`, and vendor assignments/associations (`vendor_user`, `vendor_order`, `products.vendor_id`) must not cross hub boundaries.
+- **Vendor user cardinality (required behavior)**: a hub user may be assigned to **at most one** vendor; users with `VENDOR_ACCESS_ROLE` must have exactly one vendor assignment.
+- **Order vendor constraint (required behavior)**: an order must not contain products from multiple vendors. An order either:
+  - contains only vendorless products (`products.vendor_id IS NULL`) and has no vendor association, or
+  - contains only products from a single vendor and is associated with exactly that vendor.
 
 ### Uniqueness constraints (hard rules)
 
 - **Users**: `(hub_id, email)` is unique.
+- **Vendors**: `(hub_id, name)` is unique.
 - **Products**: `(hub_id, sku)` is unique when `sku` is non-null.
 - **Categories**: `(hub_id, parent_id, name)` is unique (same-name siblings are prevented).
 - **Tags**: `(hub_id, name)` is unique.
 - **Price levels**: `(hub_id, name)` is unique.
 - **Orders**: `(hub_id, reference)` is unique when `reference` is non-null.
 - **Product price levels**: `(product_id, price_level_id)` is unique.
+- **Vendor users**: `(vendor_id, user_id)` is unique.
+- **Vendor orders**: `(vendor_id, order_id)` is unique.
 
 ### Referential actions (hard rules; foreign keys enabled)
 
@@ -142,7 +167,11 @@ The system does not prevent edits in any state, but operationally:
 
 ## Hub UI (Server-Rendered Pages)
 
-All hub pages require an authenticated hub user with `SERVICE_ACCESS_ROLE`.
+Hub pages require an authenticated hub user.
+
+- Full hub-operator access requires `SERVICE_ACCESS_ROLE`.
+- Vendor access requires `VENDOR_ACCESS_ROLE` and is limited to vendor-associated products and orders.
+- Vendor users can view tags, categories, and price levels read-only; create/update/delete actions require `SERVICE_ACCESS_ROLE`.
 
 ### Routes
 
@@ -179,7 +208,11 @@ Static assets are served from `GET /assets/*` (folder `./assets`).
 
 ## Hub JSON API (`/api/v1/*`)
 
-All endpoints require an authenticated hub user with `SERVICE_ACCESS_ROLE` (wrapped by `RedirectUnauthorized`).
+All endpoints require an authenticated hub user (wrapped by `RedirectUnauthorized`).
+
+- Full access requires `SERVICE_ACCESS_ROLE`.
+- When accessed by a vendor user (`VENDOR_ACCESS_ROLE`), product/order endpoints must return only vendor-associated data.
+- Vendor users may read hub-wide configuration, but must not be able to create/update/delete tags, categories, or price levels.
 
 - `GET /api/v1/orders` — list orders (same query model as `GET /`).
 - `GET /api/v1/client-price-levels` — list hub customers with assigned `price_level_id` (plus hub default level).
@@ -202,8 +235,11 @@ Store endpoints use a dedicated cookie session (`store-session`) and are CORS-pe
 
 These endpoints do not require authentication, but apply customer-specific pricing if a valid store session exists.
 
+- `GET /api/v1/store/{hub_id}/vendors`
+  - Returns `200 OK` with `Vec<StoreVendor { id, name }>`
 - `GET /api/v1/store/{hub_id}/products`
-  - Query params (camelCase): `categoryId`, `tagId`, `search`, `page`
+  - Query params (camelCase): `categoryId`, `tagId`, `vendorId`, `search`, `page`
+  - `vendorId` filters products by their associated vendor (`products.vendor_id`); vendor filtering is by id (not by vendor name)
   - Returns `200 OK` with `Vec<StoreProduct>` (see DTO rules below)
 - `GET /api/v1/store/{hub_id}/products/{product_id}`
   - Returns `200 OK` with `StoreProduct`, `404 Not Found` if the product is not available
@@ -243,6 +279,9 @@ These endpoints require an authenticated store session.
   - Business rules:
     - Only non-archived products may be ordered.
     - A single order cannot contain products with mixed currencies.
+    - A single order must not contain products from multiple vendors:
+      - all line items must be vendorless, or
+      - all line items must belong to the same vendor.
     - Line totals are computed and stored as snapshots; later catalog edits do not affect order totals.
 
 - `GET /api/v1/store/{hub_id}/orders`
@@ -294,7 +333,7 @@ This section sketches the key storefront DTOs and payload semantics for frontend
 ### `StoreProduct` (response)
 
 - Required: `id`, `name`, `currency`, `tags`, `imageUrls`, `updatedAt`
-- Optional: `categoryId`, `sku`, `description`, `units`, `priceCents`, `basePriceCents`, `amount`
+- Optional: `categoryId`, `vendorId`, `vendorName`, `sku`, `description`, `units`, `priceCents`, `basePriceCents`, `amount`
 
 Example:
 
@@ -302,6 +341,8 @@ Example:
 {
   "id": 123,
   "categoryId": 10,
+  "vendorId": 42,
+  "vendorName": "Coffee Co",
   "name": "Coffee",
   "sku": "SKU-COFFEE",
   "description": "Ground coffee",
@@ -320,6 +361,18 @@ Notes:
 
 - `priceCents` is the effective price for the requesting customer context; it can be `null` if no applicable price exists.
 - `basePriceCents` is the hub default price when it differs from `priceCents`; otherwise it is `null`.
+- `vendorId` / `vendorName` are `null` when a product is not associated with a vendor.
+- `vendorName` is display-only; filtering is done via the `vendorId` query parameter.
+
+### `StoreVendor` (response)
+
+- Required: `id`, `name`
+
+Example:
+
+```json
+{ "id": 42, "name": "Coffee Co" }
+```
 
 ### `StoreOrder` (response)
 

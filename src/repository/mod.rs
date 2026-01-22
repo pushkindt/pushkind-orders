@@ -31,6 +31,7 @@ pub mod product;
 pub mod store_otp;
 pub mod tag;
 pub mod user;
+pub mod vendor;
 
 #[cfg(test)]
 pub mod mock;
