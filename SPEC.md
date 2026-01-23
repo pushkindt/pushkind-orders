@@ -508,3 +508,20 @@ cargo build --all-features --verbose
 
 - Unit tests exist for service-layer rules (including store OTP + pricing logic) using mock repositories (`src/repository/mock.rs`).
 - Integration tests in `tests/` run against a temporary SQLite DB with migrations applied (see `tests/common/mod.rs`).
+
+## Rollout And Rollback
+
+### Rollout Checklist
+
+- Apply migrations (including `2026-01-22-103021_add-vendor`).
+- Provision the `orders_vendor` role in the auth service.
+- Create vendors and assign hub users.
+- (Optional) Run vendor backfill for existing products/orders.
+- Verify vendor users can only access their products/orders.
+
+### Rollback Plan
+
+- Stop traffic to the service or place it in maintenance mode.
+- Back up the database before reversing migrations.
+- Run the down migration for `2026-01-22-103021_add-vendor`.
+- Rolling back removes `vendor_order`, `vendor_user`, and `products.vendor_id` data.

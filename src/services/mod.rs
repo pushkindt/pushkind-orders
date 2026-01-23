@@ -75,3 +75,163 @@ where
         Err(ServiceError::Unauthorized)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::types::{HubId, UserEmail, UserId, UserName, VendorId};
+    use crate::domain::user::User;
+    use crate::repository::mock::{MockUserReader, MockVendorUserReader};
+    use pushkind_common::repository::errors::RepositoryResult;
+
+    struct FakeRepo {
+        user_reader: MockUserReader,
+        vendor_user_reader: MockVendorUserReader,
+    }
+
+    impl FakeRepo {
+        fn new() -> Self {
+            Self {
+                user_reader: MockUserReader::new(),
+                vendor_user_reader: MockVendorUserReader::new(),
+            }
+        }
+    }
+
+    impl UserReader for FakeRepo {
+        fn get_user_by_id(&self, user_id: UserId, hub_id: HubId) -> RepositoryResult<Option<User>> {
+            self.user_reader.get_user_by_id(user_id, hub_id)
+        }
+
+        fn get_user_by_email(
+            &self,
+            email: &UserEmail,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<User>> {
+            self.user_reader.get_user_by_email(email, hub_id)
+        }
+
+        fn list_users(
+            &self,
+            query: crate::repository::UserListQuery,
+        ) -> RepositoryResult<(usize, Vec<User>)> {
+            self.user_reader.list_users(query)
+        }
+    }
+
+    impl VendorUserReader for FakeRepo {
+        fn get_vendor_for_user(
+            &self,
+            user_id: UserId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<VendorId>> {
+            self.vendor_user_reader.get_vendor_for_user(user_id, hub_id)
+        }
+    }
+
+    fn user_with_roles(roles: &[&str]) -> AuthenticatedUser {
+        AuthenticatedUser {
+            sub: "user".to_string(),
+            email: "user@example.com".to_string(),
+            hub_id: 11,
+            name: "User".to_string(),
+            roles: roles.iter().map(|role| role.to_string()).collect(),
+            exp: 0,
+        }
+    }
+
+    #[test]
+    fn ensure_catalog_read_access_allows_admin_vendor_and_service() {
+        let admin = user_with_roles(&[ADMIN_ACCESS_ROLE]);
+        let vendor = user_with_roles(&[VENDOR_ACCESS_ROLE]);
+        let service = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        assert!(ensure_catalog_read_access(&admin).is_ok());
+        assert!(ensure_catalog_read_access(&vendor).is_ok());
+        assert!(ensure_catalog_read_access(&service).is_ok());
+    }
+
+    #[test]
+    fn ensure_catalog_read_access_rejects_unknown_role() {
+        let user = user_with_roles(&["other"]);
+        assert!(matches!(
+            ensure_catalog_read_access(&user),
+            Err(ServiceError::Unauthorized)
+        ));
+    }
+
+    #[test]
+    fn resolve_hub_access_returns_admin_for_admin_role() {
+        let repo = FakeRepo::new();
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
+
+        let access = resolve_hub_access(&user, &repo).expect("access");
+        assert!(matches!(access, HubAccessScope::Admin));
+    }
+
+    #[test]
+    fn resolve_hub_access_returns_basic_for_service_role() {
+        let repo = FakeRepo::new();
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+
+        let access = resolve_hub_access(&user, &repo).expect("access");
+        assert!(matches!(access, HubAccessScope::Basic));
+    }
+
+    #[test]
+    fn resolve_hub_access_returns_vendor_scope_for_vendor_role() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_roles(&[VENDOR_ACCESS_ROLE]);
+        let hub_id = HubId::new(user.hub_id).unwrap();
+        let user_id = UserId::new(12).unwrap();
+        let vendor_id = VendorId::new(5).unwrap();
+        let user_record = User {
+            id: user_id,
+            hub_id,
+            name: UserName::new("Vendor User").unwrap(),
+            email: UserEmail::new(user.email.clone()).unwrap(),
+        };
+
+        repo.user_reader
+            .expect_get_user_by_email()
+            .times(1)
+            .withf(|email, hub| email.as_str() == "user@example.com" && hub.get() == 11)
+            .returning(move |_, _| Ok(Some(user_record.clone())));
+
+        repo.vendor_user_reader
+            .expect_get_vendor_for_user()
+            .times(1)
+            .withf(move |id, hub| *id == user_id && hub.get() == 11)
+            .returning(move |_, _| Ok(Some(vendor_id)));
+
+        let access = resolve_hub_access(&user, &repo).expect("access");
+        assert!(matches!(access, HubAccessScope::Vendor { vendor_id: id } if id == vendor_id));
+    }
+
+    #[test]
+    fn resolve_hub_access_rejects_missing_vendor_assignment() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_roles(&[VENDOR_ACCESS_ROLE]);
+        let hub_id = HubId::new(user.hub_id).unwrap();
+        let user_id = UserId::new(44).unwrap();
+        let user_record = User {
+            id: user_id,
+            hub_id,
+            name: UserName::new("Vendor User").unwrap(),
+            email: UserEmail::new(user.email.clone()).unwrap(),
+        };
+
+        repo.user_reader
+            .expect_get_user_by_email()
+            .times(1)
+            .returning(move |_, _| Ok(Some(user_record.clone())));
+
+        repo.vendor_user_reader
+            .expect_get_vendor_for_user()
+            .times(1)
+            .returning(|_, _| Ok(None));
+
+        let access = resolve_hub_access(&user, &repo);
+        assert!(matches!(access, Err(ServiceError::Unauthorized)));
+    }
+}
