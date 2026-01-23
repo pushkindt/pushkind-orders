@@ -15,7 +15,7 @@ use crate::domain::{
     price_level::PriceLevelListQuery,
     store_otp::NewStoreOtp,
     tag::TagListQuery,
-    types::{CategoryId, HubId, OrderId, PhoneNumber, ProductId, ProductQuantity},
+    types::{CategoryId, HubId, OrderId, PhoneNumber, ProductId, ProductQuantity, VendorId},
 };
 pub use crate::dto::store::{
     StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreOtpAcceptResponse,
@@ -27,7 +27,7 @@ use crate::forms::store::{
 };
 use crate::repository::{
     CategoryReader, CustomerReader, CustomerWriter, OrderReader, OrderWriter, PriceLevelReader,
-    ProductReader, StoreOtpRepository, TagReader,
+    ProductReader, StoreOtpRepository, TagReader, VendorOrderWriter,
 };
 use crate::services::{ServiceError, ServiceResult};
 
@@ -164,7 +164,7 @@ pub fn create_store_order<R>(
     repo: &R,
 ) -> ServiceResult<Order>
 where
-    R: ProductReader + PriceLevelReader + OrderWriter + ?Sized,
+    R: ProductReader + PriceLevelReader + OrderWriter + VendorOrderWriter + ?Sized,
 {
     let hub_id = HubId::new(hub_id)?;
     let items = validate_store_order_lines(payloads)?;
@@ -175,6 +175,8 @@ where
     let mut currency: Option<String> = None;
     let mut total_cents: i32 = 0;
     let mut products: Vec<OrderProduct> = Vec::new();
+    let mut order_vendor_id: Option<VendorId> = None;
+    let mut saw_vendorless = false;
 
     for item in items {
         if item.quantity <= 0 {
@@ -187,6 +189,33 @@ where
             .get_product_by_id(product_id, hub_id)?
             .filter(|product| !product.is_archived)
             .ok_or_else(|| ServiceError::Form("product not found".to_string()))?;
+
+        match product.vendor_id {
+            Some(vendor_id) => {
+                if saw_vendorless {
+                    return Err(ServiceError::Form(
+                        "mixed vendors are not allowed".to_string(),
+                    ));
+                }
+                if let Some(existing) = order_vendor_id {
+                    if existing != vendor_id {
+                        return Err(ServiceError::Form(
+                            "mixed vendors are not allowed".to_string(),
+                        ));
+                    }
+                } else {
+                    order_vendor_id = Some(vendor_id);
+                }
+            }
+            None => {
+                if order_vendor_id.is_some() {
+                    return Err(ServiceError::Form(
+                        "mixed vendors are not allowed".to_string(),
+                    ));
+                }
+                saw_vendorless = true;
+            }
+        }
 
         let price_cents = if let Some(customer_price_level_id) = customer_price_level_id {
             StoreProduct::resolve_price_cents(
@@ -252,7 +281,13 @@ where
         .with_status(OrderStatus::Pending)
         .with_products(products);
 
-    Ok(repo.create_order(&new_order)?)
+    let order = repo.create_order(&new_order)?;
+
+    if let Some(vendor_id) = order_vendor_id {
+        repo.associate_order_with_vendor(order.id, vendor_id, hub_id)?;
+    }
+
+    Ok(order)
 }
 
 /// Load orders placed by a storefront customer for the provided hub.
@@ -467,7 +502,7 @@ mod tests {
         CategoryId, CategoryName, CurrencyCode, CustomerId, CustomerName, HubId, ImageUrl,
         OrderConsignee, OrderDeliveryNotes, OrderId, OrderPayer, OrderShippingAddress, PriceCents,
         PriceLevelId, PriceLevelName, ProductAmount, ProductDescription, ProductId, ProductName,
-        ProductPriceLevelRateId, ProductSku, ProductUnits, TagId, TagName,
+        ProductPriceLevelRateId, ProductSku, ProductUnits, TagId, TagName, VendorId,
     };
     use crate::domain::{
         category::Category,
@@ -488,9 +523,11 @@ mod tests {
     use crate::repository::mock::{
         MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockOrderReader,
         MockOrderWriter, MockPriceLevelReader, MockProductReader, MockStoreOtpRepository,
+        MockVendorOrderWriter,
     };
     use crate::repository::{
         CustomerReader, CustomerWriter, OrderReader, OrderWriter, StoreOtpRepository,
+        VendorOrderWriter,
     };
     use chrono::NaiveDateTime;
 
@@ -504,6 +541,7 @@ mod tests {
         product_reader: MockProductReader,
         price_level_reader: MockPriceLevelReader,
         order_writer: MockOrderWriter,
+        vendor_order_writer: MockVendorOrderWriter,
     }
 
     impl MockStoreOrderRepo {
@@ -512,6 +550,7 @@ mod tests {
                 product_reader: MockProductReader::new(),
                 price_level_reader: MockPriceLevelReader::new(),
                 order_writer: MockOrderWriter::new(),
+                vendor_order_writer: MockVendorOrderWriter::new(),
             }
         }
     }
@@ -586,6 +625,23 @@ mod tests {
         }
     }
 
+    impl VendorOrderWriter for MockStoreOrderRepo {
+        fn associate_order_with_vendor(
+            &self,
+            order_id: OrderId,
+            vendor_id: VendorId,
+            hub_id: HubId,
+        ) -> RepositoryResult<()> {
+            self.vendor_order_writer
+                .associate_order_with_vendor(order_id, vendor_id, hub_id)
+        }
+
+        fn clear_vendor_for_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {
+            self.vendor_order_writer
+                .clear_vendor_for_order(order_id, hub_id)
+        }
+    }
+
     fn sample_timestamp() -> NaiveDateTime {
         chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
             .unwrap()
@@ -622,6 +678,7 @@ mod tests {
             currency: CurrencyCode::new(currency).unwrap(),
             is_archived: false,
             category_id: None,
+            vendor_id: None,
             price_levels: vec![ProductPriceLevelRate {
                 id: ProductPriceLevelRateId::new(id).unwrap(),
                 product_id: ProductId::new(id).unwrap(),
@@ -978,6 +1035,50 @@ mod tests {
                 1 => Ok(Some(sample_product(1, hub_id.get(), 1, 500, "USD"))),
                 2 => Ok(Some(sample_product(2, hub_id.get(), 1, 300, "EUR"))),
                 _ => Ok(None),
+            });
+
+        let payload = vec![
+            StoreOrderLinePayload {
+                product_id: 1,
+                quantity: 1,
+            },
+            StoreOrderLinePayload {
+                product_id: 2,
+                quantity: 1,
+            },
+        ];
+
+        let result = create_store_order(1, payload, &customer, &repo);
+
+        assert!(matches!(result, Err(ServiceError::Form(_))));
+    }
+
+    #[test]
+    fn create_store_order_rejects_mixed_vendors() {
+        let mut repo = MockStoreOrderRepo::new();
+        let customer = Customer {
+            id: CustomerId::new(10).unwrap(),
+            hub_id: HubId::new(1).unwrap(),
+            name: CustomerName::new("Customer").unwrap(),
+            phone: PhoneNumber::new("+111").unwrap(),
+            price_level_id: None,
+            public_id: None,
+        };
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|_| Ok((0, vec![sample_price_level(1, true)])));
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .returning(|product_id, hub_id| {
+                let mut product = sample_product(product_id.get(), hub_id.get(), 1, 500, "USD");
+                match product_id.get() {
+                    1 => product.vendor_id = Some(VendorId::new(1).unwrap()),
+                    2 => product.vendor_id = Some(VendorId::new(2).unwrap()),
+                    _ => {}
+                }
+                Ok(Some(product))
             });
 
         let payload = vec![
@@ -1902,6 +2003,7 @@ mod tests {
                 currency: CurrencyCode::new("USD").unwrap(),
                 is_archived: false,
                 category_id: Some(CategoryId::new(1).unwrap()),
+                vendor_id: None,
                 price_levels: vec![ProductPriceLevelRate {
                     id: ProductPriceLevelRateId::new(1).unwrap(),
                     product_id: ProductId::new(1).unwrap(),
@@ -1926,6 +2028,7 @@ mod tests {
                 currency: CurrencyCode::new("USD").unwrap(),
                 is_archived: true,
                 category_id: None,
+                vendor_id: None,
                 price_levels: Vec::new(),
                 tags: Vec::new(),
                 created_at: sample_timestamp(),
@@ -1990,6 +2093,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: Some(CategoryId::new(1).unwrap()),
+            vendor_id: None,
             price_levels: vec![
                 ProductPriceLevelRate {
                     id: ProductPriceLevelRateId::new(1).unwrap(),
@@ -2079,6 +2183,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: Some(CategoryId::new(1).unwrap()),
+            vendor_id: None,
             price_levels: vec![ProductPriceLevelRate {
                 id: ProductPriceLevelRateId::new(1).unwrap(),
                 product_id: ProductId::new(1).unwrap(),
@@ -2156,6 +2261,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: Some(CategoryId::new(3).unwrap()),
+            vendor_id: None,
             price_levels: vec![
                 ProductPriceLevelRate {
                     id: ProductPriceLevelRateId::new(1).unwrap(),
@@ -2237,6 +2343,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: Some(CategoryId::new(3).unwrap()),
+            vendor_id: None,
             price_levels: vec![
                 ProductPriceLevelRate {
                     id: ProductPriceLevelRateId::new(1).unwrap(),
@@ -2316,6 +2423,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: Some(CategoryId::new(3).unwrap()),
+            vendor_id: None,
             price_levels: vec![ProductPriceLevelRate {
                 id: ProductPriceLevelRateId::new(1).unwrap(),
                 product_id: ProductId::new(7).unwrap(),
@@ -2383,6 +2491,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: true,
             category_id: None,
+            vendor_id: None,
             price_levels: Vec::new(),
             tags: Vec::new(),
             created_at: sample_timestamp(),
@@ -2423,6 +2532,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: None,
+            vendor_id: None,
             price_levels: Vec::new(),
             tags: Vec::new(),
             created_at: sample_timestamp(),

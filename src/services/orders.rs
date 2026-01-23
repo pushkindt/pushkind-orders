@@ -2,15 +2,15 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::routes::ensure_role;
 
-use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::order::{Order, OrderProductApprovalUpdate, UpdateOrder as DomainUpdateOrder};
-use crate::domain::types::{HubId, OrderId, PriceCents, ProductId, ProductQuantity};
+use crate::domain::types::{HubId, OrderId, PriceCents, ProductId, ProductQuantity, VendorId};
 use crate::dto::orders::{OrderDetails, OrderProductApprovalPayload};
 use crate::forms::orders::{EditOrderForm, EditOrderPayload};
-use crate::repository::{CustomerReader, OrderReader, OrderWriter};
-use crate::services::{ServiceError, ServiceResult};
+use crate::repository::{
+    CustomerReader, OrderReader, OrderWriter, UserReader, VendorOrderReader, VendorUserReader,
+};
+use crate::services::{HubAccessScope, ServiceError, ServiceResult, resolve_hub_access};
 
 /// Loads a single order owned by the authenticated user's hub.
 pub fn load_order_details<R>(
@@ -19,12 +19,16 @@ pub fn load_order_details<R>(
     repo: &R,
 ) -> ServiceResult<OrderDetails>
 where
-    R: OrderReader + CustomerReader + ?Sized,
+    R: OrderReader + CustomerReader + UserReader + VendorUserReader + VendorOrderReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let access = resolve_hub_access(user, repo)?;
 
     let order_id = OrderId::new(order_id)?;
     let hub_id = HubId::new(user.hub_id)?;
+
+    if let HubAccessScope::Vendor { vendor_id } = access {
+        ensure_vendor_order_access(order_id, hub_id, vendor_id, repo)?;
+    }
 
     let order = repo.get_order_by_id(order_id, hub_id)?;
 
@@ -46,12 +50,16 @@ pub fn update_order<R>(
     repo: &R,
 ) -> ServiceResult<Order>
 where
-    R: OrderWriter + ?Sized,
+    R: OrderWriter + UserReader + VendorUserReader + VendorOrderReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let access = resolve_hub_access(user, repo)?;
 
     let order_id = OrderId::new(order_id)?;
     let hub_id = HubId::new(user.hub_id)?;
+
+    if let HubAccessScope::Vendor { vendor_id } = access {
+        ensure_vendor_order_access(order_id, hub_id, vendor_id, repo)?;
+    }
 
     let payload: EditOrderPayload = form.try_into()?;
     let updates = DomainUpdateOrder::new(payload.status)
@@ -73,9 +81,15 @@ pub fn update_order_product_approvals<R>(
     repo: &R,
 ) -> ServiceResult<OrderDetails>
 where
-    R: OrderReader + OrderWriter + CustomerReader + ?Sized,
+    R: OrderReader
+        + OrderWriter
+        + CustomerReader
+        + UserReader
+        + VendorUserReader
+        + VendorOrderReader
+        + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let access = resolve_hub_access(user, repo)?;
 
     if approvals.is_empty() {
         return Err(ServiceError::Form(
@@ -85,6 +99,10 @@ where
 
     let order_id = OrderId::new(order_id)?;
     let hub_id = HubId::new(user.hub_id)?;
+
+    if let HubAccessScope::Vendor { vendor_id } = access {
+        ensure_vendor_order_access(order_id, hub_id, vendor_id, repo)?;
+    }
 
     let mut approvals_map: HashMap<ProductId, ProductQuantity> = HashMap::new();
     for payload in approvals {
@@ -155,6 +173,23 @@ where
     Ok(OrderDetails { order, customer })
 }
 
+fn ensure_vendor_order_access<R>(
+    order_id: OrderId,
+    hub_id: HubId,
+    vendor_id: VendorId,
+    repo: &R,
+) -> ServiceResult<()>
+where
+    R: VendorOrderReader + ?Sized,
+{
+    let order_vendor = repo.get_vendor_for_order(order_id, hub_id)?;
+    if order_vendor == Some(vendor_id) {
+        Ok(())
+    } else {
+        Err(ServiceError::NotFound)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,14 +197,21 @@ mod tests {
 
     use crate::domain::types::{
         CurrencyCode, CustomerId, CustomerName, HubId, OrderId, OrderNotes, OrderReference,
-        PhoneNumber, PriceCents, ProductId, ProductName, ProductQuantity,
+        PhoneNumber, PriceCents, ProductId, ProductName, ProductQuantity, UserEmail, UserId,
+        UserName, VendorId,
     };
     use crate::domain::{
         customer::Customer,
         order::{Order, OrderProduct, OrderStatus},
+        user::User,
     };
     use crate::forms::orders::EditOrderForm;
-    use crate::repository::mock::{MockCustomerReader, MockOrderReader, MockOrderWriter};
+    use crate::repository::UserListQuery;
+    use crate::repository::mock::{
+        MockCustomerReader, MockOrderReader, MockOrderWriter, MockUserReader,
+        MockVendorOrderReader, MockVendorUserReader,
+    };
+    use crate::{SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE};
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
     #[derive(Default)]
@@ -177,6 +219,9 @@ mod tests {
         orders: MockOrderReader,
         customers: MockCustomerReader,
         order_writer: MockOrderWriter,
+        user_reader: MockUserReader,
+        vendor_user_reader: MockVendorUserReader,
+        vendor_order_reader: MockVendorOrderReader,
     }
 
     impl OrderServiceRepo {
@@ -259,6 +304,45 @@ mod tests {
 
         fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()> {
             self.order_writer.delete_order(order_id, hub_id)
+        }
+    }
+
+    impl UserReader for OrderServiceRepo {
+        fn get_user_by_id(&self, id: UserId, hub_id: HubId) -> RepositoryResult<Option<User>> {
+            self.user_reader.get_user_by_id(id, hub_id)
+        }
+
+        fn get_user_by_email(
+            &self,
+            email: &UserEmail,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<User>> {
+            self.user_reader.get_user_by_email(email, hub_id)
+        }
+
+        fn list_users(&self, query: UserListQuery) -> RepositoryResult<(usize, Vec<User>)> {
+            self.user_reader.list_users(query)
+        }
+    }
+
+    impl VendorUserReader for OrderServiceRepo {
+        fn get_vendor_for_user(
+            &self,
+            user_id: UserId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<VendorId>> {
+            self.vendor_user_reader.get_vendor_for_user(user_id, hub_id)
+        }
+    }
+
+    impl VendorOrderReader for OrderServiceRepo {
+        fn get_vendor_for_order(
+            &self,
+            order_id: OrderId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<VendorId>> {
+            self.vendor_order_reader
+                .get_vendor_for_order(order_id, hub_id)
         }
     }
 
@@ -417,8 +501,60 @@ mod tests {
     }
 
     #[test]
+    fn load_order_details_scopes_vendor_access() {
+        let mut repo = OrderServiceRepo::new();
+        let user = user_with_roles(&[VENDOR_ACCESS_ROLE]);
+        let expected_hub = user.hub_id;
+        let hub_id = HubId::new(expected_hub).unwrap();
+        let user_id = UserId::new(19).unwrap();
+        let vendor_id = VendorId::new(7).unwrap();
+        let user_record = User {
+            id: user_id,
+            hub_id,
+            name: UserName::new("Vendor User").unwrap(),
+            email: UserEmail::new(user.email.clone()).unwrap(),
+        };
+
+        repo.user_reader
+            .expect_get_user_by_email()
+            .times(1)
+            .withf(move |email, hub| {
+                email.as_str() == "user@example.com" && hub.get() == expected_hub
+            })
+            .returning(move |_, _| Ok(Some(user_record.clone())));
+
+        repo.vendor_user_reader
+            .expect_get_vendor_for_user()
+            .times(1)
+            .withf(move |id, hub| *id == user_id && hub.get() == expected_hub)
+            .returning(move |_, _| Ok(Some(vendor_id)));
+
+        repo.vendor_order_reader
+            .expect_get_vendor_for_order()
+            .times(1)
+            .withf(move |order_id, hub| order_id.get() == 3 && hub.get() == expected_hub)
+            .returning(move |_, _| Ok(Some(vendor_id)));
+
+        repo.orders
+            .expect_get_order_by_id()
+            .times(1)
+            .withf(move |id, hub| id.get() == 3 && hub.get() == expected_hub)
+            .returning(move |id, hub| Ok(Some(sample_order(id.get(), hub.get(), None))));
+
+        let result = load_order_details(3, &user, &repo);
+
+        let details = match result {
+            Ok(details) => details,
+            Err(err) => panic!("expected order details, got error: {err}"),
+        };
+
+        assert_eq!(details.order.id.get(), 3);
+        assert_eq!(details.order.hub_id.get(), expected_hub);
+    }
+
+    #[test]
     fn update_order_requires_role() {
-        let repo = MockOrderWriter::new();
+        let repo = OrderServiceRepo::new();
         let user = user_with_roles(&[]);
         let form = sample_edit_form("Pending");
 
@@ -429,12 +565,13 @@ mod tests {
 
     #[test]
     fn update_order_calls_repository_with_sanitized_payload() {
-        let mut repo = MockOrderWriter::new();
+        let mut repo = OrderServiceRepo::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let expected_hub = user.hub_id;
         let form = sample_edit_form("Completed");
 
-        repo.expect_update_order()
+        repo.order_writer
+            .expect_update_order()
             .times(1)
             .withf(move |id, hub_id, updates| {
                 id.get() == 5
@@ -458,11 +595,12 @@ mod tests {
 
     #[test]
     fn update_order_returns_not_found_when_missing() {
-        let mut repo = MockOrderWriter::new();
+        let mut repo = OrderServiceRepo::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let form = sample_edit_form("Processing");
 
-        repo.expect_update_order()
+        repo.order_writer
+            .expect_update_order()
             .returning(|_, _, _| Err(RepositoryError::NotFound));
 
         let result = update_order(5, form, &user, &repo);
@@ -472,7 +610,7 @@ mod tests {
 
     #[test]
     fn update_order_propagates_form_errors() {
-        let repo = MockOrderWriter::new();
+        let repo = OrderServiceRepo::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let form = EditOrderForm {
             order_id: 5,

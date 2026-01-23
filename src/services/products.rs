@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
-use pushkind_common::routes::ensure_role;
 
-use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::{
     category::CategoryTreeQuery,
     price_level::{PriceLevel, PriceLevelListQuery},
@@ -19,9 +17,10 @@ use crate::forms::products::{
 };
 use crate::repository::{
     CategoryReader, CategoryWriter, PriceLevelReader, ProductReader, ProductWriter, TagReader,
+    UserReader, VendorUserReader,
 };
-use crate::services::categories::create_category_chain;
-use crate::services::{ServiceError, ServiceResult};
+use crate::services::categories::{create_category_chain, find_category_chain};
+use crate::services::{HubAccessScope, ServiceError, ServiceResult, resolve_hub_access};
 
 /// Loads the products overview page.
 pub fn load_products_page<R>(
@@ -30,9 +29,15 @@ pub fn load_products_page<R>(
     repo: &R,
 ) -> ServiceResult<ProductsPageData>
 where
-    R: ProductReader + PriceLevelReader + CategoryReader + TagReader + ?Sized,
+    R: ProductReader
+        + PriceLevelReader
+        + CategoryReader
+        + TagReader
+        + UserReader
+        + VendorUserReader
+        + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let access = resolve_hub_access(user, repo)?;
 
     let ProductsQuery {
         search,
@@ -43,6 +48,10 @@ where
     let page = page.unwrap_or(1);
     let hub_id = HubId::new(user.hub_id)?;
     let mut list_query = ProductListQuery::new(hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
+
+    if let HubAccessScope::Vendor { vendor_id } = access {
+        list_query = list_query.with_vendor_id(vendor_id);
+    }
 
     if let Some(search_term) = search.as_ref() {
         list_query = list_query.search(search_term);
@@ -97,15 +106,25 @@ pub fn create_product<R>(
     repo: &R,
 ) -> ServiceResult<Product>
 where
-    R: ProductWriter + PriceLevelReader + CategoryReader + CategoryWriter + ?Sized,
+    R: ProductWriter
+        + PriceLevelReader
+        + CategoryReader
+        + CategoryWriter
+        + UserReader
+        + VendorUserReader
+        + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let access = resolve_hub_access(user, repo)?;
 
     let price_levels = fetch_all_price_levels(user.hub_id, repo)?;
 
-    let payload: AddProductPayload = (form, user.hub_id, &price_levels[..]).try_into()?;
+    let mut payload: AddProductPayload = (form, user.hub_id, &price_levels[..]).try_into()?;
 
-    persist_new_product(user.hub_id, payload, repo)
+    if let HubAccessScope::Vendor { vendor_id } = access {
+        payload.product = payload.product.with_vendor_id(vendor_id);
+    }
+
+    persist_new_product(user.hub_id, payload, access, repo)
 }
 
 /// Imports products from an uploaded CSV file.
@@ -115,17 +134,26 @@ pub fn import_products<R>(
     repo: &R,
 ) -> ServiceResult<usize>
 where
-    R: ProductWriter + PriceLevelReader + CategoryReader + CategoryWriter + ?Sized,
+    R: ProductWriter
+        + PriceLevelReader
+        + CategoryReader
+        + CategoryWriter
+        + UserReader
+        + VendorUserReader
+        + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let access = resolve_hub_access(user, repo)?;
 
     let price_levels = fetch_all_price_levels(user.hub_id, repo)?;
 
     let uploads = form.into_new_products(user.hub_id, &price_levels)?;
 
     let mut created = 0usize;
-    for upload in uploads {
-        persist_new_product(user.hub_id, upload, repo)?;
+    for mut upload in uploads {
+        if let HubAccessScope::Vendor { vendor_id } = access {
+            upload.product = upload.product.with_vendor_id(vendor_id);
+        }
+        persist_new_product(user.hub_id, upload, access, repo)?;
         created += 1;
     }
 
@@ -140,18 +168,24 @@ pub fn update_product<R>(
     repo: &R,
 ) -> ServiceResult<Product>
 where
-    R: ProductReader + ProductWriter + PriceLevelReader + ?Sized,
+    R: ProductReader + ProductWriter + PriceLevelReader + UserReader + VendorUserReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let access = resolve_hub_access(user, repo)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let product_id = ProductId::new(product_id)?;
     let product = repo.get_product_by_id(product_id, hub_id)?;
 
-    if product.is_none() {
+    let Some(product) = product else {
         return Err(ServiceError::Form(
             "Некорректный идентификатор товара.".to_string(),
         ));
+    };
+
+    if let HubAccessScope::Vendor { vendor_id } = access
+        && product.vendor_id != Some(vendor_id)
+    {
+        return Err(ServiceError::NotFound);
     }
 
     let available_price_levels = fetch_all_price_levels(user.hub_id, repo)?;
@@ -204,6 +238,7 @@ where
 fn persist_new_product<R>(
     hub_id: i32,
     payload: AddProductPayload,
+    access: HubAccessScope,
     repo: &R,
 ) -> ServiceResult<Product>
 where
@@ -219,7 +254,12 @@ where
     } = payload;
 
     if let Some(category) = category {
-        let category = create_category_chain(&category, product.hub_id.get(), repo)?;
+        let category = match access {
+            HubAccessScope::Admin => create_category_chain(&category, product.hub_id.get(), repo)?,
+            HubAccessScope::Vendor { .. } => {
+                find_category_chain(&category, product.hub_id.get(), repo)?
+            }
+        };
         product.category_id = Some(category.id);
     }
 
@@ -302,8 +342,9 @@ mod tests {
     use crate::domain::types::{
         CategoryId, CategoryName, CurrencyCode, HubId, ImageUrl, PriceCents, PriceLevelId,
         PriceLevelName, ProductDescription, ProductId, ProductName, ProductPriceLevelRateId,
-        ProductSku, ProductUnits, TagId, TagName,
+        ProductSku, ProductUnits, TagId, TagName, UserEmail, UserId, UserName, VendorId,
     };
+    use crate::domain::user::User;
     use crate::domain::{
         category::Category, price_level::PriceLevel, product::Product,
         product_price_level::ProductPriceLevelRate, tag::Tag,
@@ -313,10 +354,12 @@ mod tests {
         AddProductForm, AddProductPriceLevelForm, EditProductForm, EditProductPriceLevelForm,
         UploadProductsForm,
     };
+    use crate::repository::UserListQuery;
     use crate::repository::mock::{
         MockCategoryReader, MockCategoryWriter, MockPriceLevelReader, MockProductReader,
-        MockProductWriter, MockTagReader,
+        MockProductWriter, MockTagReader, MockUserReader, MockVendorUserReader,
     };
+    use crate::{SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE};
     use actix_multipart::form::tempfile::TempFile;
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
     use tempfile::NamedTempFile;
@@ -343,6 +386,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: None,
+            vendor_id: None,
             price_levels,
             tags: Vec::new(),
             created_at: datetime(),
@@ -553,6 +597,71 @@ mod tests {
             first_tags[0].get("name").and_then(Value::as_str),
             Some("Seasonal")
         );
+    }
+
+    #[test]
+    fn load_products_page_scopes_vendor_access() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_role(VENDOR_ACCESS_ROLE);
+        let expected_hub = user.hub_id;
+        let expected_hub_id = HubId::new(expected_hub).unwrap();
+        let user_id = UserId::new(41).unwrap();
+        let vendor_id = VendorId::new(9).unwrap();
+        let user_record = User {
+            id: user_id,
+            hub_id: expected_hub_id,
+            name: UserName::new("Vendor User").unwrap(),
+            email: UserEmail::new(user.email.clone()).unwrap(),
+        };
+
+        repo.user_reader
+            .expect_get_user_by_email()
+            .times(1)
+            .withf(move |email, hub_id| {
+                email.as_str() == "user@example.com" && hub_id.get() == expected_hub
+            })
+            .returning(move |_, _| Ok(Some(user_record.clone())));
+
+        repo.vendor_user_reader
+            .expect_get_vendor_for_user()
+            .times(1)
+            .withf(move |id, hub_id| *id == user_id && hub_id.get() == expected_hub)
+            .returning(move |_, _| Ok(Some(vendor_id)));
+
+        repo.product_reader
+            .expect_list_products()
+            .times(1)
+            .withf(move |query| {
+                assert_eq!(query.hub_id.get(), expected_hub);
+                assert_eq!(query.vendor_id, Some(vendor_id));
+                true
+            })
+            .returning(|_| Ok((0, Vec::new())));
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .times(1)
+            .returning(|_| Ok((0, Vec::new())));
+
+        repo.category_reader
+            .expect_list_categories()
+            .times(1)
+            .returning(|_| Ok((0, Vec::new())));
+
+        repo.tag_reader
+            .expect_list_tags()
+            .times(1)
+            .returning(|_| Ok((0, Vec::new())));
+
+        let result =
+            load_products_page(ProductsQuery::default(), &user, &repo).expect("page result");
+
+        let serialized = serde_json::to_value(&result.products).expect("serialization");
+        let items = serialized
+            .get("items")
+            .and_then(Value::as_array)
+            .expect("items array");
+        assert!(items.is_empty());
     }
 
     #[test]
@@ -1211,6 +1320,8 @@ Banana,USD,7.50,
         category_reader: MockCategoryReader,
         category_writer: MockCategoryWriter,
         tag_reader: MockTagReader,
+        user_reader: MockUserReader,
+        vendor_user_reader: MockVendorUserReader,
     }
 
     impl FakeRepo {
@@ -1222,6 +1333,8 @@ Banana,USD,7.50,
                 category_reader: MockCategoryReader::new(),
                 category_writer: MockCategoryWriter::new(),
                 tag_reader: MockTagReader::new(),
+                user_reader: MockUserReader::new(),
+                vendor_user_reader: MockVendorUserReader::new(),
             }
         }
     }
@@ -1314,6 +1427,34 @@ Banana,USD,7.50,
 
         fn list_tags(&self, query: TagListQuery) -> RepositoryResult<(usize, Vec<Tag>)> {
             self.tag_reader.list_tags(query)
+        }
+    }
+
+    impl UserReader for FakeRepo {
+        fn get_user_by_id(&self, id: UserId, hub_id: HubId) -> RepositoryResult<Option<User>> {
+            self.user_reader.get_user_by_id(id, hub_id)
+        }
+
+        fn get_user_by_email(
+            &self,
+            email: &UserEmail,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<User>> {
+            self.user_reader.get_user_by_email(email, hub_id)
+        }
+
+        fn list_users(&self, query: UserListQuery) -> RepositoryResult<(usize, Vec<User>)> {
+            self.user_reader.list_users(query)
+        }
+    }
+
+    impl VendorUserReader for FakeRepo {
+        fn get_vendor_for_user(
+            &self,
+            user_id: UserId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<VendorId>> {
+            self.vendor_user_reader.get_vendor_for_user(user_id, hub_id)
         }
     }
 

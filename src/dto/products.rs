@@ -72,6 +72,7 @@ impl ProductView {
             currency,
             is_archived,
             category_id,
+            vendor_id: _,
             price_levels,
             tags,
             image_urls,

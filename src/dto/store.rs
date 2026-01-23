@@ -156,6 +156,7 @@ impl StoreProduct {
             currency,
             is_archived: _,
             category_id,
+            vendor_id: _,
             price_levels,
             tags,
             image_urls,

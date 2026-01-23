@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::routes::ensure_role;
 
-use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::category::{
     Category, CategoryTreeNode, CategoryTreeQuery, NewCategory, UpdateCategory,
 };
@@ -13,14 +11,14 @@ use crate::forms::categories::{
     AddCategoryForm, AddCategoryPayload, EditCategoryForm, EditCategoryPayload,
 };
 use crate::repository::{CategoryReader, CategoryWriter};
-use crate::services::{ServiceError, ServiceResult};
+use crate::services::{ServiceError, ServiceResult, ensure_admin, ensure_catalog_read_access};
 
 /// Loads the categories overview page.
 pub fn load_categories<R>(user: &AuthenticatedUser, repo: &R) -> ServiceResult<CategoryTreeData>
 where
     R: CategoryReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_catalog_read_access(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
 
@@ -45,7 +43,7 @@ pub fn load_category_for_edit<R>(
 where
     R: CategoryReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let category_id = CategoryId::new(category_id)?;
@@ -65,7 +63,7 @@ pub fn create_category<R>(
 where
     R: CategoryWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let payload: AddCategoryPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
@@ -94,7 +92,7 @@ pub fn modify_category<R>(
 where
     R: CategoryReader + CategoryWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let payload: EditCategoryPayload = form.try_into()?;
     let update = UpdateCategory::new(
@@ -115,7 +113,7 @@ pub fn remove_category<R>(category_id: i32, user: &AuthenticatedUser, repo: &R) 
 where
     R: CategoryWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let category_id = CategoryId::new(category_id)?;
@@ -188,11 +186,36 @@ where
         .ok_or(ServiceError::NotFound)
 }
 
+/// Finds an existing chain of nested categories from a string like
+/// "Parent / Child / Grandchild".
+/// Returns the most nested child or a not-found error.
+pub fn find_category_chain<R>(path: &str, hub_id: i32, repo: &R) -> ServiceResult<Category>
+where
+    R: CategoryReader + ?Sized,
+{
+    let hub_id = HubId::new(hub_id)?;
+    let mut current: Option<Category> = None;
+
+    for name in path.split('/').map(str::trim).filter(|s| !s.is_empty()) {
+        let parent_id = current.as_ref().map(|category| category.id);
+        let name = CategoryName::new(name)?;
+
+        let category = repo
+            .get_category_by_name_and_parent(&name, parent_id, hub_id)?
+            .ok_or(ServiceError::NotFound)?;
+
+        current = Some(category);
+    }
+
+    current.ok_or(ServiceError::NotFound)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
 
+    use crate::SERVICE_ACCESS_ROLE;
     use crate::domain::category::{
         NewCategory as DomainNewCategory, UpdateCategory as DomainUpdateCategory,
     };

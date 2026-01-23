@@ -256,7 +256,9 @@ impl ProductWriter for DieselRepository {
         };
 
         let mut db_updates = DbUpdateProduct::from(updates);
-        db_updates.vendor_id = existing_vendor_id;
+        if db_updates.vendor_id.is_none() {
+            db_updates.vendor_id = existing_vendor_id;
+        }
 
         let updated = diesel::update(target)
             .set(&db_updates)

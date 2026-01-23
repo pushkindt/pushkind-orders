@@ -34,6 +34,8 @@ pub struct Product {
     pub is_archived: bool,
     /// Optional identifier of the category the product belongs to.
     pub category_id: Option<CategoryId>,
+    /// Optional vendor identifier for the product owner.
+    pub vendor_id: Option<VendorId>,
     /// Price level rates configured for the product.
     pub price_levels: Vec<ProductPriceLevelRate>,
     /// Tags associated with the product.
@@ -67,6 +69,8 @@ pub struct NewProduct {
     pub currency: CurrencyCode,
     /// Optional identifier of the category the product belongs to.
     pub category_id: Option<CategoryId>,
+    /// Optional vendor identifier for the product owner.
+    pub vendor_id: Option<VendorId>,
 }
 
 impl NewProduct {
@@ -81,6 +85,7 @@ impl NewProduct {
             currency,
             category_id: None,
             amount: None,
+            vendor_id: None,
         }
     }
 
@@ -121,6 +126,12 @@ impl NewProduct {
         self
     }
 
+    /// Assign the product to a vendor.
+    pub fn with_vendor_id(mut self, vendor_id: VendorId) -> Self {
+        self.vendor_id = Some(vendor_id);
+        self
+    }
+
     /// Attach amount to the product payload.
     pub fn with_amount(mut self, amount: ProductAmount) -> Self {
         self.amount = Some(amount);
@@ -147,6 +158,8 @@ pub struct UpdateProduct {
     pub is_archived: bool,
     /// Optional identifier of the category the product belongs to.
     pub category_id: Option<CategoryId>,
+    /// Optional vendor identifier for the product owner.
+    pub vendor_id: Option<VendorId>,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }
@@ -165,6 +178,7 @@ impl UpdateProduct {
             category_id: None,
             updated_at: now,
             amount: None,
+            vendor_id: None,
         }
     }
 
@@ -202,6 +216,12 @@ impl UpdateProduct {
     /// Assign the product to a category.
     pub fn with_category_id(mut self, category_id: CategoryId) -> Self {
         self.category_id = Some(category_id);
+        self
+    }
+
+    /// Assign the product to a vendor.
+    pub fn with_vendor_id(mut self, vendor_id: VendorId) -> Self {
+        self.vendor_id = Some(vendor_id);
         self
     }
 

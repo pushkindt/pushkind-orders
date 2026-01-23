@@ -10,7 +10,7 @@ use crate::domain::{
     },
     types::{
         CategoryId, CurrencyCode, HubId, ProductAmount, ProductDescription, ProductId, ProductName,
-        ProductSku, ProductUnits, TypeConstraintError,
+        ProductSku, ProductUnits, TypeConstraintError, VendorId,
     },
 };
 
@@ -79,6 +79,7 @@ impl TryFrom<Product> for DomainProduct {
             currency: CurrencyCode::new(value.currency)?,
             is_archived: value.is_archived,
             category_id: value.category_id.map(CategoryId::new).transpose()?,
+            vendor_id: value.vendor_id.map(VendorId::new).transpose()?,
             price_levels: Vec::new(),
             tags: Vec::new(),
             image_urls: Vec::new(),
@@ -100,7 +101,7 @@ impl<'a> From<&'a DomainNewProduct> for NewProduct<'a> {
             currency: value.currency.as_str(),
             category_id: value.category_id.map(|id| id.get()),
             amount: value.amount.map(|a| a.get()),
-            vendor_id: None,
+            vendor_id: value.vendor_id.map(|id| id.get()),
         }
     }
 }
@@ -117,7 +118,7 @@ impl<'a> From<&'a DomainUpdateProduct> for UpdateProduct<'a> {
             updated_at: value.updated_at,
             category_id: value.category_id.map(|id| id.get()),
             amount: value.amount.map(|a| a.get()),
-            vendor_id: None,
+            vendor_id: value.vendor_id.map(|id| id.get()),
         }
     }
 }

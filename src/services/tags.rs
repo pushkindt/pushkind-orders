@@ -1,14 +1,12 @@
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
-use pushkind_common::routes::ensure_role;
 
-use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::tag::{NewTag, Tag, TagListQuery, UpdateTag};
 use crate::domain::types::{HubId, TagId};
 use crate::dto::tags::{TagQuery, TagsPageData};
 use crate::forms::tags::{AddTagForm, AddTagPayload, EditTagForm, EditTagPayload};
 use crate::repository::{TagReader, TagWriter};
-use crate::services::{ServiceError, ServiceResult};
+use crate::services::{ServiceError, ServiceResult, ensure_admin, ensure_catalog_read_access};
 
 /// Fetches paginated tags for the authenticated user's hub.
 pub fn load_tags<R>(
@@ -19,7 +17,7 @@ pub fn load_tags<R>(
 where
     R: TagReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_catalog_read_access(user)?;
 
     let TagQuery { search, page } = query;
     let page = page.unwrap_or(1);
@@ -44,7 +42,7 @@ pub fn load_tag_for_edit<R>(tag_id: i32, user: &AuthenticatedUser, repo: &R) -> 
 where
     R: TagReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let tag_id = TagId::new(tag_id)?;
@@ -60,7 +58,7 @@ pub fn create_tag<R>(form: AddTagForm, user: &AuthenticatedUser, repo: &R) -> Se
 where
     R: TagWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let payload: AddTagPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
@@ -74,7 +72,7 @@ pub fn modify_tag<R>(form: EditTagForm, user: &AuthenticatedUser, repo: &R) -> S
 where
     R: TagWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let payload: EditTagPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
@@ -88,7 +86,7 @@ pub fn remove_tag<R>(tag_id: i32, user: &AuthenticatedUser, repo: &R) -> Service
 where
     R: TagWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let tag_id = TagId::new(tag_id)?;
     let hub_id = HubId::new(user.hub_id)?;
@@ -102,6 +100,7 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
     use serde_json::Value;
 
+    use crate::SERVICE_ACCESS_ROLE;
     use crate::domain::types::{HubId, TagId, TagName};
     use crate::dto::tags::TagQuery;
     use crate::repository::mock::{MockTagReader, MockTagWriter};

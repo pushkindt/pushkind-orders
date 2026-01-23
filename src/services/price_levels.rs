@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::routes::ensure_role;
 
-use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::category::CategoryTreeQuery;
 use crate::domain::customer::{CustomerListQuery, NewCustomer, UpdateCustomer};
 use crate::domain::price_level::{
@@ -23,7 +21,7 @@ use crate::repository::{
     CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter,
     ProductReader, ProductWriter,
 };
-use crate::services::{ServiceError, ServiceResult};
+use crate::services::{ServiceError, ServiceResult, ensure_admin, ensure_catalog_read_access};
 
 /// Loads the price levels list for the index page.
 pub fn load_price_levels<R>(
@@ -34,7 +32,7 @@ pub fn load_price_levels<R>(
 where
     R: PriceLevelReader + CategoryReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_catalog_read_access(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let mut list_query = PriceLevelListQuery::new(hub_id);
@@ -65,7 +63,7 @@ pub fn load_price_level_for_edit<R>(
 where
     R: PriceLevelReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let price_level_id = PriceLevelId::new(price_level_id)?;
@@ -84,7 +82,7 @@ pub fn load_client_price_level_assignments<R>(
 where
     R: PriceLevelReader + CustomerReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
 
@@ -118,7 +116,7 @@ pub fn create_price_level<R>(
 where
     R: PriceLevelWriter + ProductReader + ProductWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let payload: AddPriceLevelPayload = form.try_into()?;
@@ -217,7 +215,7 @@ pub fn update_price_level<R>(
 where
     R: PriceLevelWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let payload: EditPriceLevelPayload = form.try_into()?;
     let updates = UpdatePriceLevel::new(payload.name, payload.default);
@@ -237,7 +235,7 @@ pub fn remove_price_level<R>(
 where
     R: PriceLevelWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let price_level_id = PriceLevelId::new(price_level_id)?;
@@ -254,7 +252,7 @@ pub fn assign_price_level_to_client<R>(
 where
     R: CustomerReader + CustomerWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let assignment: AssignClientPriceLevelPayload = payload.try_into()?;
 
@@ -295,6 +293,7 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
 
+    use crate::SERVICE_ACCESS_ROLE;
     use crate::domain::category::{Category, CategoryTreeQuery};
     use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer, UpdateCustomer};
     use crate::domain::price_level::PriceLevel;
@@ -636,6 +635,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: category_id.map(|value| CategoryId::new(value).unwrap()),
+            vendor_id: None,
             price_levels,
             tags: Vec::new(),
             image_urls: Vec::new(),

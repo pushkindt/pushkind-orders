@@ -6,6 +6,8 @@ use super::{
     CategoryReader, CategoryWriter, CustomerListQuery, CustomerReader, CustomerWriter, OrderReader,
     OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter,
     StoreOtpRepository, TagReader, TagWriter, UserListQuery, UserReader, UserWriter,
+    VendorOrderReader, VendorOrderWriter, VendorReader, VendorUserReader, VendorUserWriter,
+    VendorWriter,
 };
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
@@ -18,9 +20,10 @@ use crate::domain::{
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
     types::{
         CategoryId, CategoryName, CustomerId, HubId, ImageUrl, OrderId, PhoneNumber, PriceCents,
-        PriceLevelId, ProductId, TagId, UserEmail, UserId,
+        PriceLevelId, ProductId, TagId, UserEmail, UserId, VendorId,
     },
     user::{NewUser, UpdateUser, User},
+    vendor::{NewVendor, UpdateVendor, Vendor, VendorListQuery},
 };
 use pushkind_common::repository::errors::RepositoryResult;
 
@@ -184,5 +187,58 @@ mock! {
         fn get_store_otp(&self, hub_id: HubId, phone: &PhoneNumber) -> RepositoryResult<Option<StoreOtp>>;
         fn upsert_store_otp(&self, new_otp: &NewStoreOtp) -> RepositoryResult<StoreOtp>;
         fn delete_store_otp(&self, hub_id: HubId, phone: &PhoneNumber) -> RepositoryResult<()>;
+    }
+}
+
+mock! {
+    pub VendorReader {}
+
+    impl VendorReader for VendorReader {
+        fn get_vendor_by_id(&self, vendor_id: VendorId, hub_id: HubId) -> RepositoryResult<Option<Vendor>>;
+        fn list_vendors(&self, query: VendorListQuery) -> RepositoryResult<(usize, Vec<Vendor>)>;
+    }
+}
+
+mock! {
+    pub VendorWriter {}
+
+    impl VendorWriter for VendorWriter {
+        fn create_vendor(&self, new_vendor: &NewVendor) -> RepositoryResult<Vendor>;
+        fn update_vendor(&self, vendor_id: VendorId, hub_id: HubId, updates: &UpdateVendor) -> RepositoryResult<Vendor>;
+        fn delete_vendor(&self, vendor_id: VendorId, hub_id: HubId) -> RepositoryResult<()>;
+    }
+}
+
+mock! {
+    pub VendorUserReader {}
+
+    impl VendorUserReader for VendorUserReader {
+        fn get_vendor_for_user(&self, user_id: UserId, hub_id: HubId) -> RepositoryResult<Option<VendorId>>;
+    }
+}
+
+mock! {
+    pub VendorUserWriter {}
+
+    impl VendorUserWriter for VendorUserWriter {
+        fn assign_user_to_vendor(&self, user_id: UserId, vendor_id: VendorId, hub_id: HubId) -> RepositoryResult<()>;
+        fn clear_vendor_for_user(&self, user_id: UserId, hub_id: HubId) -> RepositoryResult<()>;
+    }
+}
+
+mock! {
+    pub VendorOrderReader {}
+
+    impl VendorOrderReader for VendorOrderReader {
+        fn get_vendor_for_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<Option<VendorId>>;
+    }
+}
+
+mock! {
+    pub VendorOrderWriter {}
+
+    impl VendorOrderWriter for VendorOrderWriter {
+        fn associate_order_with_vendor(&self, order_id: OrderId, vendor_id: VendorId, hub_id: HubId) -> RepositoryResult<()>;
+        fn clear_vendor_for_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()>;
     }
 }
