@@ -96,6 +96,10 @@ impl ProductReader for DieselRepository {
                 items = items.filter(has_assignment);
             }
 
+            if let Some(vendor_id) = query.vendor_id {
+                items = items.filter(products::vendor_id.eq(Some(vendor_id.get())));
+            }
+
             if let Some(tag_id) = query.tag_id {
                 let tagged_product_ids = product_tags::table
                     .inner_join(tags::table)

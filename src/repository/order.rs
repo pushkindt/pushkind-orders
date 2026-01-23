@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use chrono::NaiveDateTime;
+use diesel::dsl::exists;
 use diesel::prelude::*;
 use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 
@@ -55,6 +56,7 @@ impl OrderReader for DieselRepository {
             hub_id,
             status,
             customer_id,
+            vendor_id,
             search,
             pagination,
         } = query;
@@ -72,6 +74,16 @@ impl OrderReader for DieselRepository {
 
         if let Some(customer) = customer_id {
             count_query = count_query.filter(orders::customer_id.eq(Some(customer.get())));
+        }
+
+        if let Some(vendor_id) = vendor_id {
+            use crate::schema::vendor_order;
+            let has_vendor = exists(
+                vendor_order::table
+                    .filter(vendor_order::order_id.eq(orders::id))
+                    .filter(vendor_order::vendor_id.eq(vendor_id.get())),
+            );
+            count_query = count_query.filter(has_vendor);
         }
 
         if let Some(ref pattern) = search_pattern {
@@ -94,6 +106,16 @@ impl OrderReader for DieselRepository {
 
         if let Some(customer) = customer_id {
             items = items.filter(orders::customer_id.eq(Some(customer.get())));
+        }
+
+        if let Some(vendor_id) = vendor_id {
+            use crate::schema::vendor_order;
+            let has_vendor = exists(
+                vendor_order::table
+                    .filter(vendor_order::order_id.eq(orders::id))
+                    .filter(vendor_order::vendor_id.eq(vendor_id.get())),
+            );
+            items = items.filter(has_vendor);
         }
 
         if let Some(ref pattern) = search_pattern {

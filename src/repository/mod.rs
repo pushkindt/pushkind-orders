@@ -18,9 +18,10 @@ use crate::domain::{
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
     types::{
         CategoryId, CategoryName, CustomerId, HubId, ImageUrl, OrderId, PhoneNumber, PriceLevelId,
-        ProductId, TagId, UserEmail, UserId,
+        ProductId, TagId, UserEmail, UserId, VendorId,
     },
     user::{NewUser, UpdateUser, User},
+    vendor::{NewVendor, UpdateVendor, Vendor, VendorListQuery},
 };
 
 pub mod category;
@@ -220,6 +221,79 @@ pub trait OrderWriter {
     ) -> RepositoryResult<Order>;
     /// Delete an order record.
     fn delete_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()>;
+}
+
+/// Read-only operations over vendor records.
+pub trait VendorReader {
+    /// Retrieve a vendor by ID within a hub.
+    fn get_vendor_by_id(
+        &self,
+        vendor_id: VendorId,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<Vendor>>;
+    /// List vendors matching the query with pagination and search.
+    fn list_vendors(&self, query: VendorListQuery) -> RepositoryResult<(usize, Vec<Vendor>)>;
+}
+
+/// Write operations over vendor records.
+pub trait VendorWriter {
+    /// Create a new vendor record.
+    fn create_vendor(&self, new_vendor: &NewVendor) -> RepositoryResult<Vendor>;
+    /// Update an existing vendor record.
+    fn update_vendor(
+        &self,
+        vendor_id: VendorId,
+        hub_id: HubId,
+        updates: &UpdateVendor,
+    ) -> RepositoryResult<Vendor>;
+    /// Delete a vendor record.
+    fn delete_vendor(&self, vendor_id: VendorId, hub_id: HubId) -> RepositoryResult<()>;
+}
+
+/// Read-only operations over vendor-user assignments.
+pub trait VendorUserReader {
+    /// Retrieve the vendor assignment for a user within a hub.
+    fn get_vendor_for_user(
+        &self,
+        user_id: UserId,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<VendorId>>;
+}
+
+/// Write operations over vendor-user assignments.
+pub trait VendorUserWriter {
+    /// Assign a user to a vendor within a hub.
+    fn assign_user_to_vendor(
+        &self,
+        user_id: UserId,
+        vendor_id: VendorId,
+        hub_id: HubId,
+    ) -> RepositoryResult<()>;
+    /// Clear the vendor assignment for a user within a hub.
+    fn clear_vendor_for_user(&self, user_id: UserId, hub_id: HubId) -> RepositoryResult<()>;
+}
+
+/// Read-only operations over vendor-order assignments.
+pub trait VendorOrderReader {
+    /// Retrieve the vendor assignment for an order within a hub.
+    fn get_vendor_for_order(
+        &self,
+        order_id: OrderId,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<VendorId>>;
+}
+
+/// Write operations over vendor-order assignments.
+pub trait VendorOrderWriter {
+    /// Associate an order with a vendor within a hub.
+    fn associate_order_with_vendor(
+        &self,
+        order_id: OrderId,
+        vendor_id: VendorId,
+        hub_id: HubId,
+    ) -> RepositoryResult<()>;
+    /// Clear the vendor assignment for an order within a hub.
+    fn clear_vendor_for_order(&self, order_id: OrderId, hub_id: HubId) -> RepositoryResult<()>;
 }
 
 /// Read-only operations over tag records.

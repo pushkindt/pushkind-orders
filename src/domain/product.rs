@@ -9,7 +9,7 @@ use crate::domain::{
     tag::Tag,
     types::{
         CategoryId, CurrencyCode, HubId, ImageUrl, PriceLevelId, ProductAmount, ProductDescription,
-        ProductId, ProductName, ProductSku, ProductUnits, TagId, TypeConstraintError,
+        ProductId, ProductName, ProductSku, ProductUnits, TagId, TypeConstraintError, VendorId,
     },
 };
 
@@ -233,6 +233,8 @@ pub struct ProductListQuery {
     pub sku: Option<ProductSku>,
     /// Optional price level identifier used to require a matching price level assignment.
     pub price_level_id: Option<PriceLevelId>,
+    /// Optional vendor identifier used to filter products by vendor.
+    pub vendor_id: Option<VendorId>,
     /// Whether archived products should be included in the results.
     pub include_archived: bool,
     /// Optional pagination options applied to the query.
@@ -254,6 +256,7 @@ impl ProductListQuery {
             include_archived: false,
             pagination: None,
             tag_id: None,
+            vendor_id: None,
         }
     }
 
@@ -312,6 +315,12 @@ impl ProductListQuery {
     /// Restrict results to products that have a price level assignment for the specified level.
     pub fn with_price_level_id(mut self, price_level_id: PriceLevelId) -> Self {
         self.price_level_id = Some(price_level_id);
+        self
+    }
+
+    /// Filter the results by vendor identifier.
+    pub fn with_vendor_id(mut self, vendor_id: VendorId) -> Self {
+        self.vendor_id = Some(vendor_id);
         self
     }
 

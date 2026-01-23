@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::types::{
     CurrencyCode, CustomerId, HubId, OrderConsignee, OrderDeliveryNotes, OrderId, OrderNotes,
     OrderPayer, OrderReference, OrderShippingAddress, PriceCents, ProductDescription, ProductId,
-    ProductName, ProductQuantity, ProductSku, TypeConstraintError,
+    ProductName, ProductQuantity, ProductSku, TypeConstraintError, VendorId,
 };
 
 /// Update payload for adjusting an approved quantity and price snapshot.
@@ -355,6 +355,8 @@ pub struct OrderListQuery {
     pub status: Option<OrderStatus>,
     /// Optional customer identifier filter.
     pub customer_id: Option<CustomerId>,
+    /// Optional vendor identifier filter.
+    pub vendor_id: Option<VendorId>,
     /// Optional search term that matches the reference or notes.
     pub search: Option<String>,
     /// Optional pagination options applied to the query.
@@ -368,6 +370,7 @@ impl OrderListQuery {
             hub_id,
             status: None,
             customer_id: None,
+            vendor_id: None,
             search: None,
             pagination: None,
         }
@@ -387,6 +390,12 @@ impl OrderListQuery {
     /// Filter the results by customer identifier.
     pub fn customer_id(mut self, customer_id: CustomerId) -> Self {
         self.customer_id = Some(customer_id);
+        self
+    }
+
+    /// Filter the results by vendor identifier.
+    pub fn vendor_id(mut self, vendor_id: VendorId) -> Self {
+        self.vendor_id = Some(vendor_id);
         self
     }
 
