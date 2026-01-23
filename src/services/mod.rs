@@ -55,6 +55,9 @@ pub fn resolve_hub_access<R>(user: &AuthenticatedUser, repo: &R) -> ServiceResul
 where
     R: UserReader + VendorUserReader + ?Sized,
 {
+    if !has_role(user, SERVICE_ACCESS_ROLE) {
+        return Err(ServiceError::Unauthorized);
+    }
     if has_role(user, ADMIN_ACCESS_ROLE) {
         Ok(HubAccessScope::Admin)
     } else if has_role(user, VENDOR_ACCESS_ROLE) {
@@ -69,10 +72,8 @@ where
             .ok_or(ServiceError::Unauthorized)?;
 
         Ok(HubAccessScope::Vendor { vendor_id })
-    } else if has_role(user, SERVICE_ACCESS_ROLE) {
-        Ok(HubAccessScope::Basic)
     } else {
-        Err(ServiceError::Unauthorized)
+        Ok(HubAccessScope::Basic)
     }
 }
 
@@ -163,7 +164,7 @@ mod tests {
     #[test]
     fn resolve_hub_access_returns_admin_for_admin_role() {
         let repo = FakeRepo::new();
-        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE, ADMIN_ACCESS_ROLE]);
 
         let access = resolve_hub_access(&user, &repo).expect("access");
         assert!(matches!(access, HubAccessScope::Admin));
@@ -181,7 +182,7 @@ mod tests {
     #[test]
     fn resolve_hub_access_returns_vendor_scope_for_vendor_role() {
         let mut repo = FakeRepo::new();
-        let user = user_with_roles(&[VENDOR_ACCESS_ROLE]);
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE]);
         let hub_id = HubId::new(user.hub_id).unwrap();
         let user_id = UserId::new(12).unwrap();
         let vendor_id = VendorId::new(5).unwrap();
@@ -211,7 +212,7 @@ mod tests {
     #[test]
     fn resolve_hub_access_rejects_missing_vendor_assignment() {
         let mut repo = FakeRepo::new();
-        let user = user_with_roles(&[VENDOR_ACCESS_ROLE]);
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE]);
         let hub_id = HubId::new(user.hub_id).unwrap();
         let user_id = UserId::new(44).unwrap();
         let user_record = User {

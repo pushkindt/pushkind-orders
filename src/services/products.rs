@@ -430,12 +430,17 @@ mod tests {
     }
 
     fn user_with_role(role: &str) -> AuthenticatedUser {
+        let mut roles = vec![SERVICE_ACCESS_ROLE.to_string()];
+        if role != SERVICE_ACCESS_ROLE {
+            roles.push(role.to_string());
+        }
+
         AuthenticatedUser {
             sub: "user".to_string(),
             email: "user@example.com".to_string(),
             hub_id: 11,
             name: "User".to_string(),
-            roles: vec![role.to_string()],
+            roles,
             exp: 0,
         }
     }
