@@ -198,6 +198,22 @@ impl ProductWriter for DieselRepository {
             }
         }
 
+        if let Some(vendor_id) = new_product.vendor_id {
+            use crate::schema::vendors;
+            use diesel::dsl::{exists, select};
+
+            let vendor_exists: bool = select(exists(
+                vendors::table
+                    .filter(vendors::id.eq(vendor_id.get()))
+                    .filter(vendors::hub_id.eq(new_product.hub_id.get())),
+            ))
+            .get_result(&mut conn)?;
+
+            if !vendor_exists {
+                return Err(RepositoryError::NotFound);
+            }
+        }
+
         let db_new = DbNewProduct::from(new_product);
 
         let created = diesel::insert_into(products::table)
@@ -241,6 +257,22 @@ impl ProductWriter for DieselRepository {
             }
         }
 
+        if let Some(vendor_id) = updates.vendor_id {
+            use crate::schema::vendors;
+            use diesel::dsl::{exists, select};
+
+            let vendor_exists: bool = select(exists(
+                vendors::table
+                    .filter(vendors::id.eq(vendor_id.get()))
+                    .filter(vendors::hub_id.eq(hub_id.get())),
+            ))
+            .get_result(&mut conn)?;
+
+            if !vendor_exists {
+                return Err(RepositoryError::NotFound);
+            }
+        }
+
         let target = products::table
             .filter(products::id.eq(product_id.get()))
             .filter(products::hub_id.eq(hub_id.get()));
@@ -256,7 +288,7 @@ impl ProductWriter for DieselRepository {
         };
 
         let mut db_updates = DbUpdateProduct::from(updates);
-        if db_updates.vendor_id.is_none() {
+        if !updates.clear_vendor && db_updates.vendor_id.is_none() {
             db_updates.vendor_id = existing_vendor_id;
         }
 

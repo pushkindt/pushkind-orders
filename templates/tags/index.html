@@ -7,9 +7,11 @@
 
     <div class="row mb-3">
         <div class="col text-center add-item-container">
+            {% if is_admin %}
             <button class="btn btn-link" type="button" data-bs-toggle="modal" data-bs-target="#addTagModal">
                 <i class="bi bi-plus-circle"></i>
             </button>
+            {% endif %}
         </div>
     </div>
 
@@ -36,6 +38,7 @@
             </div>
             <div class="col-sm-2 col-12 d-flex justify-content-sm-end align-items-center mt-2 mt-sm-0">
                 <span class="d-sm-none fw-bold me-2">Действия:</span>
+                {% if is_admin %}
                 <button class="btn btn-sm btn-outline-warning d-flex align-items-center gap-2 me-2"
                         type="button"
                         data-bs-toggle="modal"
@@ -52,6 +55,9 @@
                         <span class="d-none d-sm-inline">Удалить</span>
                     </button>
                 </form>
+                {% else %}
+                <span class="text-muted">Только просмотр</span>
+                {% endif %}
             </div>
         </div>
         {% else %}
@@ -68,14 +74,16 @@
     ) }}
 </div>
 
-<div class="modal fade" id="editTagModal" tabindex="-1" aria-labelledby="editTagModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content" id ="editTagModalContent">
+{% if is_admin %}
+    <div class="modal fade" id="editTagModal" tabindex="-1" aria-labelledby="editTagModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" id ="editTagModalContent">
+            </div>
         </div>
     </div>
-</div>
 
-{% include 'tags/add_tags_modal.html' %}
+    {% include 'tags/add_tags_modal.html' %}
+{% endif %}
 
 {% endblock %}
 {% block scripts %}{% endblock %}

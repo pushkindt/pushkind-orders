@@ -5,6 +5,7 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::{Context, Tera};
 
+use crate::SERVICE_ACCESS_ROLE;
 use crate::dto::tags::TagQuery;
 use crate::forms::tags::{AddTagForm, EditTagForm};
 use crate::repository::DieselRepository;
@@ -31,9 +32,11 @@ pub async fn show_tags(
                 "tags",
                 &server_config.auth_service_url,
             );
+            let is_admin = user.roles.iter().any(|role| role == SERVICE_ACCESS_ROLE);
             context.insert("tags", &data.tags);
             context.insert("search", &data.search);
             context.insert("search_action", "/tags");
+            context.insert("is_admin", &is_admin);
             render_template(&tera, "tags/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {

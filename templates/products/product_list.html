@@ -22,6 +22,7 @@
         data-product-amount="{{ product.amount | default(value='') }}"
         data-product-currency="{{ product.currency }}"
         data-product-category="{{ product.category_id | default(value='0') }}"
+        data-product-vendor-id="{{ product.vendor_id | default(value='0') }}"
         data-product-tags="{{ product.tags | map(attribute='id') | join(sep=',') }}"
         data-product-image-urls="{{ product.image_urls | join(sep='\n') }}"
         data-product-archived="{{ product.is_archived }}"

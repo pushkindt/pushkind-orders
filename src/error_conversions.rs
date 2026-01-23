@@ -14,6 +14,7 @@ use crate::forms::price_levels::PriceLevelFormError;
 use crate::forms::products::ProductFormError;
 use crate::forms::store::{StoreFormError, StoreOrderUpdateError};
 use crate::forms::tags::TagFormError;
+use crate::forms::vendors::VendorFormError;
 
 impl From<TypeConstraintError> for ServiceError {
     fn from(val: TypeConstraintError) -> Self {
@@ -65,6 +66,12 @@ impl From<StoreOrderUpdateError> for ServiceError {
 
 impl From<TagFormError> for ServiceError {
     fn from(val: TagFormError) -> Self {
+        ServiceError::Form(val.to_string())
+    }
+}
+
+impl From<VendorFormError> for ServiceError {
+    fn from(val: VendorFormError) -> Self {
         ServiceError::Form(val.to_string())
     }
 }

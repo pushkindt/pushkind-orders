@@ -33,11 +33,15 @@ use crate::routes::price_levels::{
 use crate::routes::products::{add_product, edit_product, show_products, upload_products};
 use crate::routes::store::{
     create_store_order_handler, get_store_product, list_store_categories,
-    list_store_orders_handler, list_store_products, list_store_tags, request_store_auth_otp,
-    update_store_order_handler, verify_store_auth_otp,
+    list_store_orders_handler, list_store_products, list_store_tags, list_store_vendors,
+    request_store_auth_otp, update_store_order_handler, verify_store_auth_otp,
 };
 use crate::routes::store_session::get_store_session;
 use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_edit_tag_modal, show_tags};
+use crate::routes::vendors::{
+    add_vendor, assign_vendor_user, clear_vendor_user, delete_vendor, edit_vendor,
+    show_edit_vendor_modal, show_vendors,
+};
 
 pub mod domain;
 pub mod dto;
@@ -123,6 +127,7 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
                     .service(list_store_orders_handler)
                     .service(update_store_order_handler)
                     .service(list_store_tags)
+                    .service(list_store_vendors)
                     .service(request_store_auth_otp)
                     .service(verify_store_auth_otp)
                     .service(create_store_order_handler)
@@ -159,6 +164,13 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
                     .service(add_product)
                     .service(edit_product)
                     .service(upload_products)
+                    .service(show_vendors)
+                    .service(add_vendor)
+                    .service(edit_vendor)
+                    .service(show_edit_vendor_modal)
+                    .service(delete_vendor)
+                    .service(assign_vendor_user)
+                    .service(clear_vendor_user)
                     .service(update_order_product_approvals_handler)
                     .service(edit_order)
                     .service(show_edit_order_modal)

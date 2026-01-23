@@ -160,6 +160,8 @@ pub struct UpdateProduct {
     pub category_id: Option<CategoryId>,
     /// Optional vendor identifier for the product owner.
     pub vendor_id: Option<VendorId>,
+    /// Flag indicating the vendor should be cleared.
+    pub clear_vendor: bool,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }
@@ -179,6 +181,7 @@ impl UpdateProduct {
             updated_at: now,
             amount: None,
             vendor_id: None,
+            clear_vendor: false,
         }
     }
 
@@ -222,6 +225,14 @@ impl UpdateProduct {
     /// Assign the product to a vendor.
     pub fn with_vendor_id(mut self, vendor_id: VendorId) -> Self {
         self.vendor_id = Some(vendor_id);
+        self.clear_vendor = false;
+        self
+    }
+
+    /// Clear the vendor assignment for the product.
+    pub fn clear_vendor(mut self) -> Self {
+        self.vendor_id = None;
+        self.clear_vendor = true;
         self
     }
 

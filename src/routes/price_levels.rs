@@ -5,6 +5,7 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::{Context, Tera};
 
+use crate::SERVICE_ACCESS_ROLE;
 use crate::dto::price_levels::PriceLevelsQuery;
 use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm};
 use crate::models::config::ServerConfig;
@@ -36,11 +37,13 @@ pub async fn show_price_levels(
                 "price_levels",
                 &common_config.auth_service_url,
             );
+            let is_admin = user.roles.iter().any(|role| role == SERVICE_ACCESS_ROLE);
             context.insert("price_levels", &data.price_levels);
             context.insert("search", &data.search);
             context.insert("categories", &data.categories);
             context.insert("search_action", "/price-levels");
             context.insert("crm_service_url", &server_config.crm_service_url);
+            context.insert("is_admin", &is_admin);
             render_template(&tera, "price_levels/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {

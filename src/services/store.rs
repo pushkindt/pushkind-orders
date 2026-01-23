@@ -16,10 +16,11 @@ use crate::domain::{
     store_otp::NewStoreOtp,
     tag::TagListQuery,
     types::{CategoryId, HubId, OrderId, PhoneNumber, ProductId, ProductQuantity, VendorId},
+    vendor::VendorListQuery,
 };
 pub use crate::dto::store::{
     StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreOtpAcceptResponse,
-    StoreOtpVerifyResponse, StoreProduct, StoreProductFilters, StoreTag,
+    StoreOtpVerifyResponse, StoreProduct, StoreProductFilters, StoreTag, StoreVendor,
 };
 use crate::forms::store::{
     StoreOrderLinePayload, StoreOrderUpdateValues, StoreOtpRequestPayload, StoreOtpVerifyPayload,
@@ -27,7 +28,7 @@ use crate::forms::store::{
 };
 use crate::repository::{
     CategoryReader, CustomerReader, CustomerWriter, OrderReader, OrderWriter, PriceLevelReader,
-    ProductReader, StoreOtpRepository, TagReader, VendorOrderWriter,
+    ProductReader, StoreOtpRepository, TagReader, VendorOrderWriter, VendorReader,
 };
 use crate::services::{ServiceError, ServiceResult};
 
@@ -397,7 +398,7 @@ pub fn load_store_products<R>(
     repo: &R,
 ) -> ServiceResult<Vec<StoreProduct>>
 where
-    R: ProductReader + PriceLevelReader + ?Sized,
+    R: ProductReader + PriceLevelReader + VendorReader + ?Sized,
 {
     let hub_id = HubId::new(hub_id)?;
 
@@ -411,6 +412,12 @@ where
     }
 
     let products = repo.list_products(query)?.1;
+    let vendor_lookup = repo
+        .list_vendors(VendorListQuery::new(hub_id))?
+        .1
+        .into_iter()
+        .map(|vendor| (vendor.id, vendor.name.as_str().to_string()))
+        .collect::<std::collections::HashMap<_, _>>();
 
     let filtered = products
         .into_iter()
@@ -423,7 +430,15 @@ where
             None => true,
         })
         .map(|product| {
-            StoreProduct::from_domain(product, customer_price_level_id, default_price_level_id)
+            let vendor_name = product
+                .vendor_id
+                .and_then(|id| vendor_lookup.get(&id).cloned());
+            StoreProduct::from_domain(
+                product,
+                customer_price_level_id,
+                default_price_level_id,
+                vendor_name,
+            )
         })
         .collect();
 
@@ -438,7 +453,7 @@ pub fn load_store_product<R>(
     repo: &R,
 ) -> ServiceResult<Option<StoreProduct>>
 where
-    R: ProductReader + PriceLevelReader + ?Sized,
+    R: ProductReader + PriceLevelReader + VendorReader + ?Sized,
 {
     let hub_id = HubId::new(hub_id)?;
     let product_id = ProductId::new(product_id)?;
@@ -463,11 +478,34 @@ where
         return Ok(None);
     }
 
+    let vendor_name = product
+        .vendor_id
+        .and_then(|vendor_id| repo.get_vendor_by_id(vendor_id, hub_id).ok().flatten())
+        .map(|vendor| vendor.name.as_str().to_string());
+
     Ok(Some(StoreProduct::from_domain(
         product,
         customer_price_level_id,
         default_price_level_id,
+        vendor_name,
     )))
+}
+
+/// Load vendors available to a storefront for the provided hub.
+pub fn load_store_vendors<R>(hub_id: i32, repo: &R) -> ServiceResult<Vec<StoreVendor>>
+where
+    R: VendorReader + ?Sized,
+{
+    let hub_id = HubId::new(hub_id)?;
+    let vendors = repo.list_vendors(VendorListQuery::new(hub_id))?.1;
+
+    Ok(vendors
+        .into_iter()
+        .map(|vendor| StoreVendor {
+            id: vendor.id.get(),
+            name: vendor.name.as_str().to_string(),
+        })
+        .collect())
 }
 
 /// Load tags available to a storefront for the provided hub.
@@ -502,7 +540,7 @@ mod tests {
         CategoryId, CategoryName, CurrencyCode, CustomerId, CustomerName, HubId, ImageUrl,
         OrderConsignee, OrderDeliveryNotes, OrderId, OrderPayer, OrderShippingAddress, PriceCents,
         PriceLevelId, PriceLevelName, ProductAmount, ProductDescription, ProductId, ProductName,
-        ProductPriceLevelRateId, ProductSku, ProductUnits, TagId, TagName, VendorId,
+        ProductPriceLevelRateId, ProductSku, ProductUnits, TagId, TagName, VendorId, VendorName,
     };
     use crate::domain::{
         category::Category,
@@ -514,6 +552,7 @@ mod tests {
         store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
         tag::Tag,
         types::{OtpCode, PhoneNumber},
+        vendor::Vendor,
     };
     use crate::dto::store::{StoreCategoryFilters, StoreProductFilters};
     use crate::forms::store::{
@@ -523,11 +562,11 @@ mod tests {
     use crate::repository::mock::{
         MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockOrderReader,
         MockOrderWriter, MockPriceLevelReader, MockProductReader, MockStoreOtpRepository,
-        MockVendorOrderWriter,
+        MockVendorOrderWriter, MockVendorReader,
     };
     use crate::repository::{
         CustomerReader, CustomerWriter, OrderReader, OrderWriter, StoreOtpRepository,
-        VendorOrderWriter,
+        VendorOrderWriter, VendorReader,
     };
     use chrono::NaiveDateTime;
 
@@ -1857,16 +1896,19 @@ mod tests {
     struct MockStoreProductRepo {
         product_reader: MockProductReader,
         price_level_reader: MockPriceLevelReader,
+        vendor_reader: MockVendorReader,
     }
 
     impl MockStoreProductRepo {
         fn new(
             product_reader: MockProductReader,
             price_level_reader: MockPriceLevelReader,
+            vendor_reader: MockVendorReader,
         ) -> Self {
             Self {
                 product_reader,
                 price_level_reader,
+                vendor_reader,
             }
         }
     }
@@ -1902,6 +1944,23 @@ mod tests {
             query: PriceLevelListQuery,
         ) -> RepositoryResult<(usize, Vec<PriceLevel>)> {
             self.price_level_reader.list_price_levels(query)
+        }
+    }
+
+    impl VendorReader for MockStoreProductRepo {
+        fn get_vendor_by_id(
+            &self,
+            vendor_id: VendorId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<crate::domain::vendor::Vendor>> {
+            self.vendor_reader.get_vendor_by_id(vendor_id, hub_id)
+        }
+
+        fn list_vendors(
+            &self,
+            query: VendorListQuery,
+        ) -> RepositoryResult<(usize, Vec<crate::domain::vendor::Vendor>)> {
+            self.vendor_reader.list_vendors(query)
         }
     }
 
@@ -1990,6 +2049,38 @@ mod tests {
     }
 
     #[test]
+    fn load_store_vendors_returns_list() {
+        let mut repo = MockVendorReader::new();
+        let vendors = vec![
+            Vendor {
+                id: VendorId::new(1).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: VendorName::new("Vendor A").unwrap(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            },
+            Vendor {
+                id: VendorId::new(2).unwrap(),
+                hub_id: HubId::new(1).unwrap(),
+                name: VendorName::new("Vendor B").unwrap(),
+                created_at: sample_timestamp(),
+                updated_at: sample_timestamp(),
+            },
+        ];
+
+        repo.expect_list_vendors()
+            .withf(|query| query.hub_id.get() == 1)
+            .return_once(move |_| Ok((vendors.len(), vendors.clone())));
+
+        let result = load_store_vendors(1, &repo).expect("load vendors");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, 1);
+        assert_eq!(result[0].name, "Vendor A");
+        assert_eq!(result[1].id, 2);
+        assert_eq!(result[1].name, "Vendor B");
+    }
+
+    #[test]
     fn load_products_includes_tags() {
         let mut product_reader = MockProductReader::new();
         let products = vec![
@@ -2064,7 +2155,11 @@ mod tests {
             .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((1, price_levels.clone())));
 
-        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+        let mut vendor_reader = MockVendorReader::new();
+        vendor_reader
+            .expect_list_vendors()
+            .return_once(|_| Ok((0, Vec::new())));
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader, vendor_reader);
 
         let result = load_store_products(1, StoreProductFilters::default(), None, &repo)
             .expect("load products");
@@ -2157,7 +2252,11 @@ mod tests {
             .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
-        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+        let mut vendor_reader = MockVendorReader::new();
+        vendor_reader
+            .expect_list_vendors()
+            .return_once(|_| Ok((0, Vec::new())));
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader, vendor_reader);
 
         let mut customer = sample_customer();
         customer.hub_id = HubId::new(1).unwrap();
@@ -2237,7 +2336,11 @@ mod tests {
             .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
-        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+        let mut vendor_reader = MockVendorReader::new();
+        vendor_reader
+            .expect_list_vendors()
+            .return_once(|_| Ok((0, Vec::new())));
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader, vendor_reader);
 
         let mut customer = sample_customer();
         customer.hub_id = HubId::new(1).unwrap();
@@ -2316,7 +2419,8 @@ mod tests {
             .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
-        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+        let repo =
+            MockStoreProductRepo::new(product_reader, price_level_reader, MockVendorReader::new());
 
         let result = load_store_product(1, 7, None, &repo).expect("load single product");
         let product = result.expect("product should be present");
@@ -2398,7 +2502,8 @@ mod tests {
             .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
-        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+        let repo =
+            MockStoreProductRepo::new(product_reader, price_level_reader, MockVendorReader::new());
 
         let mut customer = sample_customer();
         customer.hub_id = HubId::new(1).unwrap();
@@ -2468,7 +2573,8 @@ mod tests {
             .withf(|query| query.hub_id.get() == 1)
             .return_once(move |_| Ok((2, price_levels.clone())));
 
-        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+        let repo =
+            MockStoreProductRepo::new(product_reader, price_level_reader, MockVendorReader::new());
 
         let mut customer = sample_customer();
         customer.hub_id = HubId::new(1).unwrap();
@@ -2510,7 +2616,8 @@ mod tests {
             .return_once(move |_, _| Ok(Some(archived_product.clone())));
 
         let price_level_reader = MockPriceLevelReader::new();
-        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+        let repo =
+            MockStoreProductRepo::new(product_reader, price_level_reader, MockVendorReader::new());
 
         let missing = load_store_product(1, 8, None, &repo).expect("load missing product");
         assert!(missing.is_none());
@@ -2557,7 +2664,11 @@ mod tests {
             .withf(|query| query.hub_id.get() == 1)
             .return_once(|_| Ok((0, Vec::new())));
 
-        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+        let mut vendor_reader = MockVendorReader::new();
+        vendor_reader
+            .expect_list_vendors()
+            .return_once(|_| Ok((0, Vec::new())));
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader, vendor_reader);
 
         let result = load_store_products(1, StoreProductFilters::default(), None, &repo)
             .expect("load products");
@@ -2594,7 +2705,11 @@ mod tests {
             .withf(|query| query.hub_id.get() == 1)
             .return_once(|_| Ok((0, Vec::new())));
 
-        let repo = MockStoreProductRepo::new(product_reader, price_level_reader);
+        let mut vendor_reader = MockVendorReader::new();
+        vendor_reader
+            .expect_list_vendors()
+            .return_once(|_| Ok((0, Vec::new())));
+        let repo = MockStoreProductRepo::new(product_reader, price_level_reader, vendor_reader);
 
         let filters = StoreProductFilters {
             category_id: Some(3),
@@ -2603,6 +2718,7 @@ mod tests {
             tag_id: None,
             min_amount: Some(1.5),
             max_amount: Some(3.0),
+            vendor_id: None,
         };
 
         let result = load_store_products(1, filters, None, &repo).expect("load products");

@@ -118,7 +118,11 @@ impl<'a> From<&'a DomainUpdateProduct> for UpdateProduct<'a> {
             updated_at: value.updated_at,
             category_id: value.category_id.map(|id| id.get()),
             amount: value.amount.map(|a| a.get()),
-            vendor_id: value.vendor_id.map(|id| id.get()),
+            vendor_id: if value.clear_vendor {
+                None
+            } else {
+                value.vendor_id.map(|id| id.get())
+            },
         }
     }
 }

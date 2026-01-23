@@ -52,6 +52,22 @@
                             </div>
                         </div>
                     </div>
+                    {% if is_admin %}
+                    <div class="row mb-3">
+                        <label for="editProductVendor" class="col-md-3 col-form-label">Поставщик</label>
+                        <div class="col-md-5 col-lg-4">
+                            <select name="vendor_id" id="editProductVendor" class="form-select">
+                                <option value="0">Без поставщика</option>
+                                {% for vendor in vendors | default(value=[]) %}
+                                <option value="{{ vendor.id }}">{{ vendor.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">
+                                Выберите поставщика или оставьте «Без поставщика», чтобы снять связь.
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                     {% if tags is defined and tags | length > 0 %}
                     <div class="row mb-3">
                         <label for="editProductTags" class="col-md-3 col-form-label">Теги</label>
@@ -177,6 +193,7 @@
         const archivedInput = modalElement.querySelector("#editProductArchived");
         const categoryInput = modalElement.querySelector("#editProductCategory");
         const tagSelect = modalElement.querySelector("#editProductTags");
+        const vendorSelect = modalElement.querySelector("#editProductVendor");
         const priceLevelInputs = modalElement.querySelectorAll("[data-price-level-input]");
         let tagSelectControl = null;
 
@@ -236,6 +253,9 @@
 
             if (categoryInput) {
                 categoryInput.value = dataset.productCategory || "0";
+            }
+            if (vendorSelect) {
+                vendorSelect.value = dataset.productVendorId || "0";
             }
 
             const currency = dataset.productCurrency || "";

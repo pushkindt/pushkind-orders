@@ -7,6 +7,7 @@ pub mod price_levels;
 pub mod products;
 pub mod store;
 pub mod tags;
+pub mod vendors;
 
 pub use categories::CategoryTreeData;
 pub use main::{IndexPageData, IndexQuery};
@@ -19,6 +20,7 @@ pub use products::{
 };
 pub use store::{
     StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreOtpAcceptResponse,
-    StoreOtpVerifyResponse, StoreProduct, StoreProductFilters, StoreTag,
+    StoreOtpVerifyResponse, StoreProduct, StoreProductFilters, StoreTag, StoreVendor,
 };
 pub use tags::{TagQuery, TagsPageData};
+pub use vendors::{VendorQuery, VendorUserView, VendorsPageData};

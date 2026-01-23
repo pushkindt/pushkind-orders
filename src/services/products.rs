@@ -10,6 +10,7 @@ use crate::domain::{
     product_price_level::NewProductPriceLevelRate,
     tag::TagListQuery,
     types::{HubId, PriceCents, PriceLevelId, ProductId, TagId},
+    vendor::VendorListQuery,
 };
 use crate::dto::products::{ProductView, ProductsPageData, ProductsQuery};
 use crate::forms::products::{
@@ -17,7 +18,7 @@ use crate::forms::products::{
 };
 use crate::repository::{
     CategoryReader, CategoryWriter, PriceLevelReader, ProductReader, ProductWriter, TagReader,
-    UserReader, VendorUserReader,
+    UserReader, VendorReader, VendorUserReader,
 };
 use crate::services::categories::{create_category_chain, find_category_chain};
 use crate::services::{HubAccessScope, ServiceError, ServiceResult, resolve_hub_access};
@@ -35,6 +36,7 @@ where
         + TagReader
         + UserReader
         + VendorUserReader
+        + VendorReader
         + ?Sized,
 {
     let access = resolve_hub_access(user, repo)?;
@@ -63,6 +65,10 @@ where
 
     let (total, items) = repo.list_products(list_query)?;
     let (_, price_levels) = repo.list_price_levels(PriceLevelListQuery::new(hub_id))?;
+    let vendors = match access {
+        HubAccessScope::Admin => repo.list_vendors(VendorListQuery::new(hub_id))?.1,
+        HubAccessScope::Vendor { .. } => Vec::new(),
+    };
 
     let (_, mut categories) = repo.list_categories(CategoryTreeQuery::new(hub_id))?;
     let category_lookup: HashMap<i32, String> = categories
@@ -95,6 +101,7 @@ where
         price_levels,
         categories,
         tags,
+        vendors,
         show_archived,
     })
 }
@@ -357,7 +364,7 @@ mod tests {
     use crate::repository::UserListQuery;
     use crate::repository::mock::{
         MockCategoryReader, MockCategoryWriter, MockPriceLevelReader, MockProductReader,
-        MockProductWriter, MockTagReader, MockUserReader, MockVendorUserReader,
+        MockProductWriter, MockTagReader, MockUserReader, MockVendorReader, MockVendorUserReader,
     };
     use crate::{SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE};
     use actix_multipart::form::tempfile::TempFile;
@@ -535,6 +542,11 @@ mod tests {
             })
             .returning(move |_| Ok((tags_len, tags_response.clone())));
 
+        repo.vendor_reader
+            .expect_list_vendors()
+            .times(1)
+            .returning(|_| Ok((0, Vec::new())));
+
         let result = load_products_page(query, &user, &repo);
 
         let data = result.expect("expected success");
@@ -695,6 +707,11 @@ mod tests {
             .times(1)
             .returning(move |_| Ok((0, Vec::new())));
 
+        repo.vendor_reader
+            .expect_list_vendors()
+            .times(1)
+            .returning(|_| Ok((0, Vec::new())));
+
         let result = load_products_page(
             ProductsQuery {
                 search: None,
@@ -730,6 +747,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            vendor_id: None,
             image_urls: None,
             tag_ids: Vec::new(),
             price_levels: Vec::new(),
@@ -814,6 +832,7 @@ mod tests {
             units: Some(" Each ".to_string()),
             currency: "usd".to_string(),
             category_id: None,
+            vendor_id: None,
             image_urls: Some(
                 " https://example.com/a.png \n\nhttps://example.com/b.png ".to_string(),
             ),
@@ -889,6 +908,7 @@ mod tests {
             units: Some("Each".to_string()),
             currency: "USD".to_string(),
             category_id: None,
+            vendor_id: None,
             image_urls: None,
             tag_ids: Vec::new(),
             price_levels: vec![AddProductPriceLevelForm {
@@ -950,6 +970,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            vendor_id: None,
             image_urls: None,
             tag_ids: vec![1, 2],
             price_levels: Vec::new(),
@@ -1102,6 +1123,7 @@ Banana,USD,7.50,
             image_urls: None,
             is_archived: false,
             category_id: None,
+            vendor_id: None,
             tag_ids: Vec::new(),
             price_levels: Vec::new(),
             amount: None,
@@ -1135,6 +1157,7 @@ Banana,USD,7.50,
             image_urls: None,
             is_archived: false,
             category_id: None,
+            vendor_id: None,
             tag_ids: vec![3, 5],
             price_levels: Vec::new(),
             amount: None,
@@ -1284,6 +1307,7 @@ Banana,USD,7.50,
             image_urls: Some(" https://cdn.example.com/espresso-deluxe.png ".to_string()),
             is_archived: true,
             category_id: Some(0), // clears category
+            vendor_id: None,
             tag_ids: vec![42, 99],
             price_levels: vec![
                 EditProductPriceLevelForm {
@@ -1322,6 +1346,7 @@ Banana,USD,7.50,
         tag_reader: MockTagReader,
         user_reader: MockUserReader,
         vendor_user_reader: MockVendorUserReader,
+        vendor_reader: MockVendorReader,
     }
 
     impl FakeRepo {
@@ -1335,6 +1360,7 @@ Banana,USD,7.50,
                 tag_reader: MockTagReader::new(),
                 user_reader: MockUserReader::new(),
                 vendor_user_reader: MockVendorUserReader::new(),
+                vendor_reader: MockVendorReader::new(),
             }
         }
     }
@@ -1455,6 +1481,23 @@ Banana,USD,7.50,
             hub_id: HubId,
         ) -> RepositoryResult<Option<VendorId>> {
             self.vendor_user_reader.get_vendor_for_user(user_id, hub_id)
+        }
+    }
+
+    impl VendorReader for FakeRepo {
+        fn get_vendor_by_id(
+            &self,
+            vendor_id: VendorId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<crate::domain::vendor::Vendor>> {
+            self.vendor_reader.get_vendor_by_id(vendor_id, hub_id)
+        }
+
+        fn list_vendors(
+            &self,
+            query: crate::domain::vendor::VendorListQuery,
+        ) -> RepositoryResult<(usize, Vec<crate::domain::vendor::Vendor>)> {
+            self.vendor_reader.list_vendors(query)
         }
     }
 

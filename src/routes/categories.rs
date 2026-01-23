@@ -5,6 +5,7 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::{Context, Tera};
 
+use crate::SERVICE_ACCESS_ROLE;
 use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
@@ -31,7 +32,9 @@ pub async fn show_categories(
                 "categories",
                 &server_config.auth_service_url,
             );
+            let is_admin = user.roles.iter().any(|role| role == SERVICE_ACCESS_ROLE);
             context.insert("category_tree", &data.tree);
+            context.insert("is_admin", &is_admin);
             render_template(&tera, "categories/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {
