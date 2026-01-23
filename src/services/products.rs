@@ -75,10 +75,10 @@ where
         .map(|vendor| (vendor.id.get(), vendor.name.as_str().to_string()))
         .collect();
 
-    if let HubAccessScope::Vendor { vendor_id } = access {
-        if let Some(vendor) = repo.get_vendor_by_id(vendor_id, hub_id)? {
-            vendor_lookup.insert(vendor.id.get(), vendor.name.as_str().to_string());
-        }
+    if let HubAccessScope::Vendor { vendor_id } = access
+        && let Some(vendor) = repo.get_vendor_by_id(vendor_id, hub_id)?
+    {
+        vendor_lookup.insert(vendor.id.get(), vendor.name.as_str().to_string());
     }
 
     let (_, mut categories) = repo.list_categories(CategoryTreeQuery::new(hub_id))?;
@@ -140,8 +140,14 @@ where
 
     let mut payload: AddProductPayload = (form, user.hub_id, &price_levels[..]).try_into()?;
 
-    if let HubAccessScope::Vendor { vendor_id } = access {
-        payload.product = payload.product.with_vendor_id(vendor_id);
+    match access {
+        HubAccessScope::Admin => {}
+        HubAccessScope::Vendor { vendor_id } => {
+            payload.product = payload.product.with_vendor_id(vendor_id);
+        }
+        HubAccessScope::Basic => {
+            payload.product.vendor_id = None;
+        }
     }
 
     persist_new_product(user.hub_id, payload, access, repo)
@@ -213,11 +219,19 @@ where
     let payload: EditProductPayload = (form, &available_price_levels[..]).try_into()?;
 
     let EditProductPayload {
-        product: updates,
+        product: mut updates,
         tag_ids,
         image_urls,
         price_levels,
     } = payload;
+
+    match access {
+        HubAccessScope::Admin => {}
+        _ => {
+            updates.vendor_id = None;
+            updates.clear_vendor = false;
+        }
+    }
 
     let price_level_rates: Vec<NewProductPriceLevelRate> = price_levels
         .into_iter()
@@ -361,6 +375,7 @@ mod tests {
         CategoryId, CategoryName, CurrencyCode, HubId, ImageUrl, PriceCents, PriceLevelId,
         PriceLevelName, ProductDescription, ProductId, ProductName, ProductPriceLevelRateId,
         ProductSku, ProductUnits, TagId, TagName, UserEmail, UserId, UserName, VendorId,
+        VendorName,
     };
     use crate::domain::user::User;
     use crate::domain::{
@@ -377,7 +392,7 @@ mod tests {
         MockCategoryReader, MockCategoryWriter, MockPriceLevelReader, MockProductReader,
         MockProductWriter, MockTagReader, MockUserReader, MockVendorReader, MockVendorUserReader,
     };
-    use crate::{SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE};
+    use crate::{ADMIN_ACCESS_ROLE, SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE};
     use actix_multipart::form::tempfile::TempFile;
     use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
     use tempfile::NamedTempFile;
@@ -553,10 +568,7 @@ mod tests {
             })
             .returning(move |_| Ok((tags_len, tags_response.clone())));
 
-        repo.vendor_reader
-            .expect_list_vendors()
-            .times(1)
-            .returning(|_| Ok((0, Vec::new())));
+        repo.vendor_reader.expect_list_vendors().times(0);
 
         let result = load_products_page(query, &user, &repo);
 
@@ -686,6 +698,20 @@ mod tests {
             .times(1)
             .returning(|_| Ok((0, Vec::new())));
 
+        repo.vendor_reader
+            .expect_get_vendor_by_id()
+            .times(1)
+            .withf(move |id, hub_id| *id == vendor_id && hub_id.get() == expected_hub)
+            .returning(move |_, _| {
+                Ok(Some(crate::domain::vendor::Vendor {
+                    id: vendor_id,
+                    hub_id: expected_hub_id,
+                    name: VendorName::new("Vendor").unwrap(),
+                    created_at: datetime(),
+                    updated_at: datetime(),
+                }))
+            });
+
         let result =
             load_products_page(ProductsQuery::default(), &user, &repo).expect("page result");
 
@@ -728,10 +754,7 @@ mod tests {
             .times(1)
             .returning(move |_| Ok((0, Vec::new())));
 
-        repo.vendor_reader
-            .expect_list_vendors()
-            .times(1)
-            .returning(|_| Ok((0, Vec::new())));
+        repo.vendor_reader.expect_list_vendors().times(0);
 
         let result = load_products_page(
             ProductsQuery {
@@ -1356,6 +1379,168 @@ Banana,USD,7.50,
         assert!(result.is_archived);
         assert_eq!(result.tags, final_product.tags);
         assert_eq!(result.updated_at, new_updated_at);
+    }
+
+    #[test]
+    fn update_product_ignores_vendor_assignment_for_non_admin() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_role(SERVICE_ACCESS_ROLE);
+        let hub_id = user.hub_id;
+        let product_id = 12;
+
+        let reader_product = sample_product(product_id, hub_id, "Latte", Vec::new());
+        let writer_product = reader_product.clone();
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .times(1)
+            .withf(move |id, hub| id.get() == product_id && hub.get() == hub_id)
+            .returning(move |_, _| Ok(Some(reader_product.clone())));
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .times(1)
+            .returning(|_| Ok((0, Vec::new())));
+
+        repo.product_writer
+            .expect_replace_product_price_levels()
+            .times(1)
+            .withf(move |id, hub, rates| {
+                assert_eq!((id.get(), hub.get()), (product_id, hub_id));
+                assert!(rates.is_empty());
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
+        repo.product_writer
+            .expect_replace_product_tags()
+            .times(1)
+            .withf(move |id, hub, tags| {
+                assert_eq!((id.get(), hub.get()), (product_id, hub_id));
+                assert!(tags.is_empty());
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
+        repo.product_writer
+            .expect_replace_product_images()
+            .times(1)
+            .withf(move |id, hub, urls| {
+                assert_eq!((id.get(), hub.get()), (product_id, hub_id));
+                assert!(urls.is_empty());
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
+        repo.product_writer
+            .expect_update_product()
+            .times(1)
+            .withf(move |id, hub, updates| {
+                assert_eq!((id.get(), hub.get()), (product_id, hub_id));
+                assert!(updates.vendor_id.is_none());
+                assert!(!updates.clear_vendor);
+                true
+            })
+            .returning(move |_, _, updates| {
+                let mut updated = writer_product.clone();
+                updated.name = updates.name.clone();
+                updated.currency = updates.currency.clone();
+                updated.is_archived = updates.is_archived;
+                Ok(updated)
+            });
+
+        let form = EditProductForm {
+            product_id,
+            name: "Latte".to_string(),
+            sku: None,
+            description: None,
+            units: None,
+            currency: "usd".to_string(),
+            image_urls: None,
+            is_archived: false,
+            category_id: None,
+            vendor_id: Some(0),
+            tag_ids: Vec::new(),
+            price_levels: Vec::new(),
+            amount: None,
+        };
+
+        let result = update_product(product_id, form, &user, &repo).expect("expected update");
+        assert_eq!(result.name.as_str(), "Latte");
+    }
+
+    #[test]
+    fn update_product_allows_admin_vendor_assignment() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_role(ADMIN_ACCESS_ROLE);
+        let hub_id = user.hub_id;
+        let product_id = 15;
+        let vendor_id = VendorId::new(33).unwrap();
+
+        let reader_product = sample_product(product_id, hub_id, "Mocha", Vec::new());
+        let writer_product = reader_product.clone();
+
+        repo.product_reader
+            .expect_get_product_by_id()
+            .times(1)
+            .withf(move |id, hub| id.get() == product_id && hub.get() == hub_id)
+            .returning(move |_, _| Ok(Some(reader_product.clone())));
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .times(1)
+            .returning(|_| Ok((0, Vec::new())));
+
+        repo.product_writer
+            .expect_replace_product_price_levels()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+
+        repo.product_writer
+            .expect_replace_product_tags()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+
+        repo.product_writer
+            .expect_replace_product_images()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+
+        repo.product_writer
+            .expect_update_product()
+            .times(1)
+            .withf(move |id, hub, updates| {
+                assert_eq!((id.get(), hub.get()), (product_id, hub_id));
+                assert_eq!(updates.vendor_id, Some(vendor_id));
+                assert!(!updates.clear_vendor);
+                true
+            })
+            .returning(move |_, _, updates| {
+                let mut updated = writer_product.clone();
+                updated.name = updates.name.clone();
+                updated.currency = updates.currency.clone();
+                updated.vendor_id = updates.vendor_id;
+                Ok(updated)
+            });
+
+        let form = EditProductForm {
+            product_id,
+            name: "Mocha".to_string(),
+            sku: None,
+            description: None,
+            units: None,
+            currency: "usd".to_string(),
+            image_urls: None,
+            is_archived: false,
+            category_id: None,
+            vendor_id: Some(vendor_id.get()),
+            tag_ids: Vec::new(),
+            price_levels: Vec::new(),
+            amount: None,
+        };
+
+        let result = update_product(product_id, form, &user, &repo).expect("expected update");
+        assert_eq!(result.vendor_id, Some(vendor_id));
     }
 
     struct FakeRepo {

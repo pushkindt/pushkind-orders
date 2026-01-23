@@ -40,7 +40,10 @@ pub fn ensure_admin(user: &AuthenticatedUser) -> ServiceResult<()> {
 
 /// Enforce read-only access to hub configuration pages.
 pub fn ensure_catalog_read_access(user: &AuthenticatedUser) -> ServiceResult<()> {
-    if has_role(user, SERVICE_ACCESS_ROLE) {
+    if has_role(user, SERVICE_ACCESS_ROLE)
+        || has_role(user, ADMIN_ACCESS_ROLE)
+        || has_role(user, VENDOR_ACCESS_ROLE)
+    {
         Ok(())
     } else {
         Err(ServiceError::Unauthorized)
