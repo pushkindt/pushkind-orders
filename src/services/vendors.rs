@@ -4,14 +4,17 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
 
 use crate::domain::types::{HubId, VendorId};
+use crate::domain::user::NewUser;
 use crate::domain::vendor::{NewVendor, UpdateVendor, VendorListQuery};
 use crate::dto::vendors::{VendorQuery, VendorUserView, VendorsPageData};
 use crate::forms::vendors::{
-    AddVendorForm, AddVendorPayload, AssignVendorUserForm, AssignVendorUserPayload,
-    ClearVendorUserForm, ClearVendorUserPayload, EditVendorForm, EditVendorPayload,
+    AddUserForm, AddUserPayload, AddVendorForm, AddVendorPayload, AssignVendorUserForm,
+    AssignVendorUserPayload, ClearVendorUserForm, ClearVendorUserPayload, EditVendorForm,
+    EditVendorPayload,
 };
 use crate::repository::{
-    UserListQuery, UserReader, VendorReader, VendorUserReader, VendorUserWriter, VendorWriter,
+    UserListQuery, UserReader, UserWriter, VendorReader, VendorUserReader, VendorUserWriter,
+    VendorWriter,
 };
 use crate::services::{ServiceError, ServiceResult, ensure_admin};
 
@@ -66,6 +69,21 @@ where
         users: user_views,
         search,
     })
+}
+
+/// Creates a new user record.
+pub fn add_user<R>(form: AddUserForm, user: &AuthenticatedUser, repo: &R) -> ServiceResult<()>
+where
+    R: UserWriter + ?Sized,
+{
+    ensure_admin(user)?;
+
+    let payload: AddUserPayload = form.try_into()?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let new_user = NewUser::new(hub_id, payload.name, payload.email);
+
+    repo.create_user(&new_user)?;
+    Ok(())
 }
 
 /// Creates a new vendor for the authenticated user's hub.
@@ -182,7 +200,7 @@ where
 mod tests {
     use super::*;
 
-    use crate::SERVICE_ACCESS_ROLE;
+    use crate::ADMIN_ACCESS_ROLE;
     use crate::domain::types::{UserEmail, UserId};
     use crate::domain::user::User;
     use crate::repository::mock::{
@@ -215,7 +233,7 @@ mod tests {
     #[test]
     fn assign_user_to_vendor_rejects_conflict() {
         let mut repo = VendorServiceRepo::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let expected_hub = HubId::new(user.hub_id).unwrap();
         let user_id = UserId::new(5).unwrap();
         let vendor_id = VendorId::new(3).unwrap();

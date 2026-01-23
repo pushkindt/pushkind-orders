@@ -6,7 +6,7 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::Tera;
 
-use crate::SERVICE_ACCESS_ROLE;
+use crate::ADMIN_ACCESS_ROLE;
 use crate::dto::products::ProductsQuery;
 use crate::forms::products::{AddProductForm, EditProductForm, UploadProductsForm};
 use crate::repository::DieselRepository;
@@ -32,7 +32,7 @@ pub async fn show_products(
                 "products",
                 &server_config.auth_service_url,
             );
-            let is_admin = user.roles.iter().any(|role| role == SERVICE_ACCESS_ROLE);
+            let is_admin = user.roles.iter().any(|role| role == ADMIN_ACCESS_ROLE);
             let has_active_filters = data.show_archived
                 || data
                     .search
@@ -65,7 +65,7 @@ pub async fn show_products(
 #[post("/products/add")]
 /// Create a new product.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn add_product(
     req: HttpRequest,
     body: web::Bytes,
@@ -109,7 +109,7 @@ pub async fn add_product(
 #[post("/products/upload")]
 /// Batch upload products from a CSV file.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn upload_products(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -139,7 +139,7 @@ pub async fn upload_products(
 #[post("/products/edit")]
 /// Update an existing product.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn edit_product(
     req: HttpRequest,
     body: web::Bytes,

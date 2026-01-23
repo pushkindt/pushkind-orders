@@ -67,8 +67,19 @@ where
     let (_, price_levels) = repo.list_price_levels(PriceLevelListQuery::new(hub_id))?;
     let vendors = match access {
         HubAccessScope::Admin => repo.list_vendors(VendorListQuery::new(hub_id))?.1,
-        HubAccessScope::Vendor { .. } => Vec::new(),
+        _ => Vec::new(),
     };
+
+    let mut vendor_lookup: HashMap<i32, String> = vendors
+        .iter()
+        .map(|vendor| (vendor.id.get(), vendor.name.as_str().to_string()))
+        .collect();
+
+    if let HubAccessScope::Vendor { vendor_id } = access {
+        if let Some(vendor) = repo.get_vendor_by_id(vendor_id, hub_id)? {
+            vendor_lookup.insert(vendor.id.get(), vendor.name.as_str().to_string());
+        }
+    }
 
     let (_, mut categories) = repo.list_categories(CategoryTreeQuery::new(hub_id))?;
     let category_lookup: HashMap<i32, String> = categories
@@ -89,7 +100,9 @@ where
 
     let view_items: Vec<ProductView> = items
         .into_iter()
-        .map(|product| ProductView::from_product(product, &level_lookup, &category_lookup))
+        .map(|product| {
+            ProductView::from_product(product, &level_lookup, &category_lookup, &vendor_lookup)
+        })
         .collect();
 
     let total_pages = total.div_ceil(DEFAULT_ITEMS_PER_PAGE);
@@ -263,9 +276,7 @@ where
     if let Some(category) = category {
         let category = match access {
             HubAccessScope::Admin => create_category_chain(&category, product.hub_id.get(), repo)?,
-            HubAccessScope::Vendor { .. } => {
-                find_category_chain(&category, product.hub_id.get(), repo)?
-            }
+            _ => find_category_chain(&category, product.hub_id.get(), repo)?,
         };
         product.category_id = Some(category.id);
     }
@@ -614,7 +625,17 @@ mod tests {
     #[test]
     fn load_products_page_scopes_vendor_access() {
         let mut repo = FakeRepo::new();
-        let user = user_with_role(VENDOR_ACCESS_ROLE);
+        let user = AuthenticatedUser {
+            sub: "user".to_string(),
+            email: "user@example.com".to_string(),
+            hub_id: 11,
+            name: "User".to_string(),
+            roles: vec![
+                SERVICE_ACCESS_ROLE.to_string(),
+                VENDOR_ACCESS_ROLE.to_string(),
+            ],
+            exp: 0,
+        };
         let expected_hub = user.hub_id;
         let expected_hub_id = HubId::new(expected_hub).unwrap();
         let user_id = UserId::new(41).unwrap();

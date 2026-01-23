@@ -40,7 +40,7 @@ use crate::routes::store_session::get_store_session;
 use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_edit_tag_modal, show_tags};
 use crate::routes::vendors::{
     add_vendor, assign_vendor_user, clear_vendor_user, delete_vendor, edit_vendor,
-    show_edit_vendor_modal, show_vendors,
+    show_edit_vendor_modal, show_vendors, users_add,
 };
 
 pub mod domain;
@@ -54,6 +54,7 @@ pub mod schema;
 pub mod services;
 
 pub const SERVICE_ACCESS_ROLE: &str = "orders";
+pub const ADMIN_ACCESS_ROLE: &str = "orders_admin";
 pub const VENDOR_ACCESS_ROLE: &str = "orders_vendor";
 
 /// Builds and runs the Actix-Web HTTP server using the provided configuration.
@@ -174,6 +175,7 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
                     .service(update_order_product_approvals_handler)
                     .service(edit_order)
                     .service(show_edit_order_modal)
+                    .service(users_add)
                     .service(logout),
             )
             .app_data(web::Data::new(tera.clone()))

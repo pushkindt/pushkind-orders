@@ -15,13 +15,14 @@ The system is implemented as an Actix Web application with Diesel (SQLite) and f
 
 - Authenticated via `pushkind-common` identity/session middleware and the Pushkind auth service (`ServerConfig.auth_service_url`).
 - Must have `SERVICE_ACCESS_ROLE` (`src/lib.rs`: `orders`) to access hub pages and `/api/v1/*` JSON endpoints.
-- Only hub operators with `SERVICE_ACCESS_ROLE` can create vendors and assign users to vendors.
+- Administrative actions require `ADMIN_ACCESS_ROLE` (`src/lib.rs`: `orders_admin`).
+- Only hub operators with `ADMIN_ACCESS_ROLE` can create vendors and assign users to vendors.
 - Users lacking access are redirected to `/na` (served by `pushkind_common::routes::not_assigned`).
 
 ### Vendor hub user
 
 - Authenticated via the same hub identity/session middleware as hub operators.
-- Must have `VENDOR_ACCESS_ROLE` (`src/lib.rs`: `orders_vendor`).
+- Must have `SERVICE_ACCESS_ROLE` (`src/lib.rs`: `orders`) and `VENDOR_ACCESS_ROLE` (`src/lib.rs`: `orders_vendor`).
 - Must be assigned to exactly one `Vendor` (see `vendor_user` under the data model).
 - Cannot create vendors or assign/unassign users to vendors.
 - Authorization is vendor-scoped:
@@ -29,7 +30,7 @@ The system is implemented as an Actix Web application with Diesel (SQLite) and f
   - Vendor users can only see orders associated with their vendor (orders are linked to vendors via `vendor_order` when they contain vendor-owned products).
 - Vendor users have read-only access to hub-wide catalog configuration:
   - Can view tags, categories, and price levels.
-  - Cannot create/update/delete these; write actions are restricted to hub operators with `SERVICE_ACCESS_ROLE`.
+  - Cannot create/update/delete these; write actions are restricted to hub operators with `ADMIN_ACCESS_ROLE`.
 
 ### Store customer (end user)
 
@@ -169,9 +170,9 @@ The system does not prevent edits in any state, but operationally:
 
 Hub pages require an authenticated hub user.
 
-- Full hub-operator access requires `SERVICE_ACCESS_ROLE`.
+- Full hub-operator access requires `ADMIN_ACCESS_ROLE`.
 - Vendor access requires `VENDOR_ACCESS_ROLE` and is limited to vendor-associated products and orders.
-- Vendor users can view tags, categories, and price levels read-only; create/update/delete actions require `SERVICE_ACCESS_ROLE`.
+- Vendor users can view tags, categories, and price levels read-only; create/update/delete actions require `ADMIN_ACCESS_ROLE`.
 
 ### Routes
 
@@ -210,7 +211,7 @@ Static assets are served from `GET /assets/*` (folder `./assets`).
 
 All endpoints require an authenticated hub user (wrapped by `RedirectUnauthorized`).
 
-- Full access requires `SERVICE_ACCESS_ROLE`.
+- Full access requires `ADMIN_ACCESS_ROLE`.
 - When accessed by a vendor user (`VENDOR_ACCESS_ROLE`), product/order endpoints must return only vendor-associated data.
 - Vendor users may read hub-wide configuration, but must not be able to create/update/delete tags, categories, or price levels.
 

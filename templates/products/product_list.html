@@ -44,6 +44,11 @@
                         Категория: {{ product.category_name }}
                     </div>
                     {% endif %}
+                    {% if product.vendor_name %}
+                    <div class="text-muted small mt-1">
+                        Поставщик: {{ product.vendor_name }}
+                    </div>
+                    {% endif %}
                     <div class="text-muted small mt-1">
                         Обновлён {{ product.updated_at | date(format="%Y-%m-%d %H:%M") }}
                         {% if product.is_archived %}

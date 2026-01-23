@@ -4,7 +4,7 @@ This plan covers implementing vendor-scoped hub access for users with `VENDOR_AC
 
 ## Goal Summary
 
-- Hub users with `VENDOR_ACCESS_ROLE` are assigned to a vendor entity (`vendors` + `vendor_user`).
+- Hub users with `SERVICE_ACCESS_ROLE` and `VENDOR_ACCESS_ROLE` are assigned to a vendor entity (`vendors` + `vendor_user`).
 - Products can be owned by a vendor (`products.vendor_id`).
 - Orders that contain vendor-owned products are linked to vendors (`vendor_order`).
 - Vendor users can only see/manage products and orders associated with their vendor.
@@ -22,6 +22,7 @@ This plan covers implementing vendor-scoped hub access for users with `VENDOR_AC
 - Migration exists: `migrations/2026-01-22-103021_add-vendor`.
 - Roles exist in the auth service:
   - `SERVICE_ACCESS_ROLE` = `orders`
+  - `ADMIN_ACCESS_ROLE` = `orders_admin`
   - `VENDOR_ACCESS_ROLE` = `orders_vendor`
 - Requirement: there can be only one vendor per vendor user (enforce in DB and/or service layer; schema as-is allows multiples).
 
@@ -35,7 +36,7 @@ This plan covers implementing vendor-scoped hub access for users with `VENDOR_AC
    - Orders must not contain products from multiple vendors.
    - An order is either vendorless (all `vendor_id` null) or belongs to exactly one vendor (all `vendor_id` equal).
 3. **Vendor management permissions**
-   - Only hub operators with `SERVICE_ACCESS_ROLE` can create vendors and assign/unassign users to vendors.
+   - Only hub operators with `ADMIN_ACCESS_ROLE` can create vendors and assign/unassign users to vendors.
 4. **Product vendor assignment rules**
    - Vendor users: vendor forced to their vendor on create; cannot change on edit.
    - Admin users: can set/clear vendor on create/edit.
@@ -106,12 +107,12 @@ This plan covers implementing vendor-scoped hub access for users with `VENDOR_AC
 
 ## Phase 3 — Service Layer: Authorization + Business Rules
 
-**Why:** Current services call `ensure_role(user, SERVICE_ACCESS_ROLE)` and will block vendor users; we need a unified access model and vendor scoping rules.
+**Why:** Current services assume a single admin role and do not support vendor-scoped access; we need a unified access model and vendor scoping rules.
 
 **Tasks**
 
 - Introduce a service-level access resolver, e.g.:
-  - `HubAccessScope::Admin` when user has `SERVICE_ACCESS_ROLE`
+  - `HubAccessScope::Admin` when user has `ADMIN_ACCESS_ROLE`
   - `HubAccessScope::Vendor { vendor_id }` when user has `VENDOR_ACCESS_ROLE` (and vendor membership exists)
 - Update services to accept both admin and vendor scopes where appropriate:
   - `src/services/products.rs`
@@ -144,7 +145,7 @@ This plan covers implementing vendor-scoped hub access for users with `VENDOR_AC
 
 **Tasks**
 
-- Add vendor management UI (admin only; `SERVICE_ACCESS_ROLE`):
+- Add vendor management UI (admin only; `ADMIN_ACCESS_ROLE`):
   - Vendors list/create/edit.
   - Assign/unassign hub users to vendors.
   - UI should prevent assigning a user to multiple vendors.
@@ -160,7 +161,7 @@ This plan covers implementing vendor-scoped hub access for users with `VENDOR_AC
   - Add `GET /api/v1/store/{hub_id}/vendors` to populate vendor filter options.
 - Hub JSON API:
   - Ensure vendor users can call `GET /api/v1/orders` but get vendor-filtered results.
-  - Explicitly keep admin-only endpoints (e.g. price-level assignment) restricted to `SERVICE_ACCESS_ROLE`.
+  - Explicitly keep admin-only endpoints (e.g. price-level assignment) restricted to `ADMIN_ACCESS_ROLE`.
 
 **Exit criteria**
 

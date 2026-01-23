@@ -26,7 +26,7 @@
                     <li class="nav-item">
                         <a class="nav-link {%if current_page == 'tags'%}active{%endif%}" href="/tags">Теги</a>
                     </li>
-                    {% if current_user.roles is defined and ("orders" in current_user.roles) %}
+                    {% if current_user.roles is defined and ("orders_admin" in current_user.roles) %}
                     <li class="nav-item">
                         <a class="nav-link {%if current_page == 'vendors'%}active{%endif%}" href="/vendors">Поставщики</a>
                     </li>

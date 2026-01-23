@@ -5,7 +5,7 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::{Context, Tera};
 
-use crate::SERVICE_ACCESS_ROLE;
+use crate::ADMIN_ACCESS_ROLE;
 use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
@@ -32,7 +32,7 @@ pub async fn show_categories(
                 "categories",
                 &server_config.auth_service_url,
             );
-            let is_admin = user.roles.iter().any(|role| role == SERVICE_ACCESS_ROLE);
+            let is_admin = user.roles.iter().any(|role| role == ADMIN_ACCESS_ROLE);
             context.insert("category_tree", &data.tree);
             context.insert("is_admin", &is_admin);
             render_template(&tera, "categories/index.html", &context)
@@ -51,7 +51,7 @@ pub async fn show_categories(
 #[post("/categories/add")]
 /// Create a new product category.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn add_category(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -85,7 +85,7 @@ pub async fn add_category(
 #[post("/category/{category_id}/edit")]
 /// Update an existing product category.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn edit_category(
     path: web::Path<i32>,
     user: AuthenticatedUser,
@@ -116,7 +116,7 @@ pub async fn edit_category(
 #[get("/category/{category_id}/modal")]
 /// Render the edit category modal for a specific category.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn show_edit_category_modal(
     path: web::Path<i32>,
     user: AuthenticatedUser,
@@ -143,7 +143,7 @@ pub async fn show_edit_category_modal(
 #[post("/category/{category_id}/delete")]
 /// Delete a product category by ID.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn delete_category(
     path: web::Path<i32>,
     user: AuthenticatedUser,

@@ -503,7 +503,7 @@ mod tests {
     #[test]
     fn load_order_details_scopes_vendor_access() {
         let mut repo = OrderServiceRepo::new();
-        let user = user_with_roles(&[VENDOR_ACCESS_ROLE]);
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE]);
         let expected_hub = user.hub_id;
         let hub_id = HubId::new(expected_hub).unwrap();
         let user_id = UserId::new(19).unwrap();

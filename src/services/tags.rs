@@ -100,10 +100,10 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
     use serde_json::Value;
 
-    use crate::SERVICE_ACCESS_ROLE;
     use crate::domain::types::{HubId, TagId, TagName};
     use crate::dto::tags::TagQuery;
     use crate::repository::mock::{MockTagReader, MockTagWriter};
+    use crate::{ADMIN_ACCESS_ROLE, SERVICE_ACCESS_ROLE};
 
     fn fixed_datetime() -> NaiveDateTime {
         match NaiveDate::from_ymd_opt(2024, 1, 1) {
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn load_tag_for_edit_returns_not_found() {
         let mut repo = MockTagReader::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_get_tag_by_id()
             .times(1)
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn load_tag_for_edit_returns_tag() {
         let mut repo = MockTagReader::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_get_tag_by_id()
             .times(1)
@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn create_tag_validates_and_persists() {
         let mut repo = MockTagWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_create_tag()
             .times(1)
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn create_tag_returns_form_error() {
         let repo = MockTagWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = AddTagForm {
             name: "   ".to_string(),
         };
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn modify_tag_updates_repository() {
         let mut repo = MockTagWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_update_tag()
             .times(1)
@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn modify_tag_returns_form_error() {
         let repo = MockTagWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = EditTagForm {
             tag_id: 5,
             name: "   ".to_string(),
@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn remove_tag_deletes_record() {
         let mut repo = MockTagWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_delete_tag()
             .times(1)

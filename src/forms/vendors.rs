@@ -2,7 +2,7 @@ use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationErrors};
 
-use crate::domain::types::{UserId, VendorId, VendorName};
+use crate::domain::types::{UserEmail, UserId, UserName, VendorId, VendorName};
 
 /// Result type returned by the vendor form helpers.
 pub type VendorFormResult<T> = Result<T, VendorFormError>;
@@ -22,6 +22,12 @@ pub enum VendorFormError {
     /// The provided name is invalid.
     #[error("vendor name is invalid")]
     InvalidVendorName,
+    /// The provided user name is invalid.
+    #[error("user name is invalid")]
+    InvalidUserName,
+    /// The provided user email is invalid.
+    #[error("user email is invalid")]
+    InvalidUserEmail,
 }
 
 /// Form payload emitted when submitting the "Add vendor" form.
@@ -137,6 +143,36 @@ impl TryFrom<ClearVendorUserForm> for ClearVendorUserPayload {
         let user_id = UserId::new(value.user_id).map_err(|_| VendorFormError::InvalidUserId)?;
 
         Ok(Self { user_id })
+    }
+}
+
+/// Form payload emitted when submitting the "Add user" form.
+#[derive(Debug, Deserialize, Validate)]
+pub struct AddUserForm {
+    /// Name entered by the user.
+    #[validate(length(min = 1))]
+    pub name: String,
+    /// Email entered by the user.
+    #[validate(email)]
+    pub email: String,
+}
+
+/// Normalized payload for creating a user.
+#[derive(Debug, Clone)]
+pub struct AddUserPayload {
+    pub name: UserName,
+    pub email: UserEmail,
+}
+
+impl TryFrom<AddUserForm> for AddUserPayload {
+    type Error = VendorFormError;
+
+    fn try_from(value: AddUserForm) -> Result<Self, Self::Error> {
+        value.validate()?;
+
+        let name = UserName::new(value.name).map_err(|_| VendorFormError::InvalidUserName)?;
+        let email = UserEmail::new(value.email).map_err(|_| VendorFormError::InvalidUserEmail)?;
+        Ok(Self { name, email })
     }
 }
 

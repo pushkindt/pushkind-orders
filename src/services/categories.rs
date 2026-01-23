@@ -215,7 +215,7 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
 
-    use crate::SERVICE_ACCESS_ROLE;
+    use crate::ADMIN_ACCESS_ROLE;
     use crate::domain::category::{
         NewCategory as DomainNewCategory, UpdateCategory as DomainUpdateCategory,
     };
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn load_category_for_edit_returns_not_found() {
         let mut repo = MockCategoryReader::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let expected_hub = user.hub_id;
 
         repo.expect_get_category_by_id()
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn load_category_for_edit_returns_category() {
         let mut repo = MockCategoryReader::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let expected_hub = user.hub_id;
 
         repo.expect_get_category_by_id()
@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn load_categories_returns_category_tree() {
         let mut repo = MockCategoryReader::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let expected_hub = user.hub_id;
 
         repo.expect_list_categories()
@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn create_category_validates_form() {
         let repo = MockCategoryWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = AddCategoryForm {
             name: "   ".to_string(),
             description: None,
@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn create_category_persists_new_entry() {
         let mut repo = MockCategoryWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_create_category()
             .times(1)
@@ -493,7 +493,7 @@ mod tests {
     #[test]
     fn modify_category_updates_entry() {
         let mut repo = MockCategoryRepo::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.writer
             .expect_update_category()
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn remove_category_deletes_entry() {
         let mut repo = MockCategoryWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_delete_category()
             .times(1)

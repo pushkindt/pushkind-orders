@@ -18,6 +18,8 @@ where
 {
     let access = resolve_hub_access(user, repo)?;
 
+    log::info!("Resolved hub access scope: {:?}", access);
+
     let page = query.page.unwrap_or(1);
     let hub_id = HubId::new(user.hub_id)?;
     let mut list_query = OrderListQuery::new(hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);
@@ -232,7 +234,7 @@ mod tests {
     #[test]
     fn load_index_page_scopes_vendor_access() {
         let mut repo = IndexPageRepo::default();
-        let user = user_with_roles(&[VENDOR_ACCESS_ROLE]);
+        let user = user_with_roles(&[SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE]);
         let expected_hub = user.hub_id;
         let hub_id = HubId::new(expected_hub).unwrap();
         let user_id = UserId::new(33).unwrap();

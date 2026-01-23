@@ -5,7 +5,7 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::{Context, Tera};
 
-use crate::SERVICE_ACCESS_ROLE;
+use crate::ADMIN_ACCESS_ROLE;
 use crate::dto::price_levels::PriceLevelsQuery;
 use crate::forms::price_levels::{AddPriceLevelForm, EditPriceLevelForm};
 use crate::models::config::ServerConfig;
@@ -37,7 +37,7 @@ pub async fn show_price_levels(
                 "price_levels",
                 &common_config.auth_service_url,
             );
-            let is_admin = user.roles.iter().any(|role| role == SERVICE_ACCESS_ROLE);
+            let is_admin = user.roles.iter().any(|role| role == ADMIN_ACCESS_ROLE);
             context.insert("price_levels", &data.price_levels);
             context.insert("search", &data.search);
             context.insert("categories", &data.categories);
@@ -60,7 +60,7 @@ pub async fn show_price_levels(
 #[post("/price-levels/add")]
 /// Create a new price level.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn add_price_level(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -103,7 +103,7 @@ pub async fn add_price_level(
 #[post("/price-level/{price_level_id}/edit")]
 /// Update an existing price level by ID.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn edit_price_level(
     path: web::Path<i32>,
     user: AuthenticatedUser,
@@ -144,7 +144,7 @@ pub async fn edit_price_level(
 #[get("/price-level/{price_level_id}/modal")]
 /// Render the edit price level modal for a specific price level.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn show_edit_price_level_modal(
     path: web::Path<i32>,
     user: AuthenticatedUser,
@@ -171,7 +171,7 @@ pub async fn show_edit_price_level_modal(
 #[post("/price-level/{price_level_id}/delete")]
 /// Delete a price level by ID.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn delete_price_level(
     path: web::Path<i32>,
     user: AuthenticatedUser,

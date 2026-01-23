@@ -5,7 +5,7 @@ use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{base_context, redirect, render_template};
 use tera::{Context, Tera};
 
-use crate::SERVICE_ACCESS_ROLE;
+use crate::ADMIN_ACCESS_ROLE;
 use crate::dto::tags::TagQuery;
 use crate::forms::tags::{AddTagForm, EditTagForm};
 use crate::repository::DieselRepository;
@@ -32,7 +32,7 @@ pub async fn show_tags(
                 "tags",
                 &server_config.auth_service_url,
             );
-            let is_admin = user.roles.iter().any(|role| role == SERVICE_ACCESS_ROLE);
+            let is_admin = user.roles.iter().any(|role| role == ADMIN_ACCESS_ROLE);
             context.insert("tags", &data.tags);
             context.insert("search", &data.search);
             context.insert("search_action", "/tags");
@@ -53,7 +53,7 @@ pub async fn show_tags(
 #[post("/tags/add")]
 /// Create a new product tag.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn add_tag(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -87,7 +87,7 @@ pub async fn add_tag(
 #[post("/tags/edit")]
 /// Update an existing product tag.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn edit_tag(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
@@ -121,7 +121,7 @@ pub async fn edit_tag(
 #[get("/tag/{tag_id}/modal")]
 /// Render the edit tag modal for a specific tag.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn show_edit_tag_modal(
     path: web::Path<i32>,
     user: AuthenticatedUser,
@@ -148,7 +148,7 @@ pub async fn show_edit_tag_modal(
 #[post("/tags/{tag_id}/delete")]
 /// Delete a product tag by ID.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
 pub async fn delete_tag(
     path: web::Path<i32>,
     user: AuthenticatedUser,

@@ -7,12 +7,12 @@ use tera::{Context, Tera};
 
 use crate::dto::vendors::VendorQuery;
 use crate::forms::vendors::{
-    AddVendorForm, AssignVendorUserForm, ClearVendorUserForm, EditVendorForm,
+    AddUserForm, AddVendorForm, AssignVendorUserForm, ClearVendorUserForm, EditVendorForm,
 };
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::vendors::{
-    assign_user_to_vendor, clear_vendor_for_user, create_vendor, load_vendor_for_edit,
+    add_user, assign_user_to_vendor, clear_vendor_for_user, create_vendor, load_vendor_for_edit,
     load_vendors_page, modify_vendor, remove_vendor,
 };
 
@@ -229,6 +229,34 @@ pub async fn clear_vendor_user(
         Err(err) => {
             log::error!("Failed to clear vendor user: {err}");
             FlashMessage::error("Не удалось удалить привязку.").send();
+            redirect("/vendors")
+        }
+    }
+}
+
+#[post("/users/add")]
+/// Add a new user record from the provided form data.
+pub async fn users_add(
+    web::Form(form): web::Form<AddUserForm>,
+    user: AuthenticatedUser,
+    repo: web::Data<DieselRepository>,
+) -> impl Responder {
+    match add_user(form, &user, repo.get_ref()) {
+        Ok(()) => {
+            FlashMessage::success("Пользователь добавлен.").send();
+            redirect("/vendors")
+        }
+        Err(ServiceError::Unauthorized) => {
+            FlashMessage::error("Недостаточно прав.").send();
+            redirect("/na")
+        }
+        Err(ServiceError::Form(message)) => {
+            FlashMessage::error(message).send();
+            redirect("/vendors")
+        }
+        Err(err) => {
+            log::error!("Failed to save the user: {err}");
+            FlashMessage::error("Ошибка при добавлении пользователя").send();
             redirect("/vendors")
         }
     }
