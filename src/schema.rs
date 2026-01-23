@@ -159,6 +159,7 @@ diesel::table! {
         units -> Nullable<Text>,
         category_id -> Nullable<Integer>,
         amount -> Nullable<Float>,
+        vendor_id -> Nullable<Integer>,
     }
 }
 
@@ -193,6 +194,32 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    vendor_order (rowid) {
+        rowid -> Integer,
+        vendor_id -> Integer,
+        order_id -> Integer,
+    }
+}
+
+diesel::table! {
+    vendor_user (rowid) {
+        rowid -> Integer,
+        vendor_id -> Integer,
+        user_id -> Integer,
+    }
+}
+
+diesel::table! {
+    vendors (id) {
+        id -> Integer,
+        name -> Text,
+        hub_id -> Integer,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(customers -> price_levels (price_level_id));
 diesel::joinable!(order_products -> orders (order_id));
 diesel::joinable!(orders -> customers (customer_id));
@@ -202,6 +229,11 @@ diesel::joinable!(product_price_levels -> products (product_id));
 diesel::joinable!(product_tags -> products (product_id));
 diesel::joinable!(product_tags -> tags (tag_id));
 diesel::joinable!(products -> categories (category_id));
+diesel::joinable!(products -> vendors (vendor_id));
+diesel::joinable!(vendor_order -> orders (order_id));
+diesel::joinable!(vendor_order -> vendors (vendor_id));
+diesel::joinable!(vendor_user -> users (user_id));
+diesel::joinable!(vendor_user -> vendors (vendor_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     categories,
@@ -221,4 +253,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     store_otps,
     tags,
     users,
+    vendor_order,
+    vendor_user,
+    vendors,
 );

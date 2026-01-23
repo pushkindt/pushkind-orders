@@ -14,7 +14,8 @@ use crate::routes::store_session::{get_store_customer_for_hub, set_store_custome
 use crate::services::ServiceError;
 use crate::services::store::{
     create_store_order, list_store_orders, load_store_categories, load_store_product,
-    load_store_products, load_store_tags, request_store_otp, update_store_order, verify_store_otp,
+    load_store_products, load_store_tags, load_store_vendors, request_store_otp,
+    update_store_order, verify_store_otp,
 };
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +32,7 @@ struct StoreProductsQuery {
     min_amount: Option<f32>,
     max_amount: Option<f32>,
     page: Option<usize>,
+    vendor_id: Option<i32>,
 }
 
 impl From<StoreProductsQuery> for StoreProductFilters {
@@ -42,6 +44,7 @@ impl From<StoreProductsQuery> for StoreProductFilters {
             tag_id: value.tag_id,
             min_amount: value.min_amount,
             max_amount: value.max_amount,
+            vendor_id: value.vendor_id,
         }
     }
 }
@@ -180,6 +183,25 @@ pub async fn list_store_tags(
         Ok(tags) => HttpResponse::Ok().json(tags),
         Err(err) => {
             error!("Failed to load storefront tags for hub {hub_id}: {err}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[get("/{hub_id}/vendors")]
+/// Return a JSON list of storefront vendors.
+pub async fn list_store_vendors(
+    path: web::Path<HubPath>,
+    repo: web::Data<DieselRepository>,
+) -> impl Responder {
+    let hub_id = match path.into_inner().hub_id.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+    match load_store_vendors(hub_id, repo.get_ref()) {
+        Ok(vendors) => HttpResponse::Ok().json(vendors),
+        Err(err) => {
+            error!("Failed to load storefront vendors for hub {hub_id}: {err}");
             HttpResponse::InternalServerError().finish()
         }
     }

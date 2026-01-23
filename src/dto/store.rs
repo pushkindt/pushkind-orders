@@ -10,7 +10,7 @@ use crate::domain::{
     product::{Product, ProductListQuery},
     product_price_level::ProductPriceLevelRate,
     tag::Tag,
-    types::{CategoryId, HubId, ProductAmount, TagId},
+    types::{CategoryId, HubId, ProductAmount, TagId, VendorId},
 };
 
 /// Minimal representation of a category exposed to the storefront.
@@ -91,6 +91,10 @@ pub struct StoreProduct {
     pub id: i32,
     /// Optional category identifier used for grouping.
     pub category_id: Option<i32>,
+    /// Optional vendor identifier for the product owner.
+    pub vendor_id: Option<i32>,
+    /// Optional vendor name for storefront display.
+    pub vendor_name: Option<String>,
     /// Name displayed to users.
     pub name: String,
     /// Optional stock keeping unit identifier.
@@ -145,6 +149,7 @@ impl StoreProduct {
         value: Product,
         customer_price_level_id: Option<i32>,
         default_price_level_id: Option<i32>,
+        vendor_name: Option<String>,
     ) -> Self {
         let Product {
             id,
@@ -156,6 +161,7 @@ impl StoreProduct {
             currency,
             is_archived: _,
             category_id,
+            vendor_id,
             price_levels,
             tags,
             image_urls,
@@ -182,6 +188,8 @@ impl StoreProduct {
         Self {
             id: id.get(),
             category_id: category_id.map(|id| id.get()),
+            vendor_id: vendor_id.map(|id| id.get()),
+            vendor_name,
             name: name.as_str().to_string(),
             sku: sku.map(|sku| sku.as_str().to_string()),
             description: description.map(|d| d.into_inner()),
@@ -199,7 +207,7 @@ impl StoreProduct {
 
 impl From<Product> for StoreProduct {
     fn from(value: Product) -> Self {
-        Self::from_domain(value, None, None)
+        Self::from_domain(value, None, None, None)
     }
 }
 
@@ -212,6 +220,8 @@ pub struct StoreProductFilters {
     pub tag_id: Option<i32>,
     /// Filter products by a search term applied to the name and description.
     pub search: Option<String>,
+    /// Filter products by vendor identifier.
+    pub vendor_id: Option<i32>,
     /// Only include products with an amount greater than or equal to this value.
     pub min_amount: Option<f32>,
     /// Only include products with an amount less than or equal to this value.
@@ -233,6 +243,10 @@ impl StoreProductFilters {
             Some(tag_id) => query.with_tag_id(tag_id),
             None => query,
         };
+
+        if let Some(vendor_id) = self.vendor_id.and_then(|id| VendorId::new(id).ok()) {
+            query = query.with_vendor_id(vendor_id);
+        }
 
         if let Some(search) = self
             .search
@@ -262,6 +276,16 @@ impl StoreProductFilters {
 
         query
     }
+}
+
+/// Vendor payload formatted for storefront consumers.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreVendor {
+    /// Identifier of the vendor.
+    pub id: i32,
+    /// Display name of the vendor.
+    pub name: String,
 }
 
 /// Order payload formatted for storefront consumers.

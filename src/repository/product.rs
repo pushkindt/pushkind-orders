@@ -96,6 +96,10 @@ impl ProductReader for DieselRepository {
                 items = items.filter(has_assignment);
             }
 
+            if let Some(vendor_id) = query.vendor_id {
+                items = items.filter(products::vendor_id.eq(Some(vendor_id.get())));
+            }
+
             if let Some(tag_id) = query.tag_id {
                 let tagged_product_ids = product_tags::table
                     .inner_join(tags::table)
@@ -194,6 +198,22 @@ impl ProductWriter for DieselRepository {
             }
         }
 
+        if let Some(vendor_id) = new_product.vendor_id {
+            use crate::schema::vendors;
+            use diesel::dsl::{exists, select};
+
+            let vendor_exists: bool = select(exists(
+                vendors::table
+                    .filter(vendors::id.eq(vendor_id.get()))
+                    .filter(vendors::hub_id.eq(new_product.hub_id.get())),
+            ))
+            .get_result(&mut conn)?;
+
+            if !vendor_exists {
+                return Err(RepositoryError::NotFound);
+            }
+        }
+
         let db_new = DbNewProduct::from(new_product);
 
         let created = diesel::insert_into(products::table)
@@ -237,11 +257,40 @@ impl ProductWriter for DieselRepository {
             }
         }
 
-        let db_updates = DbUpdateProduct::from(updates);
+        if let Some(vendor_id) = updates.vendor_id {
+            use crate::schema::vendors;
+            use diesel::dsl::{exists, select};
+
+            let vendor_exists: bool = select(exists(
+                vendors::table
+                    .filter(vendors::id.eq(vendor_id.get()))
+                    .filter(vendors::hub_id.eq(hub_id.get())),
+            ))
+            .get_result(&mut conn)?;
+
+            if !vendor_exists {
+                return Err(RepositoryError::NotFound);
+            }
+        }
 
         let target = products::table
             .filter(products::id.eq(product_id.get()))
             .filter(products::hub_id.eq(hub_id.get()));
+
+        let existing_vendor_id = products::table
+            .filter(products::id.eq(product_id.get()))
+            .filter(products::hub_id.eq(hub_id.get()))
+            .select(products::vendor_id)
+            .first::<Option<i32>>(&mut conn)
+            .optional()?;
+        let Some(existing_vendor_id) = existing_vendor_id else {
+            return Err(RepositoryError::NotFound);
+        };
+
+        let mut db_updates = DbUpdateProduct::from(updates);
+        if !updates.clear_vendor && db_updates.vendor_id.is_none() {
+            db_updates.vendor_id = existing_vendor_id;
+        }
 
         let updated = diesel::update(target)
             .set(&db_updates)

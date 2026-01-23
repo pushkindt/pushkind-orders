@@ -9,7 +9,7 @@ use crate::domain::{
     tag::Tag,
     types::{
         CategoryId, CurrencyCode, HubId, ImageUrl, PriceLevelId, ProductAmount, ProductDescription,
-        ProductId, ProductName, ProductSku, ProductUnits, TagId, TypeConstraintError,
+        ProductId, ProductName, ProductSku, ProductUnits, TagId, TypeConstraintError, VendorId,
     },
 };
 
@@ -34,6 +34,8 @@ pub struct Product {
     pub is_archived: bool,
     /// Optional identifier of the category the product belongs to.
     pub category_id: Option<CategoryId>,
+    /// Optional vendor identifier for the product owner.
+    pub vendor_id: Option<VendorId>,
     /// Price level rates configured for the product.
     pub price_levels: Vec<ProductPriceLevelRate>,
     /// Tags associated with the product.
@@ -67,6 +69,8 @@ pub struct NewProduct {
     pub currency: CurrencyCode,
     /// Optional identifier of the category the product belongs to.
     pub category_id: Option<CategoryId>,
+    /// Optional vendor identifier for the product owner.
+    pub vendor_id: Option<VendorId>,
 }
 
 impl NewProduct {
@@ -81,6 +85,7 @@ impl NewProduct {
             currency,
             category_id: None,
             amount: None,
+            vendor_id: None,
         }
     }
 
@@ -121,6 +126,12 @@ impl NewProduct {
         self
     }
 
+    /// Assign the product to a vendor.
+    pub fn with_vendor_id(mut self, vendor_id: VendorId) -> Self {
+        self.vendor_id = Some(vendor_id);
+        self
+    }
+
     /// Attach amount to the product payload.
     pub fn with_amount(mut self, amount: ProductAmount) -> Self {
         self.amount = Some(amount);
@@ -147,6 +158,10 @@ pub struct UpdateProduct {
     pub is_archived: bool,
     /// Optional identifier of the category the product belongs to.
     pub category_id: Option<CategoryId>,
+    /// Optional vendor identifier for the product owner.
+    pub vendor_id: Option<VendorId>,
+    /// Flag indicating the vendor should be cleared.
+    pub clear_vendor: bool,
     /// Timestamp captured when the patch was created.
     pub updated_at: NaiveDateTime,
 }
@@ -165,6 +180,8 @@ impl UpdateProduct {
             category_id: None,
             updated_at: now,
             amount: None,
+            vendor_id: None,
+            clear_vendor: false,
         }
     }
 
@@ -205,6 +222,20 @@ impl UpdateProduct {
         self
     }
 
+    /// Assign the product to a vendor.
+    pub fn with_vendor_id(mut self, vendor_id: VendorId) -> Self {
+        self.vendor_id = Some(vendor_id);
+        self.clear_vendor = false;
+        self
+    }
+
+    /// Clear the vendor assignment for the product.
+    pub fn clear_vendor(mut self) -> Self {
+        self.vendor_id = None;
+        self.clear_vendor = true;
+        self
+    }
+
     /// Attach amount to the product payload.
     pub fn with_amount(mut self, amount: ProductAmount) -> Self {
         self.amount = Some(amount);
@@ -233,6 +264,8 @@ pub struct ProductListQuery {
     pub sku: Option<ProductSku>,
     /// Optional price level identifier used to require a matching price level assignment.
     pub price_level_id: Option<PriceLevelId>,
+    /// Optional vendor identifier used to filter products by vendor.
+    pub vendor_id: Option<VendorId>,
     /// Whether archived products should be included in the results.
     pub include_archived: bool,
     /// Optional pagination options applied to the query.
@@ -254,6 +287,7 @@ impl ProductListQuery {
             include_archived: false,
             pagination: None,
             tag_id: None,
+            vendor_id: None,
         }
     }
 
@@ -312,6 +346,12 @@ impl ProductListQuery {
     /// Restrict results to products that have a price level assignment for the specified level.
     pub fn with_price_level_id(mut self, price_level_id: PriceLevelId) -> Self {
         self.price_level_id = Some(price_level_id);
+        self
+    }
+
+    /// Filter the results by vendor identifier.
+    pub fn with_vendor_id(mut self, vendor_id: VendorId) -> Self {
+        self.vendor_id = Some(vendor_id);
         self
     }
 

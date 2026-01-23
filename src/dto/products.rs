@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::{
     category::Category, price_level::PriceLevel, product::Product,
-    product_price_level::ProductPriceLevelRate, tag::Tag,
+    product_price_level::ProductPriceLevelRate, tag::Tag, vendor::Vendor,
 };
 use pushkind_common::pagination::Paginated;
 
@@ -32,6 +32,8 @@ pub struct ProductsPageData {
     pub categories: Vec<Category>,
     /// All available tags for the edit product modal.
     pub tags: Vec<Tag>,
+    /// All available vendors for assigning ownership.
+    pub vendors: Vec<Vendor>,
     /// Whether archived items were requested.
     pub show_archived: bool,
 }
@@ -48,6 +50,8 @@ pub struct ProductView {
     pub currency: String,
     pub is_archived: bool,
     pub category_id: Option<i32>,
+    pub vendor_id: Option<i32>,
+    pub vendor_name: Option<String>,
     pub category_name: Option<String>,
     pub updated_at: chrono::NaiveDateTime,
     pub price_levels: Vec<ProductPriceLevelView>,
@@ -61,6 +65,7 @@ impl ProductView {
         product: Product,
         level_lookup: &HashMap<i32, &PriceLevel>,
         category_lookup: &HashMap<i32, String>,
+        vendor_lookup: &HashMap<i32, String>,
     ) -> Self {
         let Product {
             id,
@@ -72,6 +77,7 @@ impl ProductView {
             currency,
             is_archived,
             category_id,
+            vendor_id,
             price_levels,
             tags,
             image_urls,
@@ -97,6 +103,8 @@ impl ProductView {
             currency: currency.as_str().to_string(),
             is_archived,
             category_id: category_id.map(|id| id.get()),
+            vendor_id: vendor_id.map(|id| id.get()),
+            vendor_name: vendor_id.and_then(|id| vendor_lookup.get(&id.get()).cloned()),
             category_name: category_id.and_then(|id| category_lookup.get(&id.get()).cloned()),
             updated_at,
             price_levels,

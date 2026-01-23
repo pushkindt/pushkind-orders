@@ -14,13 +14,15 @@ use pushkind_orders::domain::{
         UserEmail,
     },
     user::{NewUser, UpdateUser},
+    vendor::NewVendor,
 };
 use pushkind_orders::models::category::NewCategory as DbNewCategory;
 use pushkind_orders::models::product_price_level::NewProductPriceLevel as DbNewProductPriceLevel;
 use pushkind_orders::repository::DieselRepository;
 use pushkind_orders::repository::{
     CustomerReader, CustomerWriter, OrderReader, OrderWriter, PriceLevelReader, PriceLevelWriter,
-    ProductReader, ProductWriter, UserListQuery, UserReader, UserWriter,
+    ProductReader, ProductWriter, UserListQuery, UserReader, UserWriter, VendorOrderWriter,
+    VendorWriter,
 };
 use pushkind_orders::schema::categories;
 
@@ -387,6 +389,40 @@ fn test_product_repository_crud() {
         .expect("failed final list");
     assert_eq!(total_final, 1);
     assert_eq!(products_final[0].id, banana.id);
+}
+
+#[test]
+fn test_product_repository_vendor_filter() {
+    let test_db = common::TestDb::new();
+    let repo = DieselRepository::new(test_db.pool());
+
+    let vendor = repo
+        .create_vendor(&NewVendor::try_new(1, "Fresh Produce").unwrap())
+        .expect("failed to create vendor");
+
+    let vendor_product = repo
+        .create_product(
+            &NewProduct::try_new(1, "Vendor Apple", "USD")
+                .unwrap()
+                .with_vendor_id(vendor.id),
+        )
+        .expect("failed to create vendor product");
+
+    repo.create_product(&NewProduct::try_new(1, "Generic Banana", "USD").unwrap())
+        .expect("failed to create generic product");
+
+    let (total, filtered) = repo
+        .list_products(
+            ProductListQuery::try_new(1)
+                .unwrap()
+                .with_vendor_id(vendor.id),
+        )
+        .expect("failed to list by vendor");
+
+    assert_eq!(total, 1);
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].id, vendor_product.id);
+    assert_eq!(filtered[0].vendor_id, Some(vendor.id));
 }
 
 #[test]
@@ -759,4 +795,44 @@ fn test_order_repository_crud() {
         .expect("failed to list after delete");
     assert_eq!(total_final, 0);
     assert!(orders_final.is_empty());
+}
+
+#[test]
+fn test_order_repository_vendor_filter() {
+    let test_db = common::TestDb::new();
+    let repo = DieselRepository::new(test_db.pool());
+
+    let vendor = repo
+        .create_vendor(&NewVendor::try_new(1, "Vendor A").unwrap())
+        .expect("failed to create vendor");
+
+    let product_snapshot = OrderProduct::try_new("Apple", 150, "USD", 2, None)
+        .unwrap()
+        .with_sku(ProductSku::new("APL-1").unwrap());
+
+    let vendor_order = repo
+        .create_order(
+            &NewOrder::try_new(1, 300, "USD")
+                .unwrap()
+                .with_products(vec![product_snapshot.clone()]),
+        )
+        .expect("failed to create vendor order");
+
+    repo.associate_order_with_vendor(vendor_order.id, vendor.id, HubId::new(1).unwrap())
+        .expect("failed to associate order");
+
+    repo.create_order(
+        &NewOrder::try_new(1, 300, "USD")
+            .unwrap()
+            .with_products(vec![product_snapshot]),
+    )
+    .expect("failed to create other order");
+
+    let (total, filtered) = repo
+        .list_orders(OrderListQuery::try_new(1).unwrap().vendor_id(vendor.id))
+        .expect("failed to list orders by vendor");
+
+    assert_eq!(total, 1);
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].id, vendor_order.id);
 }

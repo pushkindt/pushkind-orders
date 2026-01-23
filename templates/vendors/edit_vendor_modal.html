@@ -1,0 +1,21 @@
+<div class="modal-header">
+    <h1 class="modal-title fs-5" id="editVendorModalLabel">Редактировать поставщика</h1>
+    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+</div>
+<div class="modal-body">
+    <form action="/vendors/edit" method="POST">
+        <input type="hidden" name="vendor_id" value="{{ vendor.id }}">
+        <div class="row mb-3">
+            <label for="editVendorName" class="col-md-3 col-form-label">Название</label>
+            <div class="col-md-9">
+                <input name="name" type="text" class="form-control" id="editVendorName"
+                       value="{{ vendor.name }}" maxlength="128" required>
+            </div>
+        </div>
+        <div class="row mb-3">
+            <div class="col">
+                <button class="btn btn-primary" type="submit">Сохранить</button>
+            </div>
+        </div>
+    </form>
+</div>

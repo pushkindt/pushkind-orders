@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::routes::ensure_role;
 
-use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::category::CategoryTreeQuery;
 use crate::domain::customer::{CustomerListQuery, NewCustomer, UpdateCustomer};
 use crate::domain::price_level::{
@@ -23,7 +21,7 @@ use crate::repository::{
     CategoryReader, CustomerReader, CustomerWriter, PriceLevelReader, PriceLevelWriter,
     ProductReader, ProductWriter,
 };
-use crate::services::{ServiceError, ServiceResult};
+use crate::services::{ServiceError, ServiceResult, ensure_admin, ensure_catalog_read_access};
 
 /// Loads the price levels list for the index page.
 pub fn load_price_levels<R>(
@@ -34,7 +32,7 @@ pub fn load_price_levels<R>(
 where
     R: PriceLevelReader + CategoryReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_catalog_read_access(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let mut list_query = PriceLevelListQuery::new(hub_id);
@@ -65,7 +63,7 @@ pub fn load_price_level_for_edit<R>(
 where
     R: PriceLevelReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let price_level_id = PriceLevelId::new(price_level_id)?;
@@ -84,7 +82,7 @@ pub fn load_client_price_level_assignments<R>(
 where
     R: PriceLevelReader + CustomerReader + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
 
@@ -118,7 +116,7 @@ pub fn create_price_level<R>(
 where
     R: PriceLevelWriter + ProductReader + ProductWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let payload: AddPriceLevelPayload = form.try_into()?;
@@ -217,7 +215,7 @@ pub fn update_price_level<R>(
 where
     R: PriceLevelWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let payload: EditPriceLevelPayload = form.try_into()?;
     let updates = UpdatePriceLevel::new(payload.name, payload.default);
@@ -237,7 +235,7 @@ pub fn remove_price_level<R>(
 where
     R: PriceLevelWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
     let price_level_id = PriceLevelId::new(price_level_id)?;
@@ -254,7 +252,7 @@ pub fn assign_price_level_to_client<R>(
 where
     R: CustomerReader + CustomerWriter + ?Sized,
 {
-    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    ensure_admin(user)?;
 
     let assignment: AssignClientPriceLevelPayload = payload.try_into()?;
 
@@ -295,6 +293,7 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime};
 
+    use crate::ADMIN_ACCESS_ROLE;
     use crate::domain::category::{Category, CategoryTreeQuery};
     use crate::domain::customer::{Customer, CustomerListQuery, NewCustomer, UpdateCustomer};
     use crate::domain::price_level::PriceLevel;
@@ -636,6 +635,7 @@ mod tests {
             currency: CurrencyCode::new("USD").unwrap(),
             is_archived: false,
             category_id: category_id.map(|value| CategoryId::new(value).unwrap()),
+            vendor_id: None,
             price_levels,
             tags: Vec::new(),
             image_urls: Vec::new(),
@@ -680,7 +680,7 @@ mod tests {
     #[test]
     fn load_price_level_for_edit_returns_not_found() {
         let mut repo = MockPriceLevelReader::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_get_price_level_by_id()
             .times(1)
@@ -699,7 +699,7 @@ mod tests {
     #[test]
     fn load_price_level_for_edit_returns_price_level() {
         let mut repo = MockPriceLevelReader::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_get_price_level_by_id()
             .times(1)
@@ -720,7 +720,7 @@ mod tests {
     fn load_price_levels_returns_paginated_data() {
         let mut price_reader = MockPriceLevelReader::new();
         let mut category_reader = MockCategoryReader::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let query = PriceLevelsQuery {
             search: Some("sil".to_string()),
         };
@@ -804,7 +804,7 @@ mod tests {
         let mut price_writer = MockPriceLevelWriter::new();
         let mut product_reader = MockProductReader::new();
         let mut product_writer = MockProductWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "Retail".to_string(),
             default: false,
@@ -848,7 +848,7 @@ mod tests {
             MockProductReader::new(),
             MockProductWriter::new(),
         );
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "   ".to_string(),
             default: false,
@@ -878,7 +878,7 @@ mod tests {
         let mut price_writer = MockPriceLevelWriter::new();
         let mut product_reader = MockProductReader::new();
         let mut product_writer = MockProductWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "Bad Discount".to_string(),
             default: false,
@@ -920,7 +920,7 @@ mod tests {
         let mut price_writer = MockPriceLevelWriter::new();
         let mut product_reader = MockProductReader::new();
         let mut product_writer = MockProductWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "Bulk".to_string(),
             default: false,
@@ -981,7 +981,7 @@ mod tests {
         let mut price_writer = MockPriceLevelWriter::new();
         let mut product_reader = MockProductReader::new();
         let mut product_writer = MockProductWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "VIP".to_string(),
             default: false,
@@ -1042,7 +1042,7 @@ mod tests {
         let mut price_writer = MockPriceLevelWriter::new();
         let mut product_reader = MockProductReader::new();
         let mut product_writer = MockProductWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = AddPriceLevelForm {
             name: "Special".to_string(),
             default: false,
@@ -1114,7 +1114,7 @@ mod tests {
     #[test]
     fn update_price_level_updates_record() {
         let mut repo = MockPriceLevelWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = EditPriceLevelForm {
             name: "  Retail Plus  ".to_string(),
             default: true,
@@ -1140,7 +1140,7 @@ mod tests {
     #[test]
     fn update_price_level_propagates_form_errors() {
         let repo = MockPriceLevelWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = EditPriceLevelForm {
             name: "   ".to_string(),
             default: false,
@@ -1162,7 +1162,7 @@ mod tests {
     #[test]
     fn update_price_level_bubbles_not_found() {
         let mut repo = MockPriceLevelWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let form = EditPriceLevelForm {
             name: "Retail".to_string(),
             default: false,
@@ -1246,7 +1246,7 @@ mod tests {
     #[test]
     fn load_client_price_level_assignments_returns_assignments() {
         let mut repo = ClientAssignmentRepo::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let hub_id = user.hub_id;
 
         repo.price_level_reader
@@ -1320,7 +1320,7 @@ mod tests {
     fn assign_price_level_to_client_updates_assignment_using_contact_lookup() {
         let mut reader = MockCustomerReader::new();
         let mut writer = MockCustomerWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let hub_id = user.hub_id;
         let expected_customer_id = 321;
         let expected_public_id = "public-456";
@@ -1363,7 +1363,7 @@ mod tests {
     fn assign_price_level_to_client_clears_assignment() {
         let mut reader = MockCustomerReader::new();
         let mut writer = MockCustomerWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let hub_id = user.hub_id;
         let expected_public_id = "public-789";
         let expected_customer = Customer {
@@ -1416,7 +1416,7 @@ mod tests {
     fn assign_price_level_to_client_creates_customer_when_lookup_missing() {
         let mut reader = MockCustomerReader::new();
         let mut writer = MockCustomerWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let hub_id = user.hub_id;
         let expected_customer_id = 777;
         let expected_public_id = "public-000";
@@ -1464,7 +1464,7 @@ mod tests {
     #[test]
     fn assign_price_level_to_client_propagates_form_errors() {
         let repo = CombinedCustomerRepo::new(MockCustomerReader::new(), MockCustomerWriter::new());
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
         let payload = AssignClientPriceLevelForm {
             name: "".to_string(),
             phone: "".to_string(),
@@ -1499,7 +1499,7 @@ mod tests {
     #[test]
     fn remove_price_level_bubbles_not_found() {
         let mut repo = MockPriceLevelWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_delete_price_level()
             .times(1)
@@ -1514,7 +1514,7 @@ mod tests {
     #[test]
     fn remove_price_level_succeeds() {
         let mut repo = MockPriceLevelWriter::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
+        let user = user_with_roles(&[ADMIN_ACCESS_ROLE]);
 
         repo.expect_delete_price_level()
             .times(1)

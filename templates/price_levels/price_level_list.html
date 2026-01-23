@@ -26,6 +26,7 @@
         </div>
         <div class="col-sm-2 col-12 d-flex justify-content-sm-end align-items-center mt-2 mt-sm-0">
             <span class="d-sm-none fw-bold me-2">Действия:</span>
+            {% if is_admin %}
             <button
                 class="btn btn-sm btn-outline-warning d-flex align-items-center gap-2 me-2"
                 type="button"
@@ -44,6 +45,9 @@
                     <span class="d-none d-sm-inline">Удалить</span>
                 </button>
             </form>
+            {% else %}
+            <span class="text-muted">Только просмотр</span>
+            {% endif %}
         </div>
     </div>
     {% else %}

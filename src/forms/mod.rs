@@ -7,6 +7,7 @@ pub mod price_levels;
 pub mod products;
 pub mod store;
 pub mod tags;
+pub mod vendors;
 
 fn sanitize_text(text: &str) -> Option<String> {
     let text = text.trim();

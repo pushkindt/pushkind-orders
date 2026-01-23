@@ -12,7 +12,7 @@ use crate::domain::{
     product::{NewProduct, UpdateProduct},
     types::{
         CategoryId, CurrencyCode, HubId, ImageUrl, ProductAmount, ProductDescription, ProductName,
-        ProductSku, ProductUnits,
+        ProductSku, ProductUnits, VendorId,
     },
 };
 
@@ -90,6 +90,9 @@ pub enum ProductFormError {
     /// The provided category identifier could not be parsed.
     #[error("invalid category id `{value}`")]
     InvalidCategoryId { value: String },
+    /// The provided vendor identifier could not be parsed.
+    #[error("invalid vendor id `{value}`")]
+    InvalidVendorId { value: String },
 }
 
 /// Form payload emitted when submitting the "Add product" form.
@@ -118,6 +121,10 @@ pub struct AddProductForm {
     #[serde(default)]
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub category_id: Option<i32>,
+    /// Optional vendor identifier selected by the user.
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
+    pub vendor_id: Option<i32>,
     /// Optional set of tag identifiers selected by the user.
     #[serde(default)]
     pub tag_ids: Vec<i32>,
@@ -156,6 +163,7 @@ impl<'a> TryFrom<(AddProductForm, i32, &'a [PriceLevel])> for AddProductPayload 
             units,
             currency,
             category_id,
+            vendor_id,
             tag_ids,
             image_urls,
             price_levels: price_level_entries,
@@ -211,6 +219,16 @@ impl<'a> TryFrom<(AddProductForm, i32, &'a [PriceLevel])> for AddProductPayload 
                     value: category_id.to_string(),
                 })?;
             new_product = new_product.with_category_id(category_id);
+        }
+
+        if let Some(vendor_id) = vendor_id
+            && vendor_id > 0
+        {
+            let vendor_id =
+                VendorId::new(vendor_id).map_err(|_| ProductFormError::InvalidVendorId {
+                    value: vendor_id.to_string(),
+                })?;
+            new_product = new_product.with_vendor_id(vendor_id);
         }
 
         if let Some(amount) = amount {
@@ -482,6 +500,10 @@ pub struct EditProductForm {
     #[serde(default)]
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub category_id: Option<i32>,
+    /// Optional vendor update (zero clears the vendor).
+    #[serde(default)]
+    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
+    pub vendor_id: Option<i32>,
     /// Optional set of tags to associate with the product.
     #[serde(default)]
     pub tag_ids: Vec<i32>,
@@ -534,6 +556,7 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
             image_urls,
             is_archived,
             category_id,
+            vendor_id,
             tag_ids,
             price_levels: price_level_entries,
             amount,
@@ -583,6 +606,18 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
                     value: category_raw.to_string(),
                 })?;
             updates = updates.with_category_id(category_id);
+        }
+
+        if let Some(vendor_raw) = vendor_id {
+            if vendor_raw > 0 {
+                let vendor_id =
+                    VendorId::new(vendor_raw).map_err(|_| ProductFormError::InvalidVendorId {
+                        value: vendor_raw.to_string(),
+                    })?;
+                updates = updates.with_vendor_id(vendor_id);
+            } else if vendor_raw == 0 {
+                updates = updates.clear_vendor();
+            }
         }
 
         if let Some(amount) = amount {
@@ -756,6 +791,7 @@ mod tests {
             units: Some("  Box  ".to_string()),
             currency: "usd".to_string(),
             category_id: Some(7),
+            vendor_id: None,
             tag_ids: vec![5, 7, 5],
             image_urls: Some(
                 " https://example.com/one.png \n\nhttps://example.com/two.png  ".to_string(),
@@ -823,6 +859,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            vendor_id: None,
             tag_ids: Vec::new(),
             image_urls: None,
             price_levels: Vec::new(),
@@ -843,6 +880,7 @@ mod tests {
             units: None,
             currency: "   ".to_string(),
             category_id: None,
+            vendor_id: None,
             tag_ids: Vec::new(),
             image_urls: None,
             price_levels: Vec::new(),
@@ -863,6 +901,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            vendor_id: None,
             tag_ids: Vec::new(),
             image_urls: None,
             price_levels: vec![AddProductPriceLevelForm {
@@ -891,6 +930,7 @@ mod tests {
             units: None,
             currency: "USD".to_string(),
             category_id: None,
+            vendor_id: None,
             tag_ids: Vec::new(),
             image_urls: None,
             price_levels: vec![AddProductPriceLevelForm {
@@ -1049,6 +1089,7 @@ Banana,usd,,Ripe banana,,8.50,
             ),
             is_archived: true,
             category_id: Some(12),
+            vendor_id: None,
             tag_ids: vec![5, 7, 5],
             price_levels: vec![
                 EditProductPriceLevelForm {
@@ -1112,6 +1153,7 @@ Banana,usd,,Ripe banana,,8.50,
             image_urls: None,
             is_archived: true,
             category_id: Some(12),
+            vendor_id: None,
             tag_ids: vec![5, 7, 5],
             price_levels: Vec::new(),
             amount: None,
