@@ -38,6 +38,20 @@ pub fn ensure_admin(user: &AuthenticatedUser) -> ServiceResult<()> {
     ensure_role(user, ADMIN_ACCESS_ROLE)
 }
 
+/// Return true when the user can mutate catalog data.
+pub fn has_catalog_write_access(user: &AuthenticatedUser) -> bool {
+    has_role(user, ADMIN_ACCESS_ROLE) || has_role(user, VENDOR_ACCESS_ROLE)
+}
+
+/// Enforce write access to hub catalog pages.
+pub fn ensure_catalog_write_access(user: &AuthenticatedUser) -> ServiceResult<()> {
+    if has_catalog_write_access(user) {
+        Ok(())
+    } else {
+        Err(ServiceError::Unauthorized)
+    }
+}
+
 /// Enforce read-only access to hub configuration pages.
 pub fn ensure_catalog_read_access(user: &AuthenticatedUser) -> ServiceResult<()> {
     if has_role(user, SERVICE_ACCESS_ROLE)

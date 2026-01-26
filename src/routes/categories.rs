@@ -8,10 +8,10 @@ use tera::{Context, Tera};
 use crate::ADMIN_ACCESS_ROLE;
 use crate::forms::categories::{AddCategoryForm, EditCategoryForm};
 use crate::repository::DieselRepository;
-use crate::services::ServiceError;
 use crate::services::categories::{
     create_category, load_categories, load_category_for_edit, modify_category, remove_category,
 };
+use crate::services::{ServiceError, has_catalog_write_access};
 
 #[get("/categories")]
 /// Render the categories management page with a hierarchical tree view.
@@ -33,8 +33,10 @@ pub async fn show_categories(
                 &server_config.auth_service_url,
             );
             let is_admin = user.roles.iter().any(|role| role == ADMIN_ACCESS_ROLE);
+            let can_create = has_catalog_write_access(&user);
             context.insert("category_tree", &data.tree);
             context.insert("is_admin", &is_admin);
+            context.insert("can_create", &can_create);
             render_template(&tera, "categories/index.html", &context)
         }
         Err(ServiceError::Unauthorized) => {
@@ -51,7 +53,7 @@ pub async fn show_categories(
 #[post("/categories/add")]
 /// Create a new product category.
 ///
-/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Users without admin or vendor roles receive a `401 Unauthorized` response.
 pub async fn add_category(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,

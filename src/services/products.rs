@@ -289,8 +289,10 @@ where
 
     if let Some(category) = category {
         let category = match access {
-            HubAccessScope::Admin => create_category_chain(&category, product.hub_id.get(), repo)?,
-            _ => find_category_chain(&category, product.hub_id.get(), repo)?,
+            HubAccessScope::Admin | HubAccessScope::Vendor { .. } => {
+                create_category_chain(&category, product.hub_id.get(), repo)?
+            }
+            HubAccessScope::Basic => find_category_chain(&category, product.hub_id.get(), repo)?,
         };
         product.category_id = Some(category.id);
     }
@@ -1129,6 +1131,93 @@ Banana,USD,7.50,
         let result = import_products(form, &user, &repo).expect("expected success");
 
         assert_eq!(result, 2);
+    }
+
+    #[test]
+    fn import_products_creates_categories_for_vendor() {
+        let mut repo = FakeRepo::new();
+        let user = user_with_role(VENDOR_ACCESS_ROLE);
+        let hub_id = user.hub_id;
+        let hub = HubId::new(hub_id).unwrap();
+        let user_id = UserId::new(22).unwrap();
+        let vendor_id = VendorId::new(7).unwrap();
+        let user_record = User {
+            id: user_id,
+            hub_id: hub,
+            name: UserName::new("Vendor User").unwrap(),
+            email: UserEmail::new(user.email.clone()).unwrap(),
+        };
+
+        let expected_hub = hub_id;
+        repo.user_reader
+            .expect_get_user_by_email()
+            .times(1)
+            .withf(move |email, hub_id| {
+                email.as_str() == "user@example.com" && hub_id.get() == expected_hub
+            })
+            .returning(move |_, _| Ok(Some(user_record.clone())));
+
+        repo.vendor_user_reader
+            .expect_get_vendor_for_user()
+            .times(1)
+            .withf(move |id, hub_id| *id == user_id && hub_id.get() == hub.get())
+            .returning(move |_, _| Ok(Some(vendor_id)));
+
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .returning(|_| Ok((0, Vec::new())));
+
+        repo.category_reader
+            .expect_get_category_by_name_and_parent()
+            .times(1)
+            .withf(move |name, parent_id, hub_id| {
+                name.as_str() == "Snacks" && parent_id.is_none() && hub_id.get() == hub.get()
+            })
+            .returning(|_, _, _| Ok(None));
+
+        repo.category_writer
+            .expect_create_category()
+            .times(1)
+            .withf(move |new_category| {
+                new_category.hub_id.get() == hub_id
+                    && new_category.name.as_str() == "Snacks"
+                    && new_category.parent_id.is_none()
+            })
+            .returning(move |_| Ok(category(12, hub_id, "Snacks", false)));
+
+        repo.product_writer
+            .expect_create_product()
+            .times(1)
+            .withf(move |new_product| {
+                new_product.hub_id.get() == hub_id
+                    && new_product.vendor_id == Some(vendor_id)
+                    && new_product.category_id.as_ref().map(|id| id.get()) == Some(12)
+            })
+            .returning(|new_product| {
+                Ok(sample_product(
+                    5,
+                    new_product.hub_id.get(),
+                    new_product.name.as_str(),
+                    Vec::new(),
+                ))
+            });
+
+        repo.product_writer
+            .expect_replace_product_images()
+            .times(1)
+            .withf(move |product_id, scope_hub, urls| {
+                assert_eq!((product_id.get(), scope_hub.get()), (5, hub_id));
+                assert!(urls.is_empty());
+                true
+            })
+            .returning(|_, _, _| Ok(()));
+
+        let csv = "name,currency,category\nChips,USD,Snacks\n";
+        let form = build_upload_form(csv);
+
+        let result = import_products(form, &user, &repo).expect("expected success");
+
+        assert_eq!(result, 1);
     }
 
     #[test]
