@@ -18,8 +18,6 @@ where
 {
     let access = resolve_hub_access(user, repo)?;
 
-    log::info!("Resolved hub access scope: {:?}", access);
-
     let page = query.page.unwrap_or(1);
     let hub_id = HubId::new(user.hub_id)?;
     let mut list_query = OrderListQuery::new(hub_id).paginate(page, DEFAULT_ITEMS_PER_PAGE);

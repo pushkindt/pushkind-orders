@@ -11,7 +11,10 @@ use crate::forms::categories::{
     AddCategoryForm, AddCategoryPayload, EditCategoryForm, EditCategoryPayload,
 };
 use crate::repository::{CategoryReader, CategoryWriter};
-use crate::services::{ServiceError, ServiceResult, ensure_admin, ensure_catalog_read_access};
+use crate::services::{
+    ServiceError, ServiceResult, ensure_admin, ensure_catalog_read_access,
+    ensure_catalog_write_access,
+};
 
 /// Loads the categories overview page.
 pub fn load_categories<R>(user: &AuthenticatedUser, repo: &R) -> ServiceResult<CategoryTreeData>
@@ -63,7 +66,7 @@ pub fn create_category<R>(
 where
     R: CategoryWriter + ?Sized,
 {
-    ensure_admin(user)?;
+    ensure_catalog_write_access(user)?;
 
     let payload: AddCategoryPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
@@ -216,6 +219,7 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
 
     use crate::ADMIN_ACCESS_ROLE;
+    use crate::VENDOR_ACCESS_ROLE;
     use crate::domain::category::{
         NewCategory as DomainNewCategory, UpdateCategory as DomainUpdateCategory,
     };
@@ -428,6 +432,27 @@ mod tests {
         let result = create_category(form, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
+    }
+
+    #[test]
+    fn create_category_allows_vendor_role() {
+        let mut repo = MockCategoryWriter::new();
+        let user = user_with_roles(&[VENDOR_ACCESS_ROLE]);
+
+        repo.expect_create_category()
+            .times(1)
+            .returning(|_| Ok(sample_category(3, 9, "Produce")));
+
+        let form = AddCategoryForm {
+            name: "Produce".to_string(),
+            description: None,
+            parent_id: None,
+            image_url: None,
+        };
+
+        let created = create_category(form, &user, &repo).expect("expected success");
+
+        assert_eq!(created.name.as_str(), "Produce");
     }
 
     #[test]
