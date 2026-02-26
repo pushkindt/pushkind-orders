@@ -9,3 +9,5 @@ templates_dir: templates/**/*
 secret: env::APP_SECRET
 auth_service_url: ""
 crm_service_url: ""
+zmq_sms_sub: tcp://127.0.0.1:5562
+max_concurrent_sms: 10
