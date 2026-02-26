@@ -1,12 +1,12 @@
 use chrono::{Duration, Utc};
 use log::info;
 use pushkind_common::{
-    models::sms::zmq::ZMQSendSmsMessage,
     pagination::DEFAULT_ITEMS_PER_PAGE,
     zmq::{ZmqSenderExt, ZmqSenderTrait},
 };
 use pushkind_crm::models::zmq::ZmqClientMessage;
-use rand::Rng;
+use pushkind_sms::models::zmq::ZMQSendSmsMessage;
+use rand::RngExt;
 
 use crate::domain::{
     category::CategoryTreeQuery,
@@ -60,7 +60,7 @@ where
         return Err(ServiceError::Form(OTP_THROTTLE_MESSAGE.to_string()));
     }
 
-    let code = format!("{:06}", rand::rng().random_range(0..1_000_000));
+    let code = format!("{:06}", rand::rng().random_range(0..1_000_000u32));
     let expires_at = now + Duration::minutes(OTP_EXPIRY_MINUTES);
     let otp_payload =
         NewStoreOtp::try_new(hub_id.get(), phone.as_str(), code.clone(), expires_at, now)?;

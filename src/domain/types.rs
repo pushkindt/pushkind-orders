@@ -760,11 +760,11 @@ html_string_newtype!(
 );
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-/// Non-empty, trimmed menu URL.
+/// Non-empty, trimmed image URL.
 pub struct ImageUrl(String);
 
 impl ImageUrl {
-    /// Ensures a trimmed menu URL is non-empty before wrapping.
+    /// Ensures a trimmed image URL is non-empty before wrapping.
     pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
         let url = NonEmptyString::new(value)?;
 
@@ -775,12 +775,12 @@ impl ImageUrl {
         }
     }
 
-    /// Borrow the menu URL.
+    /// Borrow the image URL.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// Extract the owned menu URL.
+    /// Extract the owned image URL.
     pub fn into_inner(self) -> String {
         self.0
     }
