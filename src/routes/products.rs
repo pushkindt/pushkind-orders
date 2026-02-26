@@ -72,7 +72,7 @@ pub async fn add_product(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
 ) -> impl Responder {
-    let config = serde_qs::Config::new();
+    let config = serde_qs::Config::new().use_form_encoding(true);
     let form: AddProductForm = match config.deserialize_bytes(body.as_ref()) {
         Ok(parsed) => parsed,
         Err(err) => {
@@ -146,7 +146,7 @@ pub async fn edit_product(
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
 ) -> impl Responder {
-    let config = serde_qs::Config::new();
+    let config = serde_qs::Config::new().use_form_encoding(true);
     let form: EditProductForm = match config.deserialize_bytes(body.as_ref()) {
         Ok(parsed) => parsed,
         Err(err) => {
