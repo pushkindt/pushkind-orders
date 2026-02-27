@@ -31,6 +31,7 @@ use crate::routes::price_levels::{
     show_price_levels,
 };
 use crate::routes::products::{add_product, edit_product, show_products, upload_products};
+use crate::routes::rate_limit::{StoreOtpIpRateLimiter, TRUST_FORWARDED_HEADERS};
 use crate::routes::store::{
     create_store_order_handler, get_store_product, list_store_categories,
     list_store_orders_handler, list_store_products, list_store_tags, list_store_vendors,
@@ -94,6 +95,13 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
         .map_err(|e| std::io::Error::other(format!("Template parsing error(s): {e}")))?;
 
     let bind_address = (server_config.address.clone(), server_config.port);
+    let store_otp_rate_limiter = web::Data::new(StoreOtpIpRateLimiter::new());
+    if !TRUST_FORWARDED_HEADERS {
+        log::warn!(
+            "Store OTP rate limiter uses peer_addr() for client IP. \
+If this service runs behind a trusted reverse proxy, set TRUST_FORWARDED_HEADERS=true in src/routes/rate_limit.rs."
+        );
+    }
 
     HttpServer::new(move || {
         App::new()
@@ -112,6 +120,7 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
             .service(not_assigned)
             .service(
                 web::scope("/api/v1/store")
+                    .app_data(store_otp_rate_limiter.clone())
                     .wrap(
                         SessionMiddleware::builder(
                             CookieSessionStore::default(),
