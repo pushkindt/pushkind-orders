@@ -1,6 +1,6 @@
 use actix_session::Session;
-use actix_web::{HttpResponse, Responder, get, patch, post, web};
-use log::error;
+use actix_web::{HttpRequest, HttpResponse, Responder, get, patch, post, web};
+use log::{error, info};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -10,6 +10,7 @@ use crate::forms::store::{
 };
 use crate::models::config::{ServerConfig, ZmqSenders};
 use crate::repository::DieselRepository;
+use crate::routes::rate_limit::StoreOtpIpRateLimiter;
 use crate::routes::store_session::{get_store_customer_for_hub, set_store_customer};
 use crate::services::ServiceError;
 use crate::services::store::{
@@ -212,16 +213,22 @@ pub async fn list_store_vendors(
 ///
 /// Sends an SMS with the OTP code to the provided phone number.
 pub async fn request_store_auth_otp(
+    req: HttpRequest,
     path: web::Path<HubPath>,
     payload: web::Json<StoreOtpRequestPayload>,
     repo: web::Data<DieselRepository>,
     zmq_senders: web::Data<ZmqSenders>,
     server_config: web::Data<ServerConfig>,
+    rate_limiter: web::Data<StoreOtpIpRateLimiter>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
+
+    if let Some(response) = rate_limit_otp_response(&req, hub_id, rate_limiter.get_ref()) {
+        return response;
+    }
 
     let zmq_sender = &zmq_senders.get_ref().sms;
 
@@ -243,6 +250,34 @@ pub async fn request_store_auth_otp(
             HttpResponse::InternalServerError().finish()
         }
     }
+}
+
+fn rate_limit_otp_response(
+    req: &HttpRequest,
+    hub_id: i32,
+    rate_limiter: &StoreOtpIpRateLimiter,
+) -> Option<HttpResponse> {
+    let exceeded = match rate_limiter.check(req) {
+        Ok(()) => return None,
+        Err(err) => err,
+    };
+
+    let mut retry_after_seconds = exceeded.retry_after.as_secs();
+    if exceeded.retry_after.subsec_nanos() > 0 {
+        retry_after_seconds = retry_after_seconds.saturating_add(1);
+    }
+    retry_after_seconds = retry_after_seconds.max(1);
+
+    info!(
+        "Storefront OTP request rate limited for hub {hub_id} from ip {} (retry-after={retry_after_seconds}s)",
+        exceeded.ip
+    );
+
+    Some(
+        HttpResponse::TooManyRequests()
+            .insert_header(("Retry-After", retry_after_seconds.to_string()))
+            .json(json!({ "error": "rate limit exceeded" })),
+    )
 }
 
 #[post("/{hub_id}/auth/otp/verify")]
@@ -414,5 +449,99 @@ pub async fn update_store_order_handler(
             error!("Failed to update storefront order {order_id} for hub {hub_id}: {err}");
             HttpResponse::InternalServerError().finish()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use actix_web::{App, body::to_bytes, http::StatusCode, test};
+
+    use crate::routes::rate_limit::{MAX_REQUESTS, StoreOtpIpRateLimiter};
+
+    #[post("/test/auth/otp")]
+    async fn rate_limited_test_endpoint(
+        req: HttpRequest,
+        rate_limiter: web::Data<StoreOtpIpRateLimiter>,
+    ) -> impl Responder {
+        if let Some(response) = rate_limit_otp_response(&req, 1, rate_limiter.get_ref()) {
+            return response;
+        }
+
+        HttpResponse::Ok().finish()
+    }
+
+    #[actix_web::test]
+    async fn rate_limit_otp_response_returns_429_with_retry_after_header() {
+        let limiter = StoreOtpIpRateLimiter::new();
+        let client_addr = "127.0.0.1:45678".parse().expect("valid socket address");
+        let hub_id = 1;
+        let req = test::TestRequest::default()
+            .peer_addr(client_addr)
+            .to_http_request();
+
+        for _ in 0..MAX_REQUESTS {
+            assert!(limiter.check(&req).is_ok());
+        }
+
+        let response = rate_limit_otp_response(&req, hub_id, &limiter)
+            .expect("request should be rate limited");
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let retry_after = response
+            .headers()
+            .get("Retry-After")
+            .expect("Retry-After header should exist")
+            .to_str()
+            .expect("Retry-After should be ASCII")
+            .parse::<u64>()
+            .expect("Retry-After should be numeric");
+        assert!(retry_after >= 1);
+
+        let body = to_bytes(response.into_body()).await.expect("response body");
+        let payload: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"], "rate limit exceeded");
+    }
+
+    #[actix_web::test]
+    async fn rate_limiter_route_returns_429_with_retry_after_header() {
+        let limiter = web::Data::new(StoreOtpIpRateLimiter::new());
+        let client_addr = "127.0.0.1:45678".parse().expect("valid socket address");
+        let seed_req = test::TestRequest::default()
+            .peer_addr(client_addr)
+            .to_http_request();
+
+        for _ in 0..MAX_REQUESTS {
+            assert!(limiter.check(&seed_req).is_ok());
+        }
+
+        let app = test::init_service(
+            App::new()
+                .app_data(limiter.clone())
+                .service(rate_limited_test_endpoint),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/test/auth/otp")
+            .peer_addr(client_addr)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        let retry_after = resp
+            .headers()
+            .get("Retry-After")
+            .expect("Retry-After header should exist")
+            .to_str()
+            .expect("Retry-After should be ASCII")
+            .parse::<u64>()
+            .expect("Retry-After should be numeric");
+        assert!(retry_after >= 1);
+
+        let body = to_bytes(resp.into_body()).await.expect("response body");
+        let payload: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"], "rate limit exceeded");
     }
 }
