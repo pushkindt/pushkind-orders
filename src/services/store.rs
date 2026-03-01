@@ -34,8 +34,15 @@ use crate::services::{ServiceError, ServiceResult};
 
 const OTP_EXPIRY_MINUTES: i64 = 10;
 const OTP_THROTTLE_MINUTES: i64 = 2;
-const OTP_THROTTLE_MESSAGE: &str = "Please wait before requesting another OTP";
-const OTP_INVALID_MESSAGE: &str = "Invalid or expired OTP";
+const OTP_THROTTLE_MESSAGE: &str = "Подождите перед повторным запросом кода";
+const OTP_INVALID_MESSAGE: &str = "Неверный или просроченный код";
+const STORE_ORDER_EMPTY_ITEMS_MESSAGE: &str = "Заказ должен содержать хотя бы один товар";
+const STORE_ORDER_QUANTITY_MESSAGE: &str = "Количество должно быть больше нуля";
+const STORE_ORDER_PRODUCT_NOT_FOUND_MESSAGE: &str = "Товар не найден";
+const STORE_ORDER_MIXED_VENDORS_MESSAGE: &str = "Нельзя оформлять один заказ у разных поставщиков";
+const STORE_ORDER_PRICE_UNAVAILABLE_MESSAGE: &str = "Цена товара недоступна";
+const STORE_ORDER_MIXED_CURRENCIES_MESSAGE: &str = "Нельзя оформлять один заказ в разных валютах";
+const STORE_ORDER_INVALID_TOTAL_MESSAGE: &str = "Не удалось рассчитать сумму заказа";
 
 /// Accepts an OTP request for the given hub.
 pub async fn request_store_otp<R>(
@@ -168,7 +175,7 @@ where
     R: ProductReader + PriceLevelReader + OrderWriter + VendorOrderWriter + ?Sized,
 {
     let hub_id = HubId::new(hub_id)?;
-    let items = validate_store_order_lines(payloads)?;
+    let items = validate_store_order_lines(payloads).map_err(map_store_order_validation_error)?;
 
     let default_price_level_id = resolve_default_price_level_id(hub_id.get(), repo)?;
     let customer_price_level_id = customer.price_level_id.map(|id| id.get());
@@ -181,27 +188,27 @@ where
 
     for item in items {
         if item.quantity <= 0 {
-            return Err(ServiceError::Form("quantity must be positive".to_string()));
+            return Err(ServiceError::Form(STORE_ORDER_QUANTITY_MESSAGE.to_string()));
         }
 
         let product_id = ProductId::new(item.product_id)
-            .map_err(|_| ServiceError::Form("product not found".to_string()))?;
+            .map_err(|_| ServiceError::Form(STORE_ORDER_PRODUCT_NOT_FOUND_MESSAGE.to_string()))?;
         let product = repo
             .get_product_by_id(product_id, hub_id)?
             .filter(|product| !product.is_archived)
-            .ok_or_else(|| ServiceError::Form("product not found".to_string()))?;
+            .ok_or_else(|| ServiceError::Form(STORE_ORDER_PRODUCT_NOT_FOUND_MESSAGE.to_string()))?;
 
         match product.vendor_id {
             Some(vendor_id) => {
                 if saw_vendorless {
                     return Err(ServiceError::Form(
-                        "mixed vendors are not allowed".to_string(),
+                        STORE_ORDER_MIXED_VENDORS_MESSAGE.to_string(),
                     ));
                 }
                 if let Some(existing) = order_vendor_id {
                     if existing != vendor_id {
                         return Err(ServiceError::Form(
-                            "mixed vendors are not allowed".to_string(),
+                            STORE_ORDER_MIXED_VENDORS_MESSAGE.to_string(),
                         ));
                     }
                 } else {
@@ -211,7 +218,7 @@ where
             None => {
                 if order_vendor_id.is_some() {
                     return Err(ServiceError::Form(
-                        "mixed vendors are not allowed".to_string(),
+                        STORE_ORDER_MIXED_VENDORS_MESSAGE.to_string(),
                     ));
                 }
                 saw_vendorless = true;
@@ -227,7 +234,7 @@ where
         } else {
             StoreProduct::resolve_price_cents(&product.price_levels, None, default_price_level_id)
         }
-        .ok_or_else(|| ServiceError::Form("price unavailable".to_string()))?;
+        .ok_or_else(|| ServiceError::Form(STORE_ORDER_PRICE_UNAVAILABLE_MESSAGE.to_string()))?;
 
         let default_price_cents =
             StoreProduct::resolve_price_cents(&product.price_levels, None, default_price_level_id);
@@ -236,7 +243,7 @@ where
         match &currency {
             Some(expected) if expected != &product_currency => {
                 return Err(ServiceError::Form(
-                    "mixed currencies are not allowed".to_string(),
+                    STORE_ORDER_MIXED_CURRENCIES_MESSAGE.to_string(),
                 ));
             }
             None => currency = Some(product_currency.clone()),
@@ -244,15 +251,15 @@ where
         }
 
         let approved_quantity = ProductQuantity::new(item.quantity)
-            .map_err(|_| ServiceError::Form("quantity must be positive".to_string()))?;
+            .map_err(|_| ServiceError::Form(STORE_ORDER_QUANTITY_MESSAGE.to_string()))?;
 
         let line_total = price_cents
             .checked_mul(approved_quantity.get())
-            .ok_or_else(|| ServiceError::Form("invalid order total".to_string()))?;
+            .ok_or_else(|| ServiceError::Form(STORE_ORDER_INVALID_TOTAL_MESSAGE.to_string()))?;
 
         total_cents = total_cents
             .checked_add(line_total)
-            .ok_or_else(|| ServiceError::Form("invalid order total".to_string()))?;
+            .ok_or_else(|| ServiceError::Form(STORE_ORDER_INVALID_TOTAL_MESSAGE.to_string()))?;
 
         let mut order_product = OrderProduct::try_new(
             product.name.as_str(),
@@ -289,6 +296,27 @@ where
     }
 
     Ok(order)
+}
+
+fn map_store_order_validation_error(err: crate::forms::store::StoreFormError) -> ServiceError {
+    use crate::forms::store::StoreFormError;
+
+    match err {
+        StoreFormError::Validation(errors) => {
+            let message = if errors.field_errors().contains_key("items") {
+                STORE_ORDER_EMPTY_ITEMS_MESSAGE
+            } else if errors.field_errors().contains_key("quantity") {
+                STORE_ORDER_QUANTITY_MESSAGE
+            } else if errors.field_errors().contains_key("product_id") {
+                STORE_ORDER_PRODUCT_NOT_FOUND_MESSAGE
+            } else {
+                STORE_ORDER_EMPTY_ITEMS_MESSAGE
+            };
+
+            ServiceError::Form(message.to_string())
+        }
+        other => ServiceError::Form(other.to_string()),
+    }
 }
 
 /// Load orders placed by a storefront customer for the provided hub.
@@ -981,7 +1009,11 @@ mod tests {
 
         let result = create_store_order(1, payload, &customer, &repo);
 
-        assert!(matches!(result, Err(ServiceError::Form(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::Form(message))
+                if message == STORE_ORDER_PRICE_UNAVAILABLE_MESSAGE
+        ));
     }
 
     #[test]
@@ -1011,7 +1043,11 @@ mod tests {
 
         let result = create_store_order(1, payload, &customer, &repo);
 
-        assert!(matches!(result, Err(ServiceError::Form(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::Form(message))
+                if message == STORE_ORDER_PRODUCT_NOT_FOUND_MESSAGE
+        ));
     }
 
     #[test]
@@ -1049,7 +1085,11 @@ mod tests {
 
         let result = create_store_order(1, payload, &customer, &repo);
 
-        assert!(matches!(result, Err(ServiceError::Form(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::Form(message))
+                if message == STORE_ORDER_PRICE_UNAVAILABLE_MESSAGE
+        ));
     }
 
     #[test]
@@ -1089,7 +1129,11 @@ mod tests {
 
         let result = create_store_order(1, payload, &customer, &repo);
 
-        assert!(matches!(result, Err(ServiceError::Form(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::Form(message))
+                if message == STORE_ORDER_MIXED_CURRENCIES_MESSAGE
+        ));
     }
 
     #[test]
@@ -1133,7 +1177,11 @@ mod tests {
 
         let result = create_store_order(1, payload, &customer, &repo);
 
-        assert!(matches!(result, Err(ServiceError::Form(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::Form(message))
+                if message == STORE_ORDER_MIXED_VENDORS_MESSAGE
+        ));
     }
 
     #[test]
@@ -1155,7 +1203,11 @@ mod tests {
 
         let result = create_store_order(1, payload, &customer, &repo);
 
-        assert!(matches!(result, Err(ServiceError::Form(_))));
+        assert!(matches!(
+            result,
+            Err(ServiceError::Form(message))
+                if message == STORE_ORDER_QUANTITY_MESSAGE
+        ));
     }
 
     struct MockListStoreOrdersRepo {

@@ -438,6 +438,11 @@ async fn create_store_order_validates_payload() {
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body,
+        json!({ "error": "Количество должно быть больше нуля" })
+    );
 }
 
 #[actix_web::test]
