@@ -19,8 +19,8 @@ pub use products::{
     ProductPriceLevelView, ProductTagView, ProductView, ProductsPageData, ProductsQuery,
 };
 pub use store::{
-    StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreOtpAcceptResponse,
-    StoreOtpVerifyResponse, StoreProduct, StoreProductFilters, StoreTag, StoreVendor,
+    StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreProduct,
+    StoreProductFilters, StoreTag, StoreVendor,
 };
 pub use tags::{TagQuery, TagsPageData};
 pub use vendors::{VendorQuery, VendorUserView, VendorsPageData};

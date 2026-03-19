@@ -5,7 +5,6 @@ use pushkind_common::pagination::DEFAULT_ITEMS_PER_PAGE;
 
 use crate::domain::{
     category::Category,
-    customer::Customer,
     order::{Order, OrderProduct, OrderStatus},
     product::{Product, ProductListQuery},
     product_price_level::ProductPriceLevelRate,
@@ -57,23 +56,6 @@ impl From<Tag> for StoreTag {
             name: value.name.as_str().to_string(),
         }
     }
-}
-
-/// Response returned after an OTP request has been accepted.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct StoreOtpAcceptResponse {
-    /// Indicates whether the request has been accepted.
-    pub success: bool,
-}
-
-/// Response returned after an OTP request has been accepted.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct StoreOtpVerifyResponse {
-    /// Indicates whether the request has been verified.
-    pub success: bool,
-    pub customer: Customer,
 }
 
 /// Optional filters that can be applied when listing store categories.

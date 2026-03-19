@@ -1,22 +1,18 @@
-use actix_session::Session;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, patch, post, web};
-use log::{error, info};
+use log::error;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::domain::store_session::STORE_SESSION_COOKIE_NAME;
 use crate::dto::store::{StoreCategoryFilters, StoreOrder, StoreProductFilters};
-use crate::forms::store::{
-    StoreOrderLinePayload, StoreOrderUpdatePayload, StoreOtpRequestPayload, StoreOtpVerifyPayload,
-};
-use crate::models::config::{ServerConfig, ZmqSenders};
+use crate::forms::store::{StoreOrderLinePayload, StoreOrderUpdatePayload};
+use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
-use crate::routes::rate_limit::StoreOtpIpRateLimiter;
-use crate::routes::store_session::{get_store_customer_for_hub, set_store_customer};
 use crate::services::ServiceError;
 use crate::services::store::{
-    create_store_order, list_store_orders, load_store_categories, load_store_product,
-    load_store_products, load_store_tags, load_store_vendors, request_store_otp,
-    update_store_order, verify_store_otp,
+    create_store_order, decode_store_session_cookie, list_store_orders, load_store_categories,
+    load_store_product, load_store_products, load_store_tags, load_store_vendors,
+    resolve_store_customer, resolve_store_customer_for_write, update_store_order,
 };
 
 #[derive(Debug, Deserialize)]
@@ -82,7 +78,8 @@ pub async fn list_store_products(
     path: web::Path<HubPath>,
     params: Option<web::Query<StoreProductsQuery>>,
     repo: web::Data<DieselRepository>,
-    session: Session,
+    req: HttpRequest,
+    server_config: web::Data<ServerConfig>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
@@ -91,13 +88,14 @@ pub async fn list_store_products(
     let filters = params
         .map(|query| StoreProductFilters::from(query.into_inner()))
         .unwrap_or_default();
-    let store_customer = match get_store_customer_for_hub(&session, hub_id) {
-        Ok(customer) => customer,
-        Err(err) => {
-            error!("Failed to read store session for hub {hub_id}: {err}");
-            return HttpResponse::InternalServerError().finish();
-        }
-    };
+    let store_customer =
+        match read_optional_store_customer(&req, hub_id, repo.get_ref(), &server_config.secret) {
+            Ok(customer) => customer,
+            Err(err) => {
+                error!("Failed to resolve optional store customer for hub {hub_id}: {err}");
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
 
     match load_store_products(hub_id, filters, store_customer.as_ref(), repo.get_ref()) {
         Ok(products) => HttpResponse::Ok().json(products),
@@ -115,7 +113,8 @@ pub async fn list_store_products(
 pub async fn get_store_product(
     path: web::Path<StoreProductPath>,
     repo: web::Data<DieselRepository>,
-    session: Session,
+    req: HttpRequest,
+    server_config: web::Data<ServerConfig>,
 ) -> impl Responder {
     let path = path.into_inner();
     let hub_id = match path.hub_id.parse::<i32>() {
@@ -127,13 +126,14 @@ pub async fn get_store_product(
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let store_customer = match get_store_customer_for_hub(&session, hub_id) {
-        Ok(customer) => customer,
-        Err(err) => {
-            error!("Failed to read store session for hub {hub_id}: {err}");
-            return HttpResponse::InternalServerError().finish();
-        }
-    };
+    let store_customer =
+        match read_optional_store_customer(&req, hub_id, repo.get_ref(), &server_config.secret) {
+            Ok(customer) => customer,
+            Err(err) => {
+                error!("Failed to resolve optional store customer for hub {hub_id}: {err}");
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
 
     match load_store_product(hub_id, product_id, store_customer.as_ref(), repo.get_ref()) {
         Ok(Some(product)) => HttpResponse::Ok().json(product),
@@ -208,122 +208,6 @@ pub async fn list_store_vendors(
     }
 }
 
-#[post("/{hub_id}/auth/otp")]
-/// Request a one-time password for storefront authentication.
-///
-/// Sends an SMS with the OTP code to the provided phone number.
-pub async fn request_store_auth_otp(
-    req: HttpRequest,
-    path: web::Path<HubPath>,
-    payload: web::Json<StoreOtpRequestPayload>,
-    repo: web::Data<DieselRepository>,
-    zmq_senders: web::Data<ZmqSenders>,
-    server_config: web::Data<ServerConfig>,
-    rate_limiter: web::Data<StoreOtpIpRateLimiter>,
-) -> impl Responder {
-    let hub_id = match path.into_inner().hub_id.parse::<i32>() {
-        Ok(value) => value,
-        Err(_) => return HttpResponse::BadRequest().finish(),
-    };
-
-    if let Some(response) = rate_limit_otp_response(&req, hub_id, rate_limiter.get_ref()) {
-        return response;
-    }
-
-    let zmq_sender = &zmq_senders.get_ref().sms;
-
-    match request_store_otp(
-        hub_id,
-        payload.into_inner(),
-        repo.get_ref(),
-        zmq_sender,
-        &server_config.sms_sender,
-    )
-    .await
-    {
-        Ok(response) => HttpResponse::Ok().json(response),
-        Err(ServiceError::Form(message)) => {
-            HttpResponse::UnprocessableEntity().json(json!({ "error": message }))
-        }
-        Err(err) => {
-            error!("Failed to process OTP request for hub {hub_id}: {err}");
-            HttpResponse::InternalServerError().finish()
-        }
-    }
-}
-
-fn rate_limit_otp_response(
-    req: &HttpRequest,
-    hub_id: i32,
-    rate_limiter: &StoreOtpIpRateLimiter,
-) -> Option<HttpResponse> {
-    let exceeded = match rate_limiter.check(req) {
-        Ok(()) => return None,
-        Err(err) => err,
-    };
-
-    let mut retry_after_seconds = exceeded.retry_after.as_secs();
-    if exceeded.retry_after.subsec_nanos() > 0 {
-        retry_after_seconds = retry_after_seconds.saturating_add(1);
-    }
-    retry_after_seconds = retry_after_seconds.max(1);
-
-    info!(
-        "Storefront OTP request rate limited for hub {hub_id} from ip {} (retry-after={retry_after_seconds}s)",
-        exceeded.ip
-    );
-
-    Some(
-        HttpResponse::TooManyRequests()
-            .insert_header(("Retry-After", retry_after_seconds.to_string()))
-            .json(json!({ "error": "rate limit exceeded" })),
-    )
-}
-
-#[post("/{hub_id}/auth/otp/verify")]
-/// Verify a one-time password and establish a store session.
-///
-/// On success, persists the authenticated customer in the session.
-pub async fn verify_store_auth_otp(
-    path: web::Path<HubPath>,
-    payload: web::Json<StoreOtpVerifyPayload>,
-    repo: web::Data<DieselRepository>,
-    zmq_senders: web::Data<ZmqSenders>,
-    session: Session,
-) -> impl Responder {
-    let hub_id = match path.into_inner().hub_id.parse::<i32>() {
-        Ok(value) => value,
-        Err(_) => return HttpResponse::BadRequest().finish(),
-    };
-
-    if let Err(err) = get_store_customer_for_hub(&session, hub_id) {
-        error!(
-            "Failed to reset mismatched store session before OTP verification for hub {hub_id}: {err}"
-        );
-        return HttpResponse::InternalServerError().finish();
-    }
-
-    let zmq_sender = &zmq_senders.get_ref().clients;
-
-    match verify_store_otp(hub_id, payload.into_inner(), repo.get_ref(), zmq_sender).await {
-        Ok(response) => {
-            if let Err(err) = set_store_customer(&session, &response.customer) {
-                error!("Failed to persist store customer for hub {hub_id}: {err}");
-                return HttpResponse::InternalServerError().finish();
-            }
-
-            HttpResponse::Ok().json(response)
-        }
-        Err(ServiceError::Form(message)) => {
-            HttpResponse::UnprocessableEntity().json(json!({ "error": message }))
-        }
-        Err(err) => {
-            error!("Failed to verify OTP for hub {hub_id}: {err}");
-            HttpResponse::InternalServerError().finish()
-        }
-    }
-}
-
 #[post("/{hub_id}/orders")]
 /// Create a new storefront order.
 ///
@@ -332,18 +216,29 @@ pub async fn create_store_order_handler(
     path: web::Path<HubPath>,
     payload: web::Json<Vec<StoreOrderLinePayload>>,
     repo: web::Data<DieselRepository>,
-    session: Session,
+    req: HttpRequest,
+    server_config: web::Data<ServerConfig>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let store_customer = match get_store_customer_for_hub(&session, hub_id) {
+    let claims = match require_store_session_claims(&req, hub_id, &server_config.secret) {
+        Ok(claims) => claims,
+        Err(ServiceError::Unauthorized) => return HttpResponse::Unauthorized().finish(),
+        Err(err) => {
+            error!("Failed to decode store session for hub {hub_id}: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let store_customer = match resolve_store_customer_for_write(&claims, repo.get_ref(), true) {
         Ok(Some(customer)) => customer,
         Ok(None) => return HttpResponse::Unauthorized().finish(),
+        Err(ServiceError::Unauthorized) => return HttpResponse::Unauthorized().finish(),
         Err(err) => {
-            error!("Failed to read store session for hub {hub_id}: {err}");
+            error!("Failed to resolve local store customer for hub {hub_id}: {err}");
             return HttpResponse::InternalServerError().finish();
         }
     };
@@ -374,23 +269,34 @@ pub async fn list_store_orders_handler(
     path: web::Path<HubPath>,
     params: Option<web::Query<StoreOrdersQuery>>,
     repo: web::Data<DieselRepository>,
-    session: Session,
+    req: HttpRequest,
+    server_config: web::Data<ServerConfig>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let store_customer = match get_store_customer_for_hub(&session, hub_id) {
-        Ok(Some(customer)) => customer,
-        Ok(None) => return HttpResponse::Unauthorized().finish(),
+    let claims = match require_store_session_claims(&req, hub_id, &server_config.secret) {
+        Ok(claims) => claims,
+        Err(ServiceError::Unauthorized) => return HttpResponse::Unauthorized().finish(),
         Err(err) => {
-            error!("Failed to read store session for hub {hub_id}: {err}");
+            error!("Failed to decode store session for hub {hub_id}: {err}");
             return HttpResponse::InternalServerError().finish();
         }
     };
 
     let page = params.and_then(|query| query.page);
+    let Some(store_customer) = (match resolve_store_customer(&claims, repo.get_ref()) {
+        Ok(customer) => customer,
+        Err(ServiceError::Unauthorized) => return HttpResponse::Unauthorized().finish(),
+        Err(err) => {
+            error!("Failed to resolve local store customer for hub {hub_id}: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    }) else {
+        return HttpResponse::Ok().json(Vec::<StoreOrder>::new());
+    };
 
     match list_store_orders(hub_id, page, &store_customer, repo.get_ref()) {
         Ok(orders) => HttpResponse::Ok().json(orders),
@@ -408,7 +314,8 @@ pub async fn update_store_order_handler(
     path: web::Path<StoreOrderPath>,
     payload: web::Json<StoreOrderUpdatePayload>,
     repo: web::Data<DieselRepository>,
-    session: Session,
+    req: HttpRequest,
+    server_config: web::Data<ServerConfig>,
 ) -> impl Responder {
     let path = path.into_inner();
 
@@ -422,11 +329,21 @@ pub async fn update_store_order_handler(
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let store_customer = match get_store_customer_for_hub(&session, hub_id) {
+    let claims = match require_store_session_claims(&req, hub_id, &server_config.secret) {
+        Ok(claims) => claims,
+        Err(ServiceError::Unauthorized) => return HttpResponse::Unauthorized().finish(),
+        Err(err) => {
+            error!("Failed to decode store session for hub {hub_id}: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let store_customer = match resolve_store_customer_for_write(&claims, repo.get_ref(), false) {
         Ok(Some(customer)) => customer,
         Ok(None) => return HttpResponse::Unauthorized().finish(),
+        Err(ServiceError::Unauthorized) => return HttpResponse::Unauthorized().finish(),
         Err(err) => {
-            error!("Failed to read store session for hub {hub_id}: {err}");
+            error!("Failed to resolve local store customer for hub {hub_id}: {err}");
             return HttpResponse::InternalServerError().finish();
         }
     };
@@ -452,96 +369,29 @@ pub async fn update_store_order_handler(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn require_store_session_claims(
+    req: &HttpRequest,
+    hub_id: i32,
+    secret: &str,
+) -> Result<crate::domain::store_session::StoreSessionClaims, ServiceError> {
+    let cookie = req
+        .cookie(STORE_SESSION_COOKIE_NAME)
+        .ok_or(ServiceError::Unauthorized)?;
+    decode_store_session_cookie(cookie.value(), hub_id, secret)
+}
 
-    use actix_web::{App, body::to_bytes, http::StatusCode, test};
+fn read_optional_store_customer(
+    req: &HttpRequest,
+    hub_id: i32,
+    repo: &DieselRepository,
+    secret: &str,
+) -> Result<Option<crate::domain::customer::Customer>, ServiceError> {
+    let claims = req
+        .cookie(STORE_SESSION_COOKIE_NAME)
+        .and_then(|cookie| decode_store_session_cookie(cookie.value(), hub_id, secret).ok());
 
-    use crate::routes::rate_limit::{MAX_REQUESTS, StoreOtpIpRateLimiter};
-
-    #[post("/test/auth/otp")]
-    async fn rate_limited_test_endpoint(
-        req: HttpRequest,
-        rate_limiter: web::Data<StoreOtpIpRateLimiter>,
-    ) -> impl Responder {
-        if let Some(response) = rate_limit_otp_response(&req, 1, rate_limiter.get_ref()) {
-            return response;
-        }
-
-        HttpResponse::Ok().finish()
-    }
-
-    #[actix_web::test]
-    async fn rate_limit_otp_response_returns_429_with_retry_after_header() {
-        let limiter = StoreOtpIpRateLimiter::new();
-        let client_addr = "127.0.0.1:45678".parse().expect("valid socket address");
-        let hub_id = 1;
-        let req = test::TestRequest::default()
-            .peer_addr(client_addr)
-            .to_http_request();
-
-        for _ in 0..MAX_REQUESTS {
-            assert!(limiter.check(&req).is_ok());
-        }
-
-        let response = rate_limit_otp_response(&req, hub_id, &limiter)
-            .expect("request should be rate limited");
-
-        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-        let retry_after = response
-            .headers()
-            .get("Retry-After")
-            .expect("Retry-After header should exist")
-            .to_str()
-            .expect("Retry-After should be ASCII")
-            .parse::<u64>()
-            .expect("Retry-After should be numeric");
-        assert!(retry_after >= 1);
-
-        let body = to_bytes(response.into_body()).await.expect("response body");
-        let payload: serde_json::Value = serde_json::from_slice(&body).expect("json body");
-        assert_eq!(payload["error"], "rate limit exceeded");
-    }
-
-    #[actix_web::test]
-    async fn rate_limiter_route_returns_429_with_retry_after_header() {
-        let limiter = web::Data::new(StoreOtpIpRateLimiter::new());
-        let client_addr = "127.0.0.1:45678".parse().expect("valid socket address");
-        let seed_req = test::TestRequest::default()
-            .peer_addr(client_addr)
-            .to_http_request();
-
-        for _ in 0..MAX_REQUESTS {
-            assert!(limiter.check(&seed_req).is_ok());
-        }
-
-        let app = test::init_service(
-            App::new()
-                .app_data(limiter.clone())
-                .service(rate_limited_test_endpoint),
-        )
-        .await;
-
-        let req = test::TestRequest::post()
-            .uri("/test/auth/otp")
-            .peer_addr(client_addr)
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
-        let retry_after = resp
-            .headers()
-            .get("Retry-After")
-            .expect("Retry-After header should exist")
-            .to_str()
-            .expect("Retry-After should be ASCII")
-            .parse::<u64>()
-            .expect("Retry-After should be numeric");
-        assert!(retry_after >= 1);
-
-        let body = to_bytes(resp.into_body()).await.expect("response body");
-        let payload: serde_json::Value = serde_json::from_slice(&body).expect("json body");
-        assert_eq!(payload["error"], "rate limit exceeded");
+    match claims {
+        Some(claims) => resolve_store_customer(&claims, repo),
+        None => Ok(None),
     }
 }

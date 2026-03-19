@@ -5,9 +5,25 @@
 `pushkind-orders` is the Pushkind hub service for:
 
 - Hub-operator management pages (server-rendered via Tera) for browsing and maintaining orders and catalog data.
-- Customer-facing Store API (`/api/v1/store/{hub_id}`) for product browsing, OTP-based authentication, and order placement.
+- Customer-facing Store API (`/api/v1/store/{hub_id}`) for product browsing, JWT-authenticated customer access, and order placement.
 
 The system is implemented as an Actix Web application with Diesel (SQLite) and follows a layered architecture (domain → repository → services → routes/templates).
+
+## Storefront Auth Contract
+
+The feature spec [crm-direct-store-auth.md](/home/matrizaev/pushkind/specs/features/crm-direct-store-auth.md)
+defines the current storefront authentication split.
+
+- `pushkind-crm` is the owner of storefront auth endpoints and issuer of the browser `store-session` cookie.
+- Orders remains the owner of storefront catalog, pricing, and order endpoints.
+- Orders validates a dedicated storefront JWT from `store-session` and resolves a local customer from the claims.
+- The storefront JWT claim shape is:
+  - `sub`: CRM client `public_id` UUID string
+  - `hub_id`: hub identifier
+  - `name`: client display name
+  - `phone`: normalized E.164 phone number
+  - `email`: optional client email
+  - `exp`: expiration timestamp
 
 ## Actors and Roles
 
@@ -34,8 +50,9 @@ The system is implemented as an Actix Web application with Diesel (SQLite) and f
 
 ### Store customer (end user)
 
-- Authenticates via OTP (SMS) and is persisted in a dedicated cookie session (`store-session`).
-- Store session is scoped to a `hub_id`: if a session exists for a different hub, it is cleared.
+- Authenticates via `pushkind-crm`, which issues the `store-session` browser cookie.
+- Orders treats `store-session` as a JWT and authorizes storefront requests only when the token `hub_id` matches the requested hub.
+- Orders resolves the local `Customer` record by JWT `sub` (`public_id`) and may fall back to phone-based lookup during migration of legacy customer records.
 
 ## High-Level Architecture
 

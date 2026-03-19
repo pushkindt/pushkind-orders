@@ -1,41 +1,32 @@
-use chrono::{Duration, Utc};
-use log::info;
-use pushkind_common::{
-    pagination::DEFAULT_ITEMS_PER_PAGE,
-    zmq::{ZmqSenderExt, ZmqSenderTrait},
-};
-use pushkind_crm::models::zmq::ZmqClientMessage;
-use pushkind_sms::models::zmq::ZMQSendSmsMessage;
-use rand::RngExt;
+use chrono::Utc;
+use jsonwebtoken::{DecodingKey, Validation, decode};
+use pushkind_common::pagination::DEFAULT_ITEMS_PER_PAGE;
 
 use crate::domain::{
     category::CategoryTreeQuery,
-    customer::{Customer, NewCustomer},
+    customer::{Customer, NewCustomer, UpdateCustomer},
     order::{NewOrder, Order, OrderListQuery, OrderProduct, OrderStatus, UpdateOrder},
     price_level::PriceLevelListQuery,
-    store_otp::NewStoreOtp,
+    store_session::StoreSessionClaims,
     tag::TagListQuery,
-    types::{CategoryId, HubId, OrderId, PhoneNumber, ProductId, ProductQuantity, VendorId},
+    types::{
+        CategoryId, HubId, OrderId, PhoneNumber, ProductId, ProductQuantity, PublicId, VendorId,
+    },
     vendor::VendorListQuery,
 };
 pub use crate::dto::store::{
-    StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreOtpAcceptResponse,
-    StoreOtpVerifyResponse, StoreProduct, StoreProductFilters, StoreTag, StoreVendor,
+    StoreCategory, StoreCategoryFilters, StoreOrder, StoreOrderProduct, StoreProduct,
+    StoreProductFilters, StoreTag, StoreVendor,
 };
 use crate::forms::store::{
-    StoreOrderLinePayload, StoreOrderUpdateValues, StoreOtpRequestPayload, StoreOtpVerifyPayload,
-    validate_store_order_lines,
+    StoreOrderLinePayload, StoreOrderUpdateValues, validate_store_order_lines,
 };
 use crate::repository::{
     CategoryReader, CustomerReader, CustomerWriter, OrderReader, OrderWriter, PriceLevelReader,
-    ProductReader, StoreOtpRepository, TagReader, VendorOrderWriter, VendorReader,
+    ProductReader, TagReader, VendorOrderWriter, VendorReader,
 };
 use crate::services::{ServiceError, ServiceResult};
 
-const OTP_EXPIRY_MINUTES: i64 = 10;
-const OTP_THROTTLE_MINUTES: i64 = 2;
-const OTP_THROTTLE_MESSAGE: &str = "Подождите перед повторным запросом кода";
-const OTP_INVALID_MESSAGE: &str = "Неверный или просроченный код";
 const STORE_ORDER_EMPTY_ITEMS_MESSAGE: &str = "Заказ должен содержать хотя бы один товар";
 const STORE_ORDER_QUANTITY_MESSAGE: &str = "Количество должно быть больше нуля";
 const STORE_ORDER_PRODUCT_NOT_FOUND_MESSAGE: &str = "Товар не найден";
@@ -44,111 +35,90 @@ const STORE_ORDER_PRICE_UNAVAILABLE_MESSAGE: &str = "Цена товара не�
 const STORE_ORDER_MIXED_CURRENCIES_MESSAGE: &str = "Нельзя оформлять один заказ в разных валютах";
 const STORE_ORDER_INVALID_TOTAL_MESSAGE: &str = "Не удалось рассчитать сумму заказа";
 
-/// Accepts an OTP request for the given hub.
-pub async fn request_store_otp<R>(
+pub fn decode_store_session_cookie(
+    token: &str,
     hub_id: i32,
-    payload: StoreOtpRequestPayload,
-    repo: &R,
-    zmq_sender: &impl ZmqSenderTrait,
-    sms_sender: &str,
-) -> ServiceResult<StoreOtpAcceptResponse>
-where
-    R: StoreOtpRepository,
-{
-    let request = payload.into_request()?;
-    let hub_id = HubId::new(hub_id)?;
-    let phone = PhoneNumber::new(request.phone.clone())?;
+    secret: &str,
+) -> ServiceResult<StoreSessionClaims> {
+    let token_data = decode::<StoreSessionClaims>(
+        token,
+        &DecodingKey::from_secret(secret.as_ref()),
+        &Validation::default(),
+    )
+    .map_err(|_| ServiceError::Unauthorized)?;
 
-    let now = Utc::now().naive_utc();
-
-    if let Some(existing) = repo.get_store_otp(hub_id, &phone)?
-        && existing.last_sent_at + Duration::minutes(OTP_THROTTLE_MINUTES) > now
-    {
-        return Err(ServiceError::Form(OTP_THROTTLE_MESSAGE.to_string()));
+    let claims = token_data.claims;
+    if claims.matches_hub(hub_id) {
+        Ok(claims)
+    } else {
+        Err(ServiceError::Unauthorized)
     }
-
-    let code = format!("{:06}", rand::rng().random_range(0..1_000_000u32));
-    let expires_at = now + Duration::minutes(OTP_EXPIRY_MINUTES);
-    let otp_payload =
-        NewStoreOtp::try_new(hub_id.get(), phone.as_str(), code.clone(), expires_at, now)?;
-
-    repo.upsert_store_otp(&otp_payload)?;
-
-    let zmq_message = ZMQSendSmsMessage {
-        sender_id: sms_sender.to_string(),
-        phone_number: phone.as_str().to_string(),
-        message: format!("Your OTP is {code}"),
-    };
-
-    zmq_sender.send_json(&zmq_message).await?;
-
-    info!(
-        "Storefront OTP request accepted for hub {hub_id} and phone {}",
-        phone.as_str()
-    );
-
-    Ok(StoreOtpAcceptResponse { success: true })
 }
 
-/// Verifies an OTP submission for the given hub.
-pub async fn verify_store_otp<R>(
-    hub_id: i32,
-    payload: StoreOtpVerifyPayload,
+fn find_store_customer_by_claims<R>(
+    claims: &StoreSessionClaims,
     repo: &R,
-    zmq_sender: &impl ZmqSenderTrait,
-) -> ServiceResult<StoreOtpVerifyResponse>
+) -> ServiceResult<Option<Customer>>
 where
-    R: CustomerReader + CustomerWriter + StoreOtpRepository,
+    R: CustomerReader + ?Sized,
 {
-    let request = payload.into_request()?;
-    let hub_id = HubId::new(hub_id)?;
-    let phone = PhoneNumber::new(request.phone.clone())?;
-
-    let now = Utc::now().naive_utc();
-
-    let record = repo
-        .get_store_otp(hub_id, &phone)?
-        .ok_or_else(|| ServiceError::Form(OTP_INVALID_MESSAGE.to_string()))?;
-
-    if record.code.as_str() != request.otp {
-        return Err(ServiceError::Form(OTP_INVALID_MESSAGE.to_string()));
+    let hub_id = HubId::new(claims.hub_id)?;
+    let public_id = PublicId::new(claims.sub.clone()).map_err(|_| ServiceError::Unauthorized)?;
+    if let Some(customer) = repo.get_customer_by_public_id(&public_id, hub_id)? {
+        return Ok(Some(customer));
     }
 
-    if record.expires_at <= now {
-        return Err(ServiceError::Form(OTP_INVALID_MESSAGE.to_string()));
-    }
+    let phone = PhoneNumber::new(claims.phone.clone())?;
+    repo.get_customer_by_phone(&phone, hub_id)
+        .map_err(Into::into)
+}
 
-    repo.delete_store_otp(hub_id, &phone)?;
+pub fn resolve_store_customer<R>(
+    claims: &StoreSessionClaims,
+    repo: &R,
+) -> ServiceResult<Option<Customer>>
+where
+    R: CustomerReader + ?Sized,
+{
+    find_store_customer_by_claims(claims, repo)
+}
 
-    let customer = match repo.get_customer_by_phone(&phone, hub_id)? {
-        Some(customer) => customer,
-        None => {
-            let new_customer = NewCustomer::try_new(hub_id.get(), phone.as_str(), phone.as_str())?;
+pub fn resolve_store_customer_for_write<R>(
+    claims: &StoreSessionClaims,
+    repo: &R,
+    create_missing: bool,
+) -> ServiceResult<Option<Customer>>
+where
+    R: CustomerReader + CustomerWriter + ?Sized,
+{
+    let existing = find_store_customer_by_claims(claims, repo)?;
+    let hub_id = HubId::new(claims.hub_id)?;
+    let public_id = PublicId::new(claims.sub.clone()).map_err(|_| ServiceError::Unauthorized)?;
 
-            repo.create_customer(&new_customer)?
+    match existing {
+        Some(customer) if customer.public_id.is_none() => {
+            let updates = UpdateCustomer {
+                name: customer.name.clone(),
+                price_level_id: customer.price_level_id,
+                public_id: Some(public_id),
+            };
+            repo.update_customer(customer.id, hub_id, &updates)
+                .map(Some)
+                .map_err(Into::into)
         }
-    };
+        Some(customer) if customer.public_id.as_ref() == Some(&public_id) => Ok(Some(customer)),
+        Some(_) => Err(ServiceError::Unauthorized),
+        None if !create_missing => Ok(None),
+        None => {
+            let new_customer =
+                NewCustomer::try_new(hub_id.get(), claims.name.clone(), claims.phone.clone())?
+                    .with_public_id(public_id);
 
-    let message = ZmqClientMessage {
-        hub_id: hub_id.get(),
-        name: customer.name.as_str().to_string(),
-        email: None,
-        phone: Some(customer.phone.as_str().to_string()),
-        fields: None,
-    };
-
-    zmq_sender.send_json(&message).await?;
-
-    info!(
-        "Storefront OTP verification for hub {hub_id} with phone {} and code {}",
-        phone.as_str(),
-        request.otp
-    );
-
-    Ok(StoreOtpVerifyResponse {
-        success: true,
-        customer,
-    })
+            repo.create_customer(&new_customer)
+                .map(Some)
+                .map_err(Into::into)
+        }
+    }
 }
 /// Resolves the default price level ID for a hub.
 fn resolve_default_price_level_id<R>(hub_id: i32, repo: &R) -> ServiceResult<Option<i32>>
@@ -315,7 +285,6 @@ fn map_store_order_validation_error(err: crate::forms::store::StoreFormError) ->
 
             ServiceError::Form(message.to_string())
         }
-        other => ServiceError::Form(other.to_string()),
     }
 }
 
@@ -549,18 +518,6 @@ where
     Ok(formatted)
 }
 
-/// Ensures the customer stored in the store session still exists in the database.
-pub fn load_store_session_customer<R>(
-    session_customer: &Customer,
-    repo: &R,
-) -> ServiceResult<Customer>
-where
-    R: CustomerReader + ?Sized,
-{
-    repo.get_customer_by_id(session_customer.id, session_customer.hub_id)?
-        .ok_or(ServiceError::Unauthorized)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -572,37 +529,25 @@ mod tests {
     };
     use crate::domain::{
         category::Category,
-        customer::{Customer, CustomerListQuery},
+        customer::Customer,
         order::{Order as DomainOrder, OrderStatus as DomainOrderStatus, UpdateOrder},
         price_level::{PriceLevel, PriceLevelListQuery},
         product::{Product, ProductListQuery},
         product_price_level::ProductPriceLevelRate,
-        store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
         tag::Tag,
-        types::{OtpCode, PhoneNumber},
+        types::PhoneNumber,
         vendor::Vendor,
     };
     use crate::dto::store::{StoreCategoryFilters, StoreProductFilters};
-    use crate::forms::store::{
-        StoreOrderLinePayload, StoreOrderUpdateValues, StoreOtpRequestPayload,
-        StoreOtpVerifyPayload,
-    };
+    use crate::forms::store::{StoreOrderLinePayload, StoreOrderUpdateValues};
     use crate::repository::mock::{
-        MockCategoryReader, MockCustomerReader, MockCustomerWriter, MockOrderReader,
-        MockOrderWriter, MockPriceLevelReader, MockProductReader, MockStoreOtpRepository,
-        MockVendorOrderWriter, MockVendorReader,
+        MockCategoryReader, MockOrderReader, MockOrderWriter, MockPriceLevelReader,
+        MockProductReader, MockVendorOrderWriter, MockVendorReader,
     };
-    use crate::repository::{
-        CustomerReader, CustomerWriter, OrderReader, OrderWriter, StoreOtpRepository,
-        VendorOrderWriter, VendorReader,
-    };
+    use crate::repository::{OrderReader, OrderWriter, VendorOrderWriter, VendorReader};
     use chrono::NaiveDateTime;
 
     use pushkind_common::repository::errors::RepositoryResult;
-    use pushkind_common::zmq::{SendFuture, ZmqSenderError, ZmqSenderTrait};
-    use pushkind_crm::models::zmq::ZmqClientMessage;
-    use serde_json;
-    use std::sync::{Arc, Mutex};
 
     struct MockStoreOrderRepo {
         product_reader: MockProductReader,
@@ -769,30 +714,6 @@ mod tests {
             name: TagName::new(name).unwrap(),
             created_at: sample_timestamp(),
             updated_at: sample_timestamp(),
-        }
-    }
-
-    fn phone_number(value: &str) -> PhoneNumber {
-        PhoneNumber::new(value).unwrap()
-    }
-
-    fn otp_code(value: &str) -> OtpCode {
-        OtpCode::new(value).unwrap()
-    }
-
-    struct MockOtpRequestRepo {
-        customer_reader: MockCustomerReader,
-        customer_writer: MockCustomerWriter,
-        otp_repository: MockStoreOtpRepository,
-    }
-
-    impl MockOtpRequestRepo {
-        fn new() -> Self {
-            Self {
-                customer_reader: MockCustomerReader::new(),
-                customer_writer: MockCustomerWriter::new(),
-                otp_repository: MockStoreOtpRepository::new(),
-            }
         }
     }
 
@@ -1474,84 +1395,6 @@ mod tests {
         assert!(orders.is_empty());
     }
 
-    impl CustomerReader for MockOtpRequestRepo {
-        fn get_customer_by_id(
-            &self,
-            id: CustomerId,
-            hub_id: HubId,
-        ) -> RepositoryResult<Option<Customer>> {
-            self.customer_reader.get_customer_by_id(id, hub_id)
-        }
-
-        fn get_customer_by_phone(
-            &self,
-            phone: &PhoneNumber,
-            hub_id: HubId,
-        ) -> RepositoryResult<Option<Customer>> {
-            self.customer_reader.get_customer_by_phone(phone, hub_id)
-        }
-
-        fn list_customers(
-            &self,
-            query: CustomerListQuery,
-        ) -> RepositoryResult<(usize, Vec<Customer>)> {
-            self.customer_reader.list_customers(query)
-        }
-    }
-
-    impl CustomerWriter for MockOtpRequestRepo {
-        fn create_customer(
-            &self,
-            new_customer: &crate::domain::customer::NewCustomer,
-        ) -> RepositoryResult<Customer> {
-            self.customer_writer.create_customer(new_customer)
-        }
-
-        fn assign_price_level_to_customers(
-            &self,
-            hub_id: HubId,
-            customer_ids: &[CustomerId],
-            price_level_id: Option<PriceLevelId>,
-        ) -> RepositoryResult<()> {
-            self.customer_writer.assign_price_level_to_customers(
-                hub_id,
-                customer_ids,
-                price_level_id,
-            )
-        }
-
-        fn update_customer(
-            &self,
-            customer_id: CustomerId,
-            hub_id: HubId,
-            updates: &crate::domain::customer::UpdateCustomer,
-        ) -> RepositoryResult<Customer> {
-            self.customer_writer
-                .update_customer(customer_id, hub_id, updates)
-        }
-    }
-
-    impl StoreOtpRepository for MockOtpRequestRepo {
-        fn get_store_otp(
-            &self,
-            hub_id: HubId,
-            phone: &PhoneNumber,
-        ) -> RepositoryResult<Option<DomainStoreOtp>> {
-            self.otp_repository.get_store_otp(hub_id, phone)
-        }
-
-        fn upsert_store_otp(
-            &self,
-            new_otp: &DomainNewStoreOtp,
-        ) -> RepositoryResult<DomainStoreOtp> {
-            self.otp_repository.upsert_store_otp(new_otp)
-        }
-
-        fn delete_store_otp(&self, hub_id: HubId, phone: &PhoneNumber) -> RepositoryResult<()> {
-            self.otp_repository.delete_store_otp(hub_id, phone)
-        }
-    }
-
     fn sample_customer() -> Customer {
         Customer {
             id: CustomerId::new(1).unwrap(),
@@ -1560,388 +1403,6 @@ mod tests {
             phone: PhoneNumber::new("+15551234").unwrap(),
             price_level_id: None,
             public_id: None,
-        }
-    }
-
-    #[test]
-    fn load_store_session_customer_returns_database_customer() {
-        let mut repo = MockCustomerReader::new();
-        let expected = sample_customer();
-        let match_sample = expected.clone();
-        let return_sample = expected.clone();
-        repo.expect_get_customer_by_id()
-            .withf(move |id, hub_id| {
-                id.get() == match_sample.id.get() && hub_id.get() == match_sample.hub_id.get()
-            })
-            .return_once(move |_, _| Ok(Some(return_sample)));
-
-        let customer = load_store_session_customer(&expected, &repo).expect("expected customer");
-
-        assert_eq!(customer, expected);
-    }
-
-    #[test]
-    fn load_store_session_customer_rejects_missing_customer() {
-        let mut repo = MockCustomerReader::new();
-        repo.expect_get_customer_by_id()
-            .return_once(|_, _| Ok(None));
-
-        let result = load_store_session_customer(&sample_customer(), &repo);
-
-        assert!(matches!(result, Err(ServiceError::Unauthorized)));
-    }
-
-    #[derive(Clone)]
-    struct TestZmqSender {
-        recorded: Arc<Mutex<Vec<ZMQSendSmsMessage>>>,
-    }
-
-    impl TestZmqSender {
-        fn new() -> Self {
-            Self {
-                recorded: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-
-        fn messages(&self) -> Arc<Mutex<Vec<ZMQSendSmsMessage>>> {
-            Arc::clone(&self.recorded)
-        }
-    }
-
-    impl ZmqSenderTrait for TestZmqSender {
-        fn send_bytes<'a>(&'a self, bytes: Vec<u8>) -> SendFuture<'a> {
-            let recorded = Arc::clone(&self.recorded);
-            Box::pin(async move {
-                let msg: ZMQSendSmsMessage =
-                    serde_json::from_slice(&bytes).map_err(ZmqSenderError::Serialize)?;
-                recorded.lock().unwrap().push(msg);
-                Ok(())
-            })
-        }
-
-        fn try_send_bytes(&self, bytes: Vec<u8>) -> Result<(), ZmqSenderError> {
-            let msg: ZMQSendSmsMessage =
-                serde_json::from_slice(&bytes).map_err(ZmqSenderError::Serialize)?;
-            self.recorded.lock().unwrap().push(msg);
-            Ok(())
-        }
-
-        fn send_multipart<'a>(&'a self, frames: Vec<Vec<u8>>) -> SendFuture<'a> {
-            let recorded = Arc::clone(&self.recorded);
-            Box::pin(async move {
-                let mut iter = frames.into_iter();
-                iter.next();
-                if let Some(payload) = iter.next() {
-                    let msg: ZMQSendSmsMessage =
-                        serde_json::from_slice(&payload).map_err(ZmqSenderError::Serialize)?;
-                    recorded.lock().unwrap().push(msg);
-                    Ok(())
-                } else {
-                    Err(ZmqSenderError::QueueFull)
-                }
-            })
-        }
-    }
-
-    #[derive(Clone)]
-    struct TestZmqClientSender {
-        recorded: Arc<Mutex<Vec<ZmqClientMessage>>>,
-    }
-
-    impl TestZmqClientSender {
-        fn new() -> Self {
-            Self {
-                recorded: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-
-        fn messages(&self) -> Arc<Mutex<Vec<ZmqClientMessage>>> {
-            Arc::clone(&self.recorded)
-        }
-    }
-
-    impl ZmqSenderTrait for TestZmqClientSender {
-        fn send_bytes<'a>(&'a self, bytes: Vec<u8>) -> SendFuture<'a> {
-            let recorded = Arc::clone(&self.recorded);
-            Box::pin(async move {
-                let msg: ZmqClientMessage =
-                    serde_json::from_slice(&bytes).map_err(ZmqSenderError::Serialize)?;
-                recorded.lock().unwrap().push(msg);
-                Ok(())
-            })
-        }
-
-        fn try_send_bytes(&self, bytes: Vec<u8>) -> Result<(), ZmqSenderError> {
-            let msg: ZmqClientMessage =
-                serde_json::from_slice(&bytes).map_err(ZmqSenderError::Serialize)?;
-            self.recorded.lock().unwrap().push(msg);
-            Ok(())
-        }
-
-        fn send_multipart<'a>(&'a self, frames: Vec<Vec<u8>>) -> SendFuture<'a> {
-            let recorded = Arc::clone(&self.recorded);
-            Box::pin(async move {
-                let mut iter = frames.into_iter();
-                iter.next();
-                if let Some(payload) = iter.next() {
-                    let msg: ZmqClientMessage =
-                        serde_json::from_slice(&payload).map_err(ZmqSenderError::Serialize)?;
-                    recorded.lock().unwrap().push(msg);
-                    Ok(())
-                } else {
-                    Err(ZmqSenderError::QueueFull)
-                }
-            })
-        }
-    }
-
-    #[actix_web::rt::test]
-    async fn request_store_otp_accepts_first_request() {
-        let phone = "+15551234".to_string();
-        let payload = StoreOtpRequestPayload {
-            phone: phone.clone(),
-        };
-
-        let mut repo = MockStoreOtpRepository::new();
-        repo.expect_get_store_otp()
-            .withf(|hub_id, phone| hub_id.get() == 99 && phone.as_str() == "+15551234")
-            .return_once(|_, _| Ok(None));
-        repo.expect_upsert_store_otp()
-            .withf(|new_otp| {
-                new_otp.code.as_str().len() == 6
-                    && new_otp.code.as_str().chars().all(|ch| ch.is_ascii_digit())
-            })
-            .return_once(|new_otp| {
-                Ok(DomainStoreOtp {
-                    hub_id: new_otp.hub_id,
-                    phone: new_otp.phone.clone(),
-                    code: new_otp.code.clone(),
-                    expires_at: new_otp.expires_at,
-                    last_sent_at: new_otp.last_sent_at,
-                })
-            });
-
-        let zmq_sender = TestZmqSender::new();
-        let sms_sender = "test-sms-sender".to_string();
-
-        let response = request_store_otp(99, payload, &repo, &zmq_sender, &sms_sender)
-            .await
-            .expect("expected success");
-
-        let recorded = zmq_sender.messages();
-        let guard = recorded.lock().unwrap();
-        assert_eq!(guard.len(), 1);
-        let message = &guard[0];
-        assert_eq!(message.sender_id, sms_sender);
-        assert_eq!(message.phone_number, phone);
-        assert!(message.message.starts_with("Your OTP is "));
-
-        assert!(response.success);
-    }
-
-    #[actix_web::rt::test]
-    async fn request_store_otp_throttles_recent_requests() {
-        let payload = StoreOtpRequestPayload {
-            phone: "+15551234".to_string(),
-        };
-
-        let mut repo = MockStoreOtpRepository::new();
-        repo.expect_get_store_otp().return_once(|_, _| {
-            Ok(Some(DomainStoreOtp {
-                hub_id: HubId::new(99).unwrap(),
-                phone: phone_number("+15551234"),
-                code: otp_code("123456"),
-                expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
-                last_sent_at: Utc::now().naive_utc(),
-            }))
-        });
-        repo.expect_upsert_store_otp().never();
-
-        let zmq_sender = TestZmqSender::new();
-        let sms_sender = "test-sms-sender".to_string();
-
-        let result = request_store_otp(99, payload, &repo, &zmq_sender, &sms_sender).await;
-
-        match result {
-            Err(ServiceError::Form(message)) => assert_eq!(message, OTP_THROTTLE_MESSAGE),
-            other => panic!("unexpected result: {:?}", other),
-        }
-
-        assert!(zmq_sender.messages().lock().unwrap().is_empty());
-    }
-
-    #[actix_web::rt::test]
-    async fn verify_store_otp_checks_code_and_expiry() {
-        let payload = StoreOtpVerifyPayload {
-            phone: "+15551234".to_string(),
-            otp: "123456".to_string(),
-        };
-
-        let mut repo = MockOtpRequestRepo::new();
-        repo.otp_repository
-            .expect_get_store_otp()
-            .return_once(|_, _| {
-                Ok(Some(DomainStoreOtp {
-                    hub_id: HubId::new(1).unwrap(),
-                    phone: phone_number("+15551234"),
-                    code: otp_code("123456"),
-                    expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
-                    last_sent_at: Utc::now().naive_utc(),
-                }))
-            });
-        repo.otp_repository
-            .expect_delete_store_otp()
-            .withf(|hub_id, phone| hub_id.get() == 1 && phone.as_str() == "+15551234")
-            .return_once(|_, _| Ok(()));
-        repo.otp_repository.expect_upsert_store_otp().never();
-        repo.customer_reader
-            .expect_get_customer_by_phone()
-            .return_once(|_, _| Ok(Some(sample_customer())));
-        repo.customer_writer.expect_create_customer().never();
-
-        let zmq_sender = TestZmqClientSender::new();
-
-        let response = verify_store_otp(1, payload, &repo, &zmq_sender)
-            .await
-            .expect("expected success");
-
-        assert!(!zmq_sender.messages().lock().unwrap().is_empty());
-
-        assert!(response.success);
-        assert_eq!(response.customer, sample_customer());
-    }
-
-    #[actix_web::rt::test]
-    async fn verify_store_otp_creates_customer_when_missing() {
-        let payload = StoreOtpVerifyPayload {
-            phone: "+15551234".to_string(),
-            otp: "123456".to_string(),
-        };
-        let created_customer = Customer {
-            id: CustomerId::new(1).unwrap(),
-            hub_id: HubId::new(1).unwrap(),
-            name: CustomerName::new("+15551234").unwrap(),
-            phone: PhoneNumber::new("+15551234").unwrap(),
-            price_level_id: None,
-            public_id: None,
-        };
-
-        let mut repo = MockOtpRequestRepo::new();
-        repo.otp_repository
-            .expect_get_store_otp()
-            .return_once(|_, _| {
-                Ok(Some(DomainStoreOtp {
-                    hub_id: HubId::new(1).unwrap(),
-                    phone: phone_number("+15551234"),
-                    code: otp_code("123456"),
-                    expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
-                    last_sent_at: Utc::now().naive_utc(),
-                }))
-            });
-        repo.otp_repository
-            .expect_delete_store_otp()
-            .withf(|hub_id, phone| hub_id.get() == 1 && phone.as_str() == "+15551234")
-            .return_once(|_, _| Ok(()));
-        repo.otp_repository.expect_upsert_store_otp().never();
-        repo.customer_reader
-            .expect_get_customer_by_phone()
-            .return_once(|_, _| Ok(None));
-        repo.customer_writer
-            .expect_create_customer()
-            .withf(|new_customer| {
-                new_customer.hub_id.get() == 1
-                    && new_customer.phone.as_str() == "+15551234"
-                    && new_customer.name.as_str() == "+15551234"
-            })
-            .return_once({
-                let created_customer = created_customer.clone();
-                move |_| Ok(created_customer)
-            });
-
-        let zmq_sender = TestZmqClientSender::new();
-
-        let response = verify_store_otp(1, payload, &repo, &zmq_sender)
-            .await
-            .expect("expected success");
-
-        let recorded = zmq_sender.messages();
-        let guard = recorded.lock().unwrap();
-        assert_eq!(guard.len(), 1);
-        let message = &guard[0];
-        assert_eq!(message.hub_id, 1);
-        assert_eq!(message.name, "+15551234");
-        assert_eq!(message.email.as_deref(), None);
-        assert_eq!(message.phone.as_deref(), Some("+15551234"));
-
-        assert!(response.success);
-        assert_eq!(response.customer, created_customer);
-    }
-
-    #[actix_web::rt::test]
-    async fn verify_store_otp_rejects_invalid_code() {
-        let payload = StoreOtpVerifyPayload {
-            phone: "+15551234".to_string(),
-            otp: "000000".to_string(),
-        };
-
-        let mut repo = MockOtpRequestRepo::new();
-        repo.otp_repository
-            .expect_get_store_otp()
-            .return_once(|_, _| {
-                Ok(Some(DomainStoreOtp {
-                    hub_id: HubId::new(1).unwrap(),
-                    phone: phone_number("+15551234"),
-                    code: otp_code("123456"),
-                    expires_at: Utc::now().naive_utc() + Duration::minutes(OTP_EXPIRY_MINUTES),
-                    last_sent_at: Utc::now().naive_utc(),
-                }))
-            });
-        repo.otp_repository.expect_delete_store_otp().never();
-        repo.otp_repository.expect_upsert_store_otp().never();
-        repo.customer_reader.expect_get_customer_by_phone().never();
-        repo.customer_writer.expect_create_customer().never();
-        repo.customer_reader.expect_get_customer_by_phone().never();
-        repo.customer_writer.expect_create_customer().never();
-
-        let zmq_sender = TestZmqClientSender::new();
-
-        let result = verify_store_otp(1, payload, &repo, &zmq_sender).await;
-
-        match result {
-            Err(ServiceError::Form(message)) => assert_eq!(message, OTP_INVALID_MESSAGE),
-            other => panic!("unexpected result: {:?}", other),
-        }
-    }
-
-    #[actix_web::rt::test]
-    async fn verify_store_otp_rejects_expired_code() {
-        let payload = StoreOtpVerifyPayload {
-            phone: "+15551234".to_string(),
-            otp: "123456".to_string(),
-        };
-
-        let mut repo = MockOtpRequestRepo::new();
-        repo.otp_repository
-            .expect_get_store_otp()
-            .return_once(|_, _| {
-                Ok(Some(DomainStoreOtp {
-                    hub_id: HubId::new(1).unwrap(),
-                    phone: phone_number("+15551234"),
-                    code: otp_code("123456"),
-                    expires_at: Utc::now().naive_utc() - Duration::minutes(1),
-                    last_sent_at: Utc::now().naive_utc(),
-                }))
-            });
-        repo.otp_repository.expect_delete_store_otp().never();
-        repo.otp_repository.expect_upsert_store_otp().never();
-
-        let zmq_sender = TestZmqClientSender::new();
-
-        let result = verify_store_otp(1, payload, &repo, &zmq_sender).await;
-
-        match result {
-            Err(ServiceError::Form(message)) => assert_eq!(message, OTP_INVALID_MESSAGE),
-            other => panic!("unexpected result: {:?}", other),
         }
     }
 

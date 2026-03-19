@@ -7,7 +7,7 @@ pub mod price_level;
 pub mod product;
 pub mod product_price_level;
 pub mod product_tag;
-pub mod store_otp;
+pub mod store_session;
 pub mod tag;
 pub mod types;
 pub mod user;
