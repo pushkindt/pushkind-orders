@@ -14,11 +14,10 @@ use crate::domain::{
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
-    store_otp::{NewStoreOtp as DomainNewStoreOtp, StoreOtp as DomainStoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
     types::{
         CategoryId, CategoryName, CustomerId, HubId, ImageUrl, OrderId, PhoneNumber, PriceLevelId,
-        ProductId, TagId, UserEmail, UserId, VendorId,
+        ProductId, PublicId, TagId, UserEmail, UserId, VendorId,
     },
     user::{NewUser, UpdateUser, User},
     vendor::{NewVendor, UpdateVendor, Vendor, VendorListQuery},
@@ -29,7 +28,6 @@ pub mod customer;
 pub mod order;
 pub mod price_level;
 pub mod product;
-pub mod store_otp;
 pub mod tag;
 pub mod user;
 pub mod vendor;
@@ -49,6 +47,12 @@ pub trait CustomerReader {
     fn get_customer_by_phone(
         &self,
         phone: &PhoneNumber,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<Customer>>;
+    /// Retrieve a customer by public identifier within a hub.
+    fn get_customer_by_public_id(
+        &self,
+        public_id: &PublicId,
         hub_id: HubId,
     ) -> RepositoryResult<Option<Customer>>;
     /// List customers matching the query with pagination and search.
@@ -73,20 +77,6 @@ pub trait CustomerWriter {
         hub_id: HubId,
         updates: &UpdateCustomer,
     ) -> RepositoryResult<Customer>;
-}
-
-/// Persistence operations for storefront OTP records.
-pub trait StoreOtpRepository {
-    /// Retrieve an OTP record by hub ID and phone number.
-    fn get_store_otp(
-        &self,
-        hub_id: HubId,
-        phone: &PhoneNumber,
-    ) -> RepositoryResult<Option<DomainStoreOtp>>;
-    /// Insert or update an OTP record.
-    fn upsert_store_otp(&self, new_otp: &DomainNewStoreOtp) -> RepositoryResult<DomainStoreOtp>;
-    /// Delete an OTP record by hub ID and phone number.
-    fn delete_store_otp(&self, hub_id: HubId, phone: &PhoneNumber) -> RepositoryResult<()>;
 }
 
 #[derive(Clone)]

@@ -260,6 +260,14 @@ mod tests {
             self.customers.get_customer_by_phone(phone, hub_id)
         }
 
+        fn get_customer_by_public_id(
+            &self,
+            public_id: &crate::domain::types::PublicId,
+            hub_id: HubId,
+        ) -> RepositoryResult<Option<Customer>> {
+            self.customers.get_customer_by_public_id(public_id, hub_id)
+        }
+
         fn list_customers(
             &self,
             query: crate::domain::customer::CustomerListQuery,

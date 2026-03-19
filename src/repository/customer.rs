@@ -7,7 +7,7 @@ use pushkind_common::repository::errors::{RepositoryError, RepositoryResult};
 use crate::domain::customer::UpdateCustomer;
 use crate::{
     domain::customer::{Customer as DomainCustomer, NewCustomer as DomainNewCustomer},
-    domain::types::{CustomerId, HubId, PhoneNumber, PriceLevelId},
+    domain::types::{CustomerId, HubId, PhoneNumber, PriceLevelId, PublicId},
     models::customer::{
         Customer as DbCustomer, NewCustomer as DbNewCustomer, UpdateCustomer as DbUpdateCustomer,
     },
@@ -43,6 +43,23 @@ impl CustomerReader for DieselRepository {
         let customer = customers::table
             .filter(customers::hub_id.eq(hub_id.get()))
             .filter(customers::phone.eq(phone.as_str()))
+            .first::<DbCustomer>(&mut conn)
+            .optional()?;
+
+        Ok(customer.map(DomainCustomer::try_from).transpose()?)
+    }
+
+    fn get_customer_by_public_id(
+        &self,
+        public_id: &PublicId,
+        hub_id: HubId,
+    ) -> RepositoryResult<Option<DomainCustomer>> {
+        use crate::schema::customers;
+
+        let mut conn = self.conn()?;
+        let customer = customers::table
+            .filter(customers::hub_id.eq(hub_id.get()))
+            .filter(customers::public_id.eq(public_id.as_str()))
             .first::<DbCustomer>(&mut conn)
             .optional()?;
 

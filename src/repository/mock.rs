@@ -4,10 +4,9 @@ use mockall::mock;
 
 use super::{
     CategoryReader, CategoryWriter, CustomerListQuery, CustomerReader, CustomerWriter, OrderReader,
-    OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter,
-    StoreOtpRepository, TagReader, TagWriter, UserListQuery, UserReader, UserWriter,
-    VendorOrderReader, VendorOrderWriter, VendorReader, VendorUserReader, VendorUserWriter,
-    VendorWriter,
+    OrderWriter, PriceLevelReader, PriceLevelWriter, ProductReader, ProductWriter, TagReader,
+    TagWriter, UserListQuery, UserReader, UserWriter, VendorOrderReader, VendorOrderWriter,
+    VendorReader, VendorUserReader, VendorUserWriter, VendorWriter,
 };
 use crate::domain::{
     category::{Category, CategoryTreeQuery, NewCategory, UpdateCategory},
@@ -16,11 +15,10 @@ use crate::domain::{
     price_level::{NewPriceLevel, PriceLevel, PriceLevelListQuery, UpdatePriceLevel},
     product::{NewProduct, Product, ProductListQuery, UpdateProduct},
     product_price_level::NewProductPriceLevelRate,
-    store_otp::{NewStoreOtp, StoreOtp},
     tag::{NewTag, Tag, TagListQuery, UpdateTag},
     types::{
         CategoryId, CategoryName, CustomerId, HubId, ImageUrl, OrderId, PhoneNumber, PriceCents,
-        PriceLevelId, ProductId, TagId, UserEmail, UserId, VendorId,
+        PriceLevelId, ProductId, PublicId, TagId, UserEmail, UserId, VendorId,
     },
     user::{NewUser, UpdateUser, User},
     vendor::{NewVendor, UpdateVendor, Vendor, VendorListQuery},
@@ -56,6 +54,7 @@ mock! {
     impl CustomerReader for CustomerReader {
         fn get_customer_by_id(&self, id: CustomerId, hub_id: HubId) -> RepositoryResult<Option<Customer>>;
         fn get_customer_by_phone(&self, phone: &PhoneNumber, hub_id: HubId) -> RepositoryResult<Option<Customer>>;
+        fn get_customer_by_public_id(&self, public_id: &PublicId, hub_id: HubId) -> RepositoryResult<Option<Customer>>;
         fn list_customers(&self, query: CustomerListQuery) -> RepositoryResult<(usize, Vec<Customer>)>;
     }
 }
@@ -177,16 +176,6 @@ mock! {
         fn create_category(&self, new_category: &NewCategory) -> RepositoryResult<Category>;
         fn update_category(&self, category_id: CategoryId, hub_id: HubId, updates: &UpdateCategory) -> RepositoryResult<Category>;
         fn delete_category(&self, category_id: CategoryId, hub_id: HubId) -> RepositoryResult<()>;
-    }
-}
-
-mock! {
-    pub StoreOtpRepository {}
-
-    impl StoreOtpRepository for StoreOtpRepository {
-        fn get_store_otp(&self, hub_id: HubId, phone: &PhoneNumber) -> RepositoryResult<Option<StoreOtp>>;
-        fn upsert_store_otp(&self, new_otp: &NewStoreOtp) -> RepositoryResult<StoreOtp>;
-        fn delete_store_otp(&self, hub_id: HubId, phone: &PhoneNumber) -> RepositoryResult<()>;
     }
 }
 

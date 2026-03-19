@@ -34,9 +34,6 @@ pub enum TypeConstraintError {
     /// Phone number did not meet expected format.
     #[error("invalid phone number")]
     InvalidPhone,
-    /// OTP code is not six ASCII digits.
-    #[error("invalid OTP code")]
-    InvalidOtpCode,
     /// Order status string failed to parse to a valid enum.
     #[error("invalid order status")]
     InvalidOrderStatus,
@@ -606,58 +603,6 @@ impl TryFrom<&str> for PhoneNumber {
 
 impl From<PhoneNumber> for String {
     fn from(value: PhoneNumber) -> Self {
-        value.0
-    }
-}
-
-/// Six-digit one-time password wrapper.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct OtpCode(String);
-
-impl OtpCode {
-    /// Ensures the code is exactly six ASCII digits.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, TypeConstraintError> {
-        let code = value.into();
-        if code.len() == 6 && code.chars().all(|c| c.is_ascii_digit()) {
-            Ok(Self(code))
-        } else {
-            Err(TypeConstraintError::InvalidOtpCode)
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl Display for OtpCode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TryFrom<String> for OtpCode {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<&str> for OtpCode {
-    type Error = TypeConstraintError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<OtpCode> for String {
-    fn from(value: OtpCode) -> Self {
         value.0
     }
 }

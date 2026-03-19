@@ -11,10 +11,9 @@ use pushkind_common::db::establish_connection_pool;
 use pushkind_common::middleware::RedirectUnauthorized;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::routes::{logout, not_assigned};
-use pushkind_common::zmq::{ZmqSender, ZmqSenderOptions};
 use tera::Tera;
 
-use crate::models::config::{ServerConfig, ZmqSenders};
+use crate::models::config::ServerConfig;
 use crate::repository::DieselRepository;
 use crate::routes::api::{
     api_v1_client_price_levels, api_v1_orders, api_v1_update_client_price_level,
@@ -31,13 +30,11 @@ use crate::routes::price_levels::{
     show_price_levels,
 };
 use crate::routes::products::{add_product, edit_product, show_products, upload_products};
-use crate::routes::rate_limit::{StoreOtpIpRateLimiter, TRUST_FORWARDED_HEADERS};
 use crate::routes::store::{
     create_store_order_handler, get_store_product, list_store_categories,
     list_store_orders_handler, list_store_products, list_store_tags, list_store_vendors,
-    request_store_auth_otp, update_store_order_handler, verify_store_auth_otp,
+    update_store_order_handler,
 };
-use crate::routes::store_session::get_store_session;
 use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_edit_tag_modal, show_tags};
 use crate::routes::vendors::{
     add_vendor, assign_vendor_user, clear_vendor_user, delete_vendor, edit_vendor,
@@ -65,19 +62,6 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
         secret: server_config.secret.clone(),
     };
 
-    // Start background ZeroMQ publishers used for outbound notifications.
-    let sms_sender = ZmqSender::start(ZmqSenderOptions::pub_default(&server_config.zmq_sms_pub))
-        .map_err(|e| std::io::Error::other(format!("Failed to start ZMQ SMS sender: {e}")))?;
-    let clients_sender = ZmqSender::start(ZmqSenderOptions::pub_default(
-        &server_config.zmq_clients_pub,
-    ))
-    .map_err(|e| std::io::Error::other(format!("Failed to start ZMQ clients sender: {e}")))?;
-
-    let zmq_senders = web::Data::new(ZmqSenders {
-        sms: sms_sender,
-        clients: clients_sender,
-    });
-
     // Establish Diesel connection pool for the SQLite database.
     let pool = establish_connection_pool(&server_config.database_url).map_err(|e| {
         std::io::Error::other(format!("Failed to establish database connection: {e}"))
@@ -95,13 +79,6 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
         .map_err(|e| std::io::Error::other(format!("Template parsing error(s): {e}")))?;
 
     let bind_address = (server_config.address.clone(), server_config.port);
-    let store_otp_rate_limiter = web::Data::new(StoreOtpIpRateLimiter::new());
-    if !TRUST_FORWARDED_HEADERS {
-        log::warn!(
-            "Store OTP rate limiter uses peer_addr() for client IP. \
-If this service runs behind a trusted reverse proxy, set TRUST_FORWARDED_HEADERS=true in src/routes/rate_limit.rs."
-        );
-    }
 
     HttpServer::new(move || {
         App::new()
@@ -120,17 +97,6 @@ If this service runs behind a trusted reverse proxy, set TRUST_FORWARDED_HEADERS
             .service(not_assigned)
             .service(
                 web::scope("/api/v1/store")
-                    .app_data(store_otp_rate_limiter.clone())
-                    .wrap(
-                        SessionMiddleware::builder(
-                            CookieSessionStore::default(),
-                            secret_key.clone(),
-                        )
-                        .cookie_name("store-session".to_string())
-                        .cookie_secure(false)
-                        .cookie_domain(Some(format!(".{}", server_config.domain)))
-                        .build(),
-                    )
                     .service(list_store_products)
                     .service(get_store_product)
                     .service(list_store_categories)
@@ -138,10 +104,7 @@ If this service runs behind a trusted reverse proxy, set TRUST_FORWARDED_HEADERS
                     .service(update_store_order_handler)
                     .service(list_store_tags)
                     .service(list_store_vendors)
-                    .service(request_store_auth_otp)
-                    .service(verify_store_auth_otp)
-                    .service(create_store_order_handler)
-                    .service(get_store_session),
+                    .service(create_store_order_handler),
             )
             .service(
                 web::scope("/api")
@@ -189,7 +152,6 @@ If this service runs behind a trusted reverse proxy, set TRUST_FORWARDED_HEADERS
             )
             .app_data(web::Data::new(tera.clone()))
             .app_data(web::Data::new(repo.clone()))
-            .app_data(zmq_senders.clone())
             .app_data(web::Data::new(common_config.clone()))
             .app_data(web::Data::new(server_config.clone()))
     })
