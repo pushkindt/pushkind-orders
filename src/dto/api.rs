@@ -9,14 +9,7 @@ use crate::domain::{
     price_level::PriceLevel, product::Product, tag::Tag, user::User, vendor::Vendor,
 };
 use crate::dto::products::ProductView;
-use crate::forms::categories::{CategoryFormError, FormFieldError as CategoryFormFieldError};
-use crate::forms::orders::{
-    EditOrderFormError, FormFieldError as OrderFormFieldError, UpdateOrderApprovalsFormError,
-};
-use crate::forms::price_levels::{FormFieldError as PriceLevelFormFieldError, PriceLevelFormError};
-use crate::forms::products::{FormFieldError as ProductFormFieldError, ProductFormError};
-use crate::forms::tags::{FormFieldError as TagFormFieldError, TagFormError};
-use crate::forms::vendors::{FormFieldError as VendorFormFieldError, VendorFormError};
+use crate::forms::FormError;
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct ApiFieldErrorDto {
@@ -40,89 +33,9 @@ impl Default for ApiMutationErrorDto {
 }
 
 impl ApiMutationErrorDto {
-    fn from_order_field_errors(
+    fn from_field_errors(
         message: impl Into<String>,
-        field_errors: impl IntoIterator<Item = OrderFormFieldError>,
-    ) -> Self {
-        Self {
-            message: message.into(),
-            field_errors: field_errors
-                .into_iter()
-                .map(|error| ApiFieldErrorDto {
-                    field: error.field.into_owned(),
-                    message: error.message.into_owned(),
-                })
-                .collect(),
-        }
-    }
-
-    fn from_product_field_errors(
-        message: impl Into<String>,
-        field_errors: impl IntoIterator<Item = ProductFormFieldError>,
-    ) -> Self {
-        Self {
-            message: message.into(),
-            field_errors: field_errors
-                .into_iter()
-                .map(|error| ApiFieldErrorDto {
-                    field: error.field.into_owned(),
-                    message: error.message.into_owned(),
-                })
-                .collect(),
-        }
-    }
-
-    fn from_category_field_errors(
-        message: impl Into<String>,
-        field_errors: impl IntoIterator<Item = CategoryFormFieldError>,
-    ) -> Self {
-        Self {
-            message: message.into(),
-            field_errors: field_errors
-                .into_iter()
-                .map(|error| ApiFieldErrorDto {
-                    field: error.field.into_owned(),
-                    message: error.message.into_owned(),
-                })
-                .collect(),
-        }
-    }
-
-    fn from_tag_field_errors(
-        message: impl Into<String>,
-        field_errors: impl IntoIterator<Item = TagFormFieldError>,
-    ) -> Self {
-        Self {
-            message: message.into(),
-            field_errors: field_errors
-                .into_iter()
-                .map(|error| ApiFieldErrorDto {
-                    field: error.field.into_owned(),
-                    message: error.message.into_owned(),
-                })
-                .collect(),
-        }
-    }
-
-    fn from_price_level_field_errors(
-        message: impl Into<String>,
-        field_errors: impl IntoIterator<Item = PriceLevelFormFieldError>,
-    ) -> Self {
-        Self {
-            message: message.into(),
-            field_errors: field_errors
-                .into_iter()
-                .map(|error| ApiFieldErrorDto {
-                    field: error.field.into_owned(),
-                    message: error.message.into_owned(),
-                })
-                .collect(),
-        }
-    }
-
-    fn from_vendor_field_errors(
-        message: impl Into<String>,
-        field_errors: impl IntoIterator<Item = VendorFormFieldError>,
+        field_errors: impl IntoIterator<Item = crate::forms::FormFieldError>,
     ) -> Self {
         Self {
             message: message.into(),
@@ -137,45 +50,9 @@ impl ApiMutationErrorDto {
     }
 }
 
-impl From<&EditOrderFormError> for ApiMutationErrorDto {
-    fn from(error: &EditOrderFormError) -> Self {
-        Self::from_order_field_errors(error.to_string(), error.field_errors())
-    }
-}
-
-impl From<&UpdateOrderApprovalsFormError> for ApiMutationErrorDto {
-    fn from(error: &UpdateOrderApprovalsFormError) -> Self {
-        Self::from_order_field_errors(error.to_string(), error.field_errors())
-    }
-}
-
-impl From<&ProductFormError> for ApiMutationErrorDto {
-    fn from(error: &ProductFormError) -> Self {
-        Self::from_product_field_errors(error.to_string(), error.field_errors())
-    }
-}
-
-impl From<&CategoryFormError> for ApiMutationErrorDto {
-    fn from(error: &CategoryFormError) -> Self {
-        Self::from_category_field_errors(error.to_string(), error.field_errors())
-    }
-}
-
-impl From<&TagFormError> for ApiMutationErrorDto {
-    fn from(error: &TagFormError) -> Self {
-        Self::from_tag_field_errors(error.to_string(), error.field_errors())
-    }
-}
-
-impl From<&PriceLevelFormError> for ApiMutationErrorDto {
-    fn from(error: &PriceLevelFormError) -> Self {
-        Self::from_price_level_field_errors(error.to_string(), error.field_errors())
-    }
-}
-
-impl From<&VendorFormError> for ApiMutationErrorDto {
-    fn from(error: &VendorFormError) -> Self {
-        Self::from_vendor_field_errors(error.to_string(), error.field_errors())
+impl From<&FormError> for ApiMutationErrorDto {
+    fn from(error: &FormError) -> Self {
+        Self::from_field_errors(error.to_string(), error.field_errors())
     }
 }
 
@@ -1155,7 +1032,7 @@ mod tests {
         .validate()
         .expect_err("form should be invalid");
 
-        let dto = ApiMutationErrorDto::from(&EditOrderFormError::from(error));
+        let dto = ApiMutationErrorDto::from(&FormError::from(error));
 
         assert_eq!(
             dto.field_errors,
@@ -1184,7 +1061,10 @@ mod tests {
 
         let dto = ApiMutationErrorDto::from(&error);
 
-        assert_eq!(dto.message, "Ошибка валидации формы.");
+        assert_eq!(
+            dto.message,
+            "Ошибка валидации формы: Количество должно быть положительным целым."
+        );
         assert_eq!(
             dto.field_errors,
             vec![ApiFieldErrorDto {

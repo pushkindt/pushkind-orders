@@ -1,11 +1,10 @@
-use std::{borrow::Cow, collections::HashMap, io::Seek};
+use std::{collections::HashMap, io::Seek};
 
 use actix_multipart::form::{MultipartForm, tempfile::TempFile};
 use csv::{StringRecord, Trim};
 use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::{Deserialize, Deserializer, de::Error as DeError};
-use thiserror::Error;
-use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
+use validator::Validate;
 
 use crate::domain::{
     price_level::PriceLevel,
@@ -15,6 +14,7 @@ use crate::domain::{
         ProductSku, ProductUnits, VendorId,
     },
 };
+use crate::forms::FormError;
 
 fn sanitize_image_urls(input: Option<String>) -> Vec<ImageUrl> {
     input
@@ -57,117 +57,7 @@ where
 }
 
 /// Result type returned by the product form helpers.
-pub type ProductFormResult<T> = Result<T, ProductFormError>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FormFieldError {
-    pub field: Cow<'static, str>,
-    pub message: Cow<'static, str>,
-}
-
-/// Errors that can occur while processing product forms.
-#[derive(Debug, Error)]
-pub enum ProductFormError {
-    /// Validation failures from the `validator` crate.
-    #[error("{}", validation_errors_display(.0))]
-    Validation(#[from] ValidationErrors),
-    /// The submitted product identifier does not match the resource route.
-    #[error("Идентификатор товара указан неверно.")]
-    ProductIdMismatch,
-    /// The provided name is empty after sanitization.
-    #[error("Название товара указано неверно.")]
-    EmptyName,
-    /// The provided description is empty after sanitization.
-    #[error("Описание товара указано неверно.")]
-    EmptyDescription,
-    /// The provided currency code is invalid.
-    #[error("Валюта товара указана неверно.")]
-    InvalidCurrency,
-    /// The provided SKU is invalid.
-    #[error("Артикул указан неверно.")]
-    InvalidSku,
-    /// The provided units value is invalid.
-    #[error("Единица измерения указана неверно.")]
-    InvalidUnits,
-    #[error("Объём товара указан неверно.")]
-    InvalidAmount,
-    /// The uploaded CSV is missing required columns.
-    #[error("CSV-файл должен содержать столбцы name и currency.")]
-    MissingRequiredHeaders,
-    /// A CSV row did not include a product name.
-    #[error("В строке {row} не указано название товара.")]
-    UploadMissingName { row: usize },
-    /// A CSV row did not include a currency code.
-    #[error("В строке {row} не указана валюта товара.")]
-    UploadMissingCurrency { row: usize },
-    /// A CSV row contained an invalid currency code.
-    #[error("В строке {row} указана некорректная валюта: {value}.")]
-    UploadInvalidCurrency { row: usize, value: String },
-    /// A CSV row contained an invalid price for a price level.
-    #[error("В строке {row} указана некорректная цена {value} для уровня «{price_level}».")]
-    UploadInvalidPrice {
-        row: usize,
-        price_level: String,
-        value: String,
-    },
-    /// The form referenced a price level that does not exist.
-    #[error("Уровень цены указан неверно.")]
-    UnknownPriceLevel { price_level_id: i32 },
-    /// A provided price could not be parsed for the specified price level.
-    #[error("Цена для уровня «{price_level}» указана неверно.")]
-    InvalidPriceLevelAmount { price_level: String, value: String },
-    /// The uploaded CSV did not contain any usable products.
-    #[error("CSV-файл не содержит товаров для загрузки.")]
-    EmptyUpload,
-    /// CSV parsing failures.
-    #[error("Не удалось прочитать CSV-файл: {0}")]
-    Csv(#[from] csv::Error),
-    /// File system failures while reading the uploaded payload.
-    #[error("Не удалось прочитать загруженный файл: {0}")]
-    FileRead(#[from] std::io::Error),
-    /// The provided category identifier could not be parsed.
-    #[error("Категория указана неверно.")]
-    InvalidCategoryId { value: String },
-    /// The provided vendor identifier could not be parsed.
-    #[error("Поставщик указан неверно.")]
-    InvalidVendorId { value: String },
-}
-
-impl ProductFormError {
-    pub fn field_errors(&self) -> Vec<FormFieldError> {
-        match self {
-            Self::Validation(errors) => collect_validation_errors(errors),
-            Self::ProductIdMismatch => {
-                vec![field_error("product_id", self.to_string())]
-            }
-            Self::EmptyName => vec![field_error("name", self.to_string())],
-            Self::EmptyDescription => {
-                vec![field_error("description", self.to_string())]
-            }
-            Self::InvalidCurrency => vec![field_error("currency", self.to_string())],
-            Self::InvalidSku => vec![field_error("sku", self.to_string())],
-            Self::InvalidUnits => vec![field_error("units", self.to_string())],
-            Self::InvalidAmount => vec![field_error("amount", self.to_string())],
-            Self::MissingRequiredHeaders
-            | Self::UploadMissingName { .. }
-            | Self::UploadMissingCurrency { .. }
-            | Self::UploadInvalidCurrency { .. }
-            | Self::UploadInvalidPrice { .. }
-            | Self::EmptyUpload
-            | Self::Csv(_)
-            | Self::FileRead(_) => vec![field_error("csv", self.to_string())],
-            Self::UnknownPriceLevel { .. } | Self::InvalidPriceLevelAmount { .. } => {
-                vec![field_error("price_levels", self.to_string())]
-            }
-            Self::InvalidCategoryId { .. } => {
-                vec![field_error("category_id", self.to_string())]
-            }
-            Self::InvalidVendorId { .. } => {
-                vec![field_error("vendor_id", self.to_string())]
-            }
-        }
-    }
-}
+pub type ProductFormResult<T> = Result<T, FormError>;
 
 /// Form payload emitted when submitting the "Add product" form.
 #[derive(Debug, Deserialize, Validate)]
@@ -224,7 +114,7 @@ pub struct AddProductPriceLevelForm {
 }
 
 impl<'a> TryFrom<(AddProductForm, i32, &'a [PriceLevel])> for AddProductPayload {
-    type Error = ProductFormError;
+    type Error = FormError;
 
     fn try_from(value: (AddProductForm, i32, &'a [PriceLevel])) -> Result<Self, Self::Error> {
         let (form, hub_id, price_levels) = value;
@@ -244,7 +134,7 @@ impl<'a> TryFrom<(AddProductForm, i32, &'a [PriceLevel])> for AddProductPayload 
             amount,
         } = form;
 
-        let name = ProductName::new(name).map_err(|_| ProductFormError::EmptyName)?;
+        let name = ProductName::new(name).map_err(|_| FormError::InvalidProductName)?;
 
         let sanitized_sku = sku
             .as_deref()
@@ -258,66 +148,55 @@ impl<'a> TryFrom<(AddProductForm, i32, &'a [PriceLevel])> for AddProductPayload 
 
         let currency = currency.trim();
         if currency.is_empty() {
-            return Err(ProductFormError::InvalidCurrency);
+            return Err(FormError::InvalidProductCurrency);
         }
         let currency = currency.to_ascii_uppercase();
 
         let currency =
-            CurrencyCode::new(currency).map_err(|_| ProductFormError::InvalidCurrency)?;
+            CurrencyCode::new(currency).map_err(|_| FormError::InvalidProductCurrency)?;
 
-        let hub_id = HubId::new(hub_id).map_err(|_| ProductFormError::InvalidCategoryId {
-            value: hub_id.to_string(),
-        })?;
+        let hub_id = HubId::new(hub_id).map_err(|_| FormError::InvalidProductCategoryId)?;
 
         let mut new_product = NewProduct::new(hub_id, name, currency);
 
         if let Some(sku) = sanitized_sku {
-            let sku = ProductSku::new(sku).map_err(|_| ProductFormError::InvalidSku)?;
+            let sku = ProductSku::new(sku).map_err(|_| FormError::InvalidProductSku)?;
             new_product = new_product.with_sku(sku);
         }
 
         if let Some(description) = description {
             let description = ProductDescription::new(&description)
-                .map_err(|_| ProductFormError::EmptyDescription)?;
+                .map_err(|_| FormError::InvalidProductDescription)?;
             new_product = new_product.with_description(description);
         }
 
         if let Some(units) = sanitized_units {
-            let units = ProductUnits::new(units).map_err(|_| ProductFormError::InvalidUnits)?;
+            let units = ProductUnits::new(units).map_err(|_| FormError::InvalidProductUnits)?;
             new_product = new_product.with_units(units);
         }
 
         if let Some(category_id) = category_id {
             if category_id > 0 {
-                let category_id = CategoryId::new(category_id).map_err(|_| {
-                    ProductFormError::InvalidCategoryId {
-                        value: category_id.to_string(),
-                    }
-                })?;
+                let category_id = CategoryId::new(category_id)
+                    .map_err(|_| FormError::InvalidProductCategoryId)?;
                 new_product = new_product.with_category_id(category_id);
             } else if category_id < 0 {
-                return Err(ProductFormError::InvalidCategoryId {
-                    value: category_id.to_string(),
-                });
+                return Err(FormError::InvalidProductCategoryId);
             }
         }
 
         if let Some(vendor_id) = vendor_id {
             if vendor_id > 0 {
                 let vendor_id =
-                    VendorId::new(vendor_id).map_err(|_| ProductFormError::InvalidVendorId {
-                        value: vendor_id.to_string(),
-                    })?;
+                    VendorId::new(vendor_id).map_err(|_| FormError::InvalidProductVendorId)?;
                 new_product = new_product.with_vendor_id(vendor_id);
             } else if vendor_id < 0 {
-                return Err(ProductFormError::InvalidVendorId {
-                    value: vendor_id.to_string(),
-                });
+                return Err(FormError::InvalidProductVendorId);
             }
         }
 
         if let Some(amount) = amount {
-            let amount = ProductAmount::new(amount).map_err(|_| ProductFormError::InvalidAmount)?;
+            let amount = ProductAmount::new(amount).map_err(|_| FormError::InvalidProductAmount)?;
             new_product = new_product.with_amount(amount);
         }
 
@@ -331,8 +210,13 @@ impl<'a> TryFrom<(AddProductForm, i32, &'a [PriceLevel])> for AddProductPayload 
             .collect();
 
         let mut parsed_price_levels = Vec::new();
-        for entry in price_level_entries {
-            entry.validate()?;
+        for (index, entry) in price_level_entries.into_iter().enumerate() {
+            entry
+                .validate()
+                .map_err(|errors| FormError::PrefixedValidation {
+                    prefix: format!("price_levels.{index}"),
+                    errors,
+                })?;
 
             let raw_price = entry.price;
             let trimmed = raw_price.trim();
@@ -341,13 +225,13 @@ impl<'a> TryFrom<(AddProductForm, i32, &'a [PriceLevel])> for AddProductPayload 
             }
 
             let price_level = price_level_map.get(&entry.price_level_id).ok_or(
-                ProductFormError::UnknownPriceLevel {
+                FormError::UnknownProductPriceLevel {
                     price_level_id: entry.price_level_id,
                 },
             )?;
 
             let price_cents = parse_price_to_cents(trimmed).ok_or_else(|| {
-                ProductFormError::InvalidPriceLevelAmount {
+                FormError::InvalidProductPriceLevelAmount {
                     price_level: price_level.name.as_str().to_string(),
                     value: raw_price.to_string(),
                 }
@@ -426,10 +310,10 @@ impl UploadProductsForm {
 
         let name_index = header_indexes
             .name_index
-            .ok_or(ProductFormError::MissingRequiredHeaders)?;
+            .ok_or(FormError::MissingProductUploadHeaders)?;
         let currency_index = header_indexes
             .currency_index
-            .ok_or(ProductFormError::MissingRequiredHeaders)?;
+            .ok_or(FormError::MissingProductUploadHeaders)?;
 
         let price_level_columns = locate_price_level_headers(&headers, price_levels);
 
@@ -443,13 +327,13 @@ impl UploadProductsForm {
 
             let raw_name = record.get(name_index).unwrap_or("").trim();
             if raw_name.is_empty() {
-                return Err(ProductFormError::UploadMissingName { row: row_number });
+                return Err(FormError::ProductUploadMissingName { row: row_number });
             }
             let sanitized_name = raw_name;
 
             let currency_raw = record.get(currency_index).unwrap_or("").trim();
             if currency_raw.is_empty() {
-                return Err(ProductFormError::UploadMissingCurrency { row: row_number });
+                return Err(FormError::ProductUploadMissingCurrency { row: row_number });
             }
 
             let currency = currency_raw.to_ascii_uppercase();
@@ -487,12 +371,11 @@ impl UploadProductsForm {
                 .filter(|value| !value.is_empty())
                 .map(str::to_string);
 
-            let hub_id = HubId::new(hub_id).map_err(|_| ProductFormError::InvalidCategoryId {
-                value: hub_id.to_string(),
-            })?;
-            let name = ProductName::new(sanitized_name).map_err(|_| ProductFormError::EmptyName)?;
+            let hub_id = HubId::new(hub_id).map_err(|_| FormError::InvalidProductCategoryId)?;
+            let name =
+                ProductName::new(sanitized_name).map_err(|_| FormError::InvalidProductName)?;
             let currency = CurrencyCode::new(currency).map_err(|_| {
-                ProductFormError::UploadInvalidCurrency {
+                FormError::ProductUploadInvalidCurrency {
                     row: row_number,
                     value: currency_raw.to_string(),
                 }
@@ -501,24 +384,24 @@ impl UploadProductsForm {
             let mut product = NewProduct::new(hub_id, name, currency);
 
             if let Some(sku) = sku {
-                let sku = ProductSku::new(sku).map_err(|_| ProductFormError::InvalidSku)?;
+                let sku = ProductSku::new(sku).map_err(|_| FormError::InvalidProductSku)?;
                 product = product.with_sku(sku);
             }
 
             if let Some(description) = description {
                 let description = ProductDescription::new(&description)
-                    .map_err(|_| ProductFormError::EmptyDescription)?;
+                    .map_err(|_| FormError::InvalidProductDescription)?;
                 product = product.with_description(description);
             }
 
             if let Some(units) = units {
-                let units = ProductUnits::new(units).map_err(|_| ProductFormError::InvalidUnits)?;
+                let units = ProductUnits::new(units).map_err(|_| FormError::InvalidProductUnits)?;
                 product = product.with_units(units);
             }
 
             if let Some(amount) = amount {
                 let amount =
-                    ProductAmount::new(amount).map_err(|_| ProductFormError::InvalidAmount)?;
+                    ProductAmount::new(amount).map_err(|_| FormError::InvalidProductAmount)?;
                 product = product.with_amount(amount);
             }
 
@@ -530,7 +413,7 @@ impl UploadProductsForm {
                 }
 
                 let price_cents = parse_price_to_cents(value).ok_or_else(|| {
-                    ProductFormError::UploadInvalidPrice {
+                    FormError::ProductUploadInvalidPrice {
                         row: row_number,
                         price_level: column.price_level.name.as_str().to_string(),
                         value: value.to_string(),
@@ -553,7 +436,7 @@ impl UploadProductsForm {
         }
 
         if processed_rows == 0 || products.is_empty() {
-            return Err(ProductFormError::EmptyUpload);
+            return Err(FormError::EmptyProductUpload);
         }
 
         Ok(products)
@@ -561,7 +444,7 @@ impl UploadProductsForm {
 }
 
 impl<'a> TryFrom<(UploadProductsForm, i32, &'a [PriceLevel])> for UploadProductsPayload {
-    type Error = ProductFormError;
+    type Error = FormError;
 
     fn try_from(value: (UploadProductsForm, i32, &'a [PriceLevel])) -> Result<Self, Self::Error> {
         let (mut form, hub_id, price_levels) = value;
@@ -644,7 +527,7 @@ pub struct EditProductPayload {
 }
 
 impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
-    type Error = ProductFormError;
+    type Error = FormError;
 
     fn try_from(value: (EditProductForm, &'a [PriceLevel])) -> Result<Self, Self::Error> {
         let (form, price_levels) = value;
@@ -666,30 +549,30 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
             amount,
         } = form;
 
-        let name = ProductName::new(name).map_err(|_| ProductFormError::EmptyName)?;
+        let name = ProductName::new(name).map_err(|_| FormError::InvalidProductName)?;
 
         let currency = currency.trim();
         if currency.is_empty() {
-            return Err(ProductFormError::InvalidCurrency);
+            return Err(FormError::InvalidProductCurrency);
         }
         let currency = currency.to_ascii_uppercase();
 
         let currency =
-            CurrencyCode::new(currency).map_err(|_| ProductFormError::InvalidCurrency)?;
+            CurrencyCode::new(currency).map_err(|_| FormError::InvalidProductCurrency)?;
 
         let mut updates = UpdateProduct::new(name, currency, is_archived);
 
         if let Some(sku) = sku {
             let trimmed = sku.trim();
             if !trimmed.is_empty() {
-                let sku = ProductSku::new(trimmed).map_err(|_| ProductFormError::InvalidSku)?;
+                let sku = ProductSku::new(trimmed).map_err(|_| FormError::InvalidProductSku)?;
                 updates = updates.with_sku(sku);
             }
         }
 
         if let Some(description) = description {
             let description = ProductDescription::new(&description)
-                .map_err(|_| ProductFormError::EmptyDescription)?;
+                .map_err(|_| FormError::InvalidProductDescription)?;
             updates = updates.with_description(description);
         }
 
@@ -697,44 +580,35 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
             let trimmed = units.trim();
             if !trimmed.is_empty() {
                 let units =
-                    ProductUnits::new(trimmed).map_err(|_| ProductFormError::InvalidUnits)?;
+                    ProductUnits::new(trimmed).map_err(|_| FormError::InvalidProductUnits)?;
                 updates = updates.with_units(units);
             }
         }
 
         if let Some(category_raw) = category_id {
             if category_raw > 0 {
-                let category_id = CategoryId::new(category_raw).map_err(|_| {
-                    ProductFormError::InvalidCategoryId {
-                        value: category_raw.to_string(),
-                    }
-                })?;
+                let category_id = CategoryId::new(category_raw)
+                    .map_err(|_| FormError::InvalidProductCategoryId)?;
                 updates = updates.with_category_id(category_id);
             } else if category_raw < 0 {
-                return Err(ProductFormError::InvalidCategoryId {
-                    value: category_raw.to_string(),
-                });
+                return Err(FormError::InvalidProductCategoryId);
             }
         }
 
         if let Some(vendor_raw) = vendor_id {
             if vendor_raw > 0 {
                 let vendor_id =
-                    VendorId::new(vendor_raw).map_err(|_| ProductFormError::InvalidVendorId {
-                        value: vendor_raw.to_string(),
-                    })?;
+                    VendorId::new(vendor_raw).map_err(|_| FormError::InvalidProductVendorId)?;
                 updates = updates.with_vendor_id(vendor_id);
             } else if vendor_raw == 0 {
                 updates = updates.clear_vendor();
             } else {
-                return Err(ProductFormError::InvalidVendorId {
-                    value: vendor_raw.to_string(),
-                });
+                return Err(FormError::InvalidProductVendorId);
             }
         }
 
         if let Some(amount) = amount {
-            let amount = ProductAmount::new(amount).map_err(|_| ProductFormError::InvalidAmount)?;
+            let amount = ProductAmount::new(amount).map_err(|_| FormError::InvalidProductAmount)?;
             updates = updates.with_amount(amount);
         }
 
@@ -749,8 +623,13 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
             .map(|level| (level.id.get(), level))
             .collect();
         let mut parsed_price_levels = Vec::new();
-        for entry in price_level_entries {
-            entry.validate()?;
+        for (index, entry) in price_level_entries.into_iter().enumerate() {
+            entry
+                .validate()
+                .map_err(|errors| FormError::PrefixedValidation {
+                    prefix: format!("price_levels.{index}"),
+                    errors,
+                })?;
 
             let EditProductPriceLevelForm {
                 price_level_id,
@@ -765,10 +644,10 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
 
             let price_level = price_level_map
                 .get(&price_level_id)
-                .ok_or(ProductFormError::UnknownPriceLevel { price_level_id })?;
+                .ok_or(FormError::UnknownProductPriceLevel { price_level_id })?;
 
             let price_cents = parse_price_to_cents(trimmed).ok_or_else(|| {
-                ProductFormError::InvalidPriceLevelAmount {
+                FormError::InvalidProductPriceLevelAmount {
                     price_level: price_level.name.as_str().to_string(),
                     value: raw_price.to_string(),
                 }
@@ -884,88 +763,6 @@ fn parse_price_to_cents(input: &str) -> Option<i32> {
     i32::try_from(cents).ok()
 }
 
-fn collect_validation_errors(errors: &ValidationErrors) -> Vec<FormFieldError> {
-    let mut collected = Vec::new();
-    collect_validation_errors_with_prefix(None, errors, &mut collected);
-    collected
-}
-
-fn collect_validation_errors_with_prefix(
-    prefix: Option<&str>,
-    errors: &ValidationErrors,
-    collected: &mut Vec<FormFieldError>,
-) {
-    for (field, kind) in errors.errors() {
-        match kind {
-            ValidationErrorsKind::Field(field_errors) => {
-                let field_name = match prefix {
-                    Some(prefix) => format!("{prefix}.{field}"),
-                    None => field.to_string(),
-                };
-
-                for error in field_errors {
-                    collected.push(owned_field_error(
-                        field_name.clone(),
-                        validation_error_message(error),
-                    ));
-                }
-            }
-            ValidationErrorsKind::Struct(nested) => {
-                let nested_prefix = match prefix {
-                    Some(prefix) => format!("{prefix}.{field}"),
-                    None => field.to_string(),
-                };
-
-                collect_validation_errors_with_prefix(Some(&nested_prefix), nested, collected);
-            }
-            ValidationErrorsKind::List(items) => {
-                for (index, nested) in items {
-                    let nested_prefix = match prefix {
-                        Some(prefix) => format!("{prefix}.{field}.{index}"),
-                        None => format!("{field}.{index}"),
-                    };
-
-                    collect_validation_errors_with_prefix(Some(&nested_prefix), nested, collected);
-                }
-            }
-        }
-    }
-}
-
-fn validation_error_message(error: &ValidationError) -> Cow<'static, str> {
-    error
-        .message
-        .clone()
-        .unwrap_or(Cow::Borrowed("Поле заполнено некорректно."))
-}
-
-fn validation_errors_display(errors: &ValidationErrors) -> String {
-    let messages = collect_validation_errors(errors)
-        .into_iter()
-        .map(|error| error.message.into_owned())
-        .collect::<Vec<_>>();
-
-    if messages.is_empty() {
-        "Ошибка валидации формы.".to_string()
-    } else {
-        format!("Ошибка валидации формы: {}", messages.join("; "))
-    }
-}
-
-fn field_error(field: &'static str, message: impl Into<Cow<'static, str>>) -> FormFieldError {
-    FormFieldError {
-        field: Cow::Borrowed(field),
-        message: message.into(),
-    }
-}
-
-fn owned_field_error(field: String, message: impl Into<Cow<'static, str>>) -> FormFieldError {
-    FormFieldError {
-        field: Cow::Owned(field),
-        message: message.into(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1063,7 +860,7 @@ mod tests {
 
         let result: ProductFormResult<AddProductPayload> = (form, 1, &[][..]).try_into();
 
-        assert!(matches!(result, Err(ProductFormError::EmptyName)));
+        assert!(matches!(result, Err(FormError::InvalidProductName)));
     }
 
     #[test]
@@ -1084,7 +881,7 @@ mod tests {
 
         let result: ProductFormResult<AddProductPayload> = (form, 1, &[][..]).try_into();
 
-        assert!(matches!(result, Err(ProductFormError::InvalidCurrency)));
+        assert!(matches!(result, Err(FormError::InvalidProductCurrency)));
     }
 
     #[test]
@@ -1111,7 +908,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(ProductFormError::InvalidPriceLevelAmount { price_level, value })
+            Err(FormError::InvalidProductPriceLevelAmount { price_level, value })
                 if price_level == "Retail" && value == "oops"
         ));
     }
@@ -1140,7 +937,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(ProductFormError::UnknownPriceLevel { price_level_id }) if price_level_id == 999
+            Err(FormError::UnknownProductPriceLevel { price_level_id }) if price_level_id == 999
         ));
     }
 
@@ -1199,7 +996,7 @@ Banana,usd,,Ripe banana,,8.50,
 
         assert!(matches!(
             result,
-            Err(ProductFormError::MissingRequiredHeaders)
+            Err(FormError::MissingProductUploadHeaders)
         ));
     }
 
@@ -1212,7 +1009,7 @@ Banana,usd,,Ripe banana,,8.50,
 
         assert!(matches!(
             result,
-            Err(ProductFormError::UploadMissingCurrency { row: 2 })
+            Err(FormError::ProductUploadMissingCurrency { row: 2 })
         ));
     }
 
@@ -1226,7 +1023,7 @@ Banana,usd,,Ripe banana,,8.50,
 
         assert!(matches!(
             result,
-            Err(ProductFormError::UploadInvalidPrice {
+            Err(FormError::ProductUploadInvalidPrice {
                 row: 2,
                 price_level,
                 value
@@ -1356,6 +1153,6 @@ Banana,usd,,Ripe banana,,8.50,
 
         let result: ProductFormResult<EditProductPayload> = (form, &[][..]).try_into();
 
-        assert!(matches!(result, Err(ProductFormError::InvalidCurrency)));
+        assert!(matches!(result, Err(FormError::InvalidProductCurrency)));
     }
 }

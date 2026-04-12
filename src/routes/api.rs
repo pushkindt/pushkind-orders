@@ -18,12 +18,12 @@ use crate::dto::price_levels::PriceLevelsQuery;
 use crate::dto::products::ProductsQuery;
 use crate::dto::tags::TagQuery;
 use crate::dto::vendors::VendorQuery;
+use crate::forms::FormError;
 use crate::forms::categories::{
     AddCategoryForm, AddCategoryPayload, EditCategoryForm, EditCategoryPayload,
 };
 use crate::forms::orders::{
-    EditOrderForm, EditOrderFormError, EditOrderPayload, UpdateOrderApprovalsForm,
-    UpdateOrderApprovalsPayload,
+    EditOrderForm, EditOrderPayload, UpdateOrderApprovalsForm, UpdateOrderApprovalsPayload,
 };
 use crate::forms::price_levels::{
     AddPriceLevelForm, AddPriceLevelPayload, AssignClientPriceLevelForm,
@@ -31,9 +31,9 @@ use crate::forms::price_levels::{
 };
 use crate::forms::products::{
     AddProductForm, AddProductPayload, EditProductForm as EditProductDataForm, EditProductPayload,
-    ProductFormError, UploadProductsForm, UploadProductsPayload,
+    UploadProductsForm, UploadProductsPayload,
 };
-use crate::forms::tags::{AddTagForm, AddTagPayload, EditTagForm, EditTagPayload, TagFormError};
+use crate::forms::tags::{AddTagForm, AddTagPayload, EditTagForm, EditTagPayload};
 use crate::forms::vendors::{
     AddUserForm, AddUserPayload, AddVendorForm, AddVendorPayload, AssignVendorUserForm,
     AssignVendorUserPayload, ClearVendorUserPayload, EditVendorForm, EditVendorPayload,
@@ -368,7 +368,7 @@ pub async fn api_v1_update_tag(
     let form = payload.into_inner();
 
     if form.tag_id != tag_id {
-        let error = TagFormError::InvalidTagId;
+        let error = FormError::InvalidTagId;
         return HttpResponse::UnprocessableEntity().json(ApiMutationErrorDto::from(&error));
     }
 
@@ -778,7 +778,7 @@ pub async fn api_v1_update_order(
     let form = payload.into_inner();
 
     if form.order_id != order_id {
-        let error = EditOrderFormError::OrderIdMismatch;
+        let error = FormError::InvalidOrderId;
         return HttpResponse::UnprocessableEntity().json(ApiMutationErrorDto::from(&error));
     }
 
@@ -929,7 +929,7 @@ pub async fn api_v1_update_product(
     let form = payload.into_inner();
 
     if form.product_id != product_id {
-        let error = ProductFormError::ProductIdMismatch;
+        let error = FormError::InvalidProductId;
         return HttpResponse::UnprocessableEntity().json(ApiMutationErrorDto::from(&error));
     }
 

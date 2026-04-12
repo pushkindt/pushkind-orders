@@ -1,40 +1,11 @@
-use std::borrow::Cow;
-
 use serde::Deserialize;
-use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 use crate::domain::types::{TagId, TagName};
+use crate::forms::FormError;
 
 /// Result type returned by the tag form helpers.
-pub type TagFormResult<T> = Result<T, TagFormError>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FormFieldError {
-    pub field: Cow<'static, str>,
-    pub message: Cow<'static, str>,
-}
-
-/// Errors that can occur while processing tag forms.
-#[derive(Debug, Error)]
-pub enum TagFormError {
-    #[error("{}", validation_errors_display(.0))]
-    Validation(#[from] ValidationErrors),
-    #[error("Идентификатор тега указан неверно.")]
-    InvalidTagId,
-    #[error("Название тега указано неверно.")]
-    InvalidTagName,
-}
-
-impl TagFormError {
-    pub fn field_errors(&self) -> Vec<FormFieldError> {
-        match self {
-            Self::Validation(errors) => collect_validation_errors(errors),
-            Self::InvalidTagId => vec![field_error("tag_id", self.to_string())],
-            Self::InvalidTagName => vec![field_error("name", self.to_string())],
-        }
-    }
-}
+pub type TagFormResult<T> = Result<T, FormError>;
 
 /// Form payload emitted when submitting the "Add tag" form.
 #[derive(Debug, Deserialize, Validate)]
@@ -51,14 +22,14 @@ pub struct AddTagPayload {
 }
 
 impl TryFrom<AddTagForm> for AddTagPayload {
-    type Error = TagFormError;
+    type Error = FormError;
 
     fn try_from(value: AddTagForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
         TagName::new(value.name)
             .map(|name| Self { name })
-            .map_err(|_| TagFormError::InvalidTagName)
+            .map_err(|_| FormError::InvalidTagName)
     }
 }
 
@@ -81,65 +52,15 @@ pub struct EditTagPayload {
 }
 
 impl TryFrom<EditTagForm> for EditTagPayload {
-    type Error = TagFormError;
+    type Error = FormError;
 
     fn try_from(value: EditTagForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let tag_id = TagId::new(value.tag_id).map_err(|_| TagFormError::InvalidTagId)?;
-        let name = TagName::new(value.name).map_err(|_| TagFormError::InvalidTagName)?;
+        let tag_id = TagId::new(value.tag_id).map_err(|_| FormError::InvalidTagId)?;
+        let name = TagName::new(value.name).map_err(|_| FormError::InvalidTagName)?;
 
         Ok(Self { tag_id, name })
-    }
-}
-
-fn field_error(field: impl Into<Cow<'static, str>>, message: impl Into<String>) -> FormFieldError {
-    FormFieldError {
-        field: field.into(),
-        message: Cow::Owned(message.into()),
-    }
-}
-
-fn collect_validation_errors(errors: &ValidationErrors) -> Vec<FormFieldError> {
-    let mut field_errors = Vec::new();
-
-    for (field, errors) in errors.field_errors() {
-        for error in errors {
-            field_errors.push(field_error(
-                match field.as_ref() {
-                    "tag_id" => Cow::Borrowed("tag_id"),
-                    "name" => Cow::Borrowed("name"),
-                    other => Cow::Owned(other.to_string()),
-                },
-                error
-                    .message
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| "Некорректное значение.".to_string()),
-            ));
-        }
-    }
-
-    field_errors.sort_by(|left, right| left.field.cmp(&right.field));
-    field_errors
-}
-
-fn validation_errors_display(errors: &ValidationErrors) -> String {
-    let collected = collect_validation_errors(errors);
-
-    if collected.is_empty() {
-        "Ошибка валидации формы.".to_string()
-    } else if collected.len() == 1 {
-        format!("Ошибка валидации формы: {}", collected[0].message)
-    } else {
-        format!(
-            "Ошибка валидации формы: {}",
-            collected
-                .into_iter()
-                .map(|error| error.message.into_owned())
-                .collect::<Vec<_>>()
-                .join("; ")
-        )
     }
 }
 
@@ -166,7 +87,7 @@ mod tests {
 
         let result: TagFormResult<AddTagPayload> = form.try_into();
 
-        assert!(matches!(result, Err(TagFormError::InvalidTagName)));
+        assert!(matches!(result, Err(FormError::InvalidTagName)));
     }
 
     #[test]
@@ -193,6 +114,6 @@ mod tests {
 
         let result: TagFormResult<EditTagPayload> = form.try_into();
 
-        assert!(matches!(result, Err(TagFormError::InvalidTagName)));
+        assert!(matches!(result, Err(FormError::InvalidTagName)));
     }
 }

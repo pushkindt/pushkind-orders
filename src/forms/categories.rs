@@ -1,47 +1,12 @@
-use std::borrow::Cow;
-
 use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::Deserialize;
-use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 use crate::domain::types::{CategoryDescription, CategoryId, CategoryName, ImageUrl};
+use crate::forms::FormError;
 
 /// Result type returned by the category form helpers.
-pub type CategoryFormResult<T> = Result<T, CategoryFormError>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FormFieldError {
-    pub field: Cow<'static, str>,
-    pub message: Cow<'static, str>,
-}
-
-/// Errors that can occur while processing category forms.
-#[derive(Debug, Error)]
-pub enum CategoryFormError {
-    #[error("{}", validation_errors_display(.0))]
-    Validation(#[from] ValidationErrors),
-    #[error("Название категории указано неверно.")]
-    EmptyName,
-    #[error("Ссылка на изображение указана неверно.")]
-    InvalidImageUrl,
-    #[error("Родительская категория указана неверно.")]
-    InvalidParentId,
-    #[error("Описание категории указано неверно.")]
-    InvalidDescription,
-}
-
-impl CategoryFormError {
-    pub fn field_errors(&self) -> Vec<FormFieldError> {
-        match self {
-            Self::Validation(errors) => collect_validation_errors(errors),
-            Self::EmptyName => vec![field_error("name", self.to_string())],
-            Self::InvalidImageUrl => vec![field_error("image_url", self.to_string())],
-            Self::InvalidParentId => vec![field_error("parent_id", self.to_string())],
-            Self::InvalidDescription => vec![field_error("description", self.to_string())],
-        }
-    }
-}
+pub type CategoryFormResult<T> = Result<T, FormError>;
 
 /// Form payload emitted when submitting the "Add category" form.
 #[derive(Debug, Deserialize, Validate)]
@@ -74,12 +39,12 @@ pub struct AddCategoryPayload {
 }
 
 impl TryFrom<AddCategoryForm> for AddCategoryPayload {
-    type Error = CategoryFormError;
+    type Error = FormError;
 
     fn try_from(value: AddCategoryForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let name = CategoryName::new(value.name).map_err(|_| CategoryFormError::EmptyName)?;
+        let name = CategoryName::new(value.name).map_err(|_| FormError::InvalidCategoryName)?;
 
         let description = value
             .description
@@ -87,13 +52,13 @@ impl TryFrom<AddCategoryForm> for AddCategoryPayload {
             .filter(|value| !value.is_empty())
             .map(CategoryDescription::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidDescription)?;
+            .map_err(|_| FormError::InvalidCategoryDescription)?;
 
         let parent_id = value
             .parent_id
             .map(CategoryId::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidParentId)?;
+            .map_err(|_| FormError::InvalidCategoryParentId)?;
 
         let image_url = value
             .image_url
@@ -101,7 +66,7 @@ impl TryFrom<AddCategoryForm> for AddCategoryPayload {
             .filter(|value| !value.is_empty())
             .map(ImageUrl::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidImageUrl)?;
+            .map_err(|_| FormError::InvalidCategoryImageUrl)?;
 
         Ok(Self {
             name,
@@ -142,12 +107,12 @@ pub struct EditCategoryPayload {
 }
 
 impl TryFrom<EditCategoryForm> for EditCategoryPayload {
-    type Error = CategoryFormError;
+    type Error = FormError;
 
     fn try_from(value: EditCategoryForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let name = CategoryName::new(value.name).map_err(|_| CategoryFormError::EmptyName)?;
+        let name = CategoryName::new(value.name).map_err(|_| FormError::InvalidCategoryName)?;
 
         let description = value
             .description
@@ -155,7 +120,7 @@ impl TryFrom<EditCategoryForm> for EditCategoryPayload {
             .filter(|value| !value.is_empty())
             .map(CategoryDescription::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidDescription)?;
+            .map_err(|_| FormError::InvalidCategoryDescription)?;
 
         let image_url = value
             .image_url
@@ -163,7 +128,7 @@ impl TryFrom<EditCategoryForm> for EditCategoryPayload {
             .filter(|value| !value.is_empty())
             .map(ImageUrl::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidImageUrl)?;
+            .map_err(|_| FormError::InvalidCategoryImageUrl)?;
 
         Ok(Self {
             name,
@@ -171,58 +136,6 @@ impl TryFrom<EditCategoryForm> for EditCategoryPayload {
             is_archived: value.is_archived,
             image_url,
         })
-    }
-}
-
-fn field_error(field: impl Into<Cow<'static, str>>, message: impl Into<String>) -> FormFieldError {
-    FormFieldError {
-        field: field.into(),
-        message: Cow::Owned(message.into()),
-    }
-}
-
-fn collect_validation_errors(errors: &ValidationErrors) -> Vec<FormFieldError> {
-    let mut field_errors = Vec::new();
-
-    for (field, errors) in errors.field_errors() {
-        for error in errors {
-            field_errors.push(field_error(
-                match field.as_ref() {
-                    "name" => Cow::Borrowed("name"),
-                    "image_url" => Cow::Borrowed("image_url"),
-                    "parent_id" => Cow::Borrowed("parent_id"),
-                    "description" => Cow::Borrowed("description"),
-                    other => Cow::Owned(other.to_string()),
-                },
-                error
-                    .message
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| "Некорректное значение.".to_string()),
-            ));
-        }
-    }
-
-    field_errors.sort_by(|left, right| left.field.cmp(&right.field));
-    field_errors
-}
-
-fn validation_errors_display(errors: &ValidationErrors) -> String {
-    let collected = collect_validation_errors(errors);
-
-    if collected.is_empty() {
-        "Ошибка валидации формы.".to_string()
-    } else if collected.len() == 1 {
-        format!("Ошибка валидации формы: {}", collected[0].message)
-    } else {
-        format!(
-            "Ошибка валидации формы: {}",
-            collected
-                .into_iter()
-                .map(|error| error.message.into_owned())
-                .collect::<Vec<_>>()
-                .join("; ")
-        )
     }
 }
 
@@ -260,7 +173,7 @@ mod tests {
 
         let result: CategoryFormResult<AddCategoryPayload> = form.try_into();
 
-        assert!(matches!(result, Err(CategoryFormError::EmptyName)));
+        assert!(matches!(result, Err(FormError::InvalidCategoryName)));
     }
 
     #[test]
@@ -273,7 +186,7 @@ mod tests {
         };
 
         let result: CategoryFormResult<AddCategoryPayload> = form.try_into();
-        assert!(matches!(result, Err(CategoryFormError::InvalidParentId)));
+        assert!(matches!(result, Err(FormError::InvalidCategoryParentId)));
     }
 
     #[test]
@@ -308,7 +221,7 @@ mod tests {
 
         let result: CategoryFormResult<EditCategoryPayload> = form.try_into();
 
-        assert!(matches!(result, Err(CategoryFormError::EmptyName)));
+        assert!(matches!(result, Err(FormError::InvalidCategoryName)));
     }
 
     #[test]

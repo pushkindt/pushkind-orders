@@ -14,6 +14,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@pushkind/frontend-shell": "github:pushkindt/pushkind-common#main",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

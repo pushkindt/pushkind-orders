@@ -1,49 +1,11 @@
-use std::borrow::Cow;
-
 use serde::Deserialize;
-use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 use crate::domain::types::{UserEmail, UserId, UserName, VendorId, VendorName};
+use crate::forms::FormError;
 
 /// Result type returned by the vendor form helpers.
-pub type VendorFormResult<T> = Result<T, VendorFormError>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FormFieldError {
-    pub field: Cow<'static, str>,
-    pub message: Cow<'static, str>,
-}
-
-/// Errors that can occur while processing vendor forms.
-#[derive(Debug, Error)]
-pub enum VendorFormError {
-    #[error("{}", validation_errors_display(.0))]
-    Validation(#[from] ValidationErrors),
-    #[error("Идентификатор поставщика указан неверно.")]
-    InvalidVendorId,
-    #[error("Идентификатор пользователя указан неверно.")]
-    InvalidUserId,
-    #[error("Название поставщика указано неверно.")]
-    InvalidVendorName,
-    #[error("Имя пользователя указано неверно.")]
-    InvalidUserName,
-    #[error("Электронный адрес пользователя указан неверно.")]
-    InvalidUserEmail,
-}
-
-impl VendorFormError {
-    pub fn field_errors(&self) -> Vec<FormFieldError> {
-        match self {
-            Self::Validation(errors) => collect_validation_errors(errors),
-            Self::InvalidVendorId => vec![field_error("vendor_id", self.to_string())],
-            Self::InvalidUserId => vec![field_error("user_id", self.to_string())],
-            Self::InvalidVendorName => vec![field_error("name", self.to_string())],
-            Self::InvalidUserName => vec![field_error("name", self.to_string())],
-            Self::InvalidUserEmail => vec![field_error("email", self.to_string())],
-        }
-    }
-}
+pub type VendorFormResult<T> = Result<T, FormError>;
 
 /// Form payload emitted when submitting the "Add vendor" form.
 #[derive(Debug, Deserialize, Validate)]
@@ -60,14 +22,14 @@ pub struct AddVendorPayload {
 }
 
 impl TryFrom<AddVendorForm> for AddVendorPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: AddVendorForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
         VendorName::new(value.name)
             .map(|name| Self { name })
-            .map_err(|_| VendorFormError::InvalidVendorName)
+            .map_err(|_| FormError::InvalidVendorName)
     }
 }
 
@@ -90,14 +52,13 @@ pub struct EditVendorPayload {
 }
 
 impl TryFrom<EditVendorForm> for EditVendorPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: EditVendorForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let vendor_id =
-            VendorId::new(value.vendor_id).map_err(|_| VendorFormError::InvalidVendorId)?;
-        let name = VendorName::new(value.name).map_err(|_| VendorFormError::InvalidVendorName)?;
+        let vendor_id = VendorId::new(value.vendor_id).map_err(|_| FormError::InvalidVendorId)?;
+        let name = VendorName::new(value.name).map_err(|_| FormError::InvalidVendorName)?;
 
         Ok(Self { vendor_id, name })
     }
@@ -122,14 +83,13 @@ pub struct AssignVendorUserPayload {
 }
 
 impl TryFrom<AssignVendorUserForm> for AssignVendorUserPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: AssignVendorUserForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let user_id = UserId::new(value.user_id).map_err(|_| VendorFormError::InvalidUserId)?;
-        let vendor_id =
-            VendorId::new(value.vendor_id).map_err(|_| VendorFormError::InvalidVendorId)?;
+        let user_id = UserId::new(value.user_id).map_err(|_| FormError::InvalidUserId)?;
+        let vendor_id = VendorId::new(value.vendor_id).map_err(|_| FormError::InvalidVendorId)?;
 
         Ok(Self { user_id, vendor_id })
     }
@@ -150,12 +110,12 @@ pub struct ClearVendorUserPayload {
 }
 
 impl TryFrom<ClearVendorUserForm> for ClearVendorUserPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: ClearVendorUserForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let user_id = UserId::new(value.user_id).map_err(|_| VendorFormError::InvalidUserId)?;
+        let user_id = UserId::new(value.user_id).map_err(|_| FormError::InvalidUserId)?;
 
         Ok(Self { user_id })
     }
@@ -180,66 +140,14 @@ pub struct AddUserPayload {
 }
 
 impl TryFrom<AddUserForm> for AddUserPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: AddUserForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let name = UserName::new(value.name).map_err(|_| VendorFormError::InvalidUserName)?;
-        let email = UserEmail::new(value.email).map_err(|_| VendorFormError::InvalidUserEmail)?;
+        let name = UserName::new(value.name).map_err(|_| FormError::InvalidUserName)?;
+        let email = UserEmail::new(value.email).map_err(|_| FormError::InvalidUserEmail)?;
         Ok(Self { name, email })
-    }
-}
-
-fn field_error(field: impl Into<Cow<'static, str>>, message: impl Into<String>) -> FormFieldError {
-    FormFieldError {
-        field: field.into(),
-        message: Cow::Owned(message.into()),
-    }
-}
-
-fn collect_validation_errors(errors: &ValidationErrors) -> Vec<FormFieldError> {
-    let mut field_errors = Vec::new();
-
-    for (field, errors) in errors.field_errors() {
-        for error in errors {
-            field_errors.push(field_error(
-                match field.as_ref() {
-                    "vendor_id" => Cow::Borrowed("vendor_id"),
-                    "user_id" => Cow::Borrowed("user_id"),
-                    "name" => Cow::Borrowed("name"),
-                    "email" => Cow::Borrowed("email"),
-                    other => Cow::Owned(other.to_string()),
-                },
-                error
-                    .message
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| "Некорректное значение.".to_string()),
-            ));
-        }
-    }
-
-    field_errors.sort_by(|left, right| left.field.cmp(&right.field));
-    field_errors
-}
-
-fn validation_errors_display(errors: &ValidationErrors) -> String {
-    let collected = collect_validation_errors(errors);
-
-    if collected.is_empty() {
-        "Ошибка валидации формы.".to_string()
-    } else if collected.len() == 1 {
-        format!("Ошибка валидации формы: {}", collected[0].message)
-    } else {
-        format!(
-            "Ошибка валидации формы: {}",
-            collected
-                .into_iter()
-                .map(|error| error.message.into_owned())
-                .collect::<Vec<_>>()
-                .join("; ")
-        )
     }
 }
 
