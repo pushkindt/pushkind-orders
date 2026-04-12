@@ -51,14 +51,32 @@ export function OrdersNavbar({
                 </li>
               ))}
             </ul>
-            {search ?? null}
+            {search ?? (
+              <form className="d-flex w-100" role="search" action="/">
+                <div className="input-group me-2">
+                  <input
+                    required
+                    name="search"
+                    className="form-control"
+                    type="search"
+                    placeholder="Поиск"
+                    aria-label="Search"
+                  />
+                  <button className="btn btn-outline-secondary" type="submit">
+                    <i className="bi bi-search" />
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
-          <UserMenuDropdown
-            currentUserEmail={currentUserEmail}
-            localItems={[{ name: "Домой", url: homeUrl }, ...localMenuItems]}
-            fetchedItems={fetchedMenuItems}
-            logoutAction="/logout"
-          />
+          <div className="dropdown-center">
+            <UserMenuDropdown
+              currentUserEmail={currentUserEmail}
+              localItems={[{ name: "Домой", url: homeUrl }, ...localMenuItems]}
+              fetchedItems={fetchedMenuItems}
+              logoutAction="/logout"
+            />
+          </div>
         </div>
       </nav>
     </div>

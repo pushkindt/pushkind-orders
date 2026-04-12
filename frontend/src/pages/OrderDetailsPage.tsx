@@ -225,6 +225,24 @@ export function OrderDetailsPage() {
     window.showFlashMessage?.(result.message, "success");
   }
 
+  const searchForm = (
+    <form className="d-flex w-100" role="search" action="/">
+      <div className="input-group me-2">
+        <input
+          required
+          name="search"
+          className="form-control"
+          type="search"
+          placeholder="Поиск"
+          aria-label="Search"
+        />
+        <button className="btn btn-outline-secondary" type="submit">
+          <i className="bi bi-search" />
+        </button>
+      </div>
+    </form>
+  );
+
   return (
     <OrdersShell
       navigation={shellState.shell.navigation}
@@ -232,32 +250,18 @@ export function OrderDetailsPage() {
       homeUrl={shellState.shell.homeUrl}
       localMenuItems={shellState.shell.localMenuItems}
       fetchedMenuItems={shellState.authMenuItems}
+      search={searchForm}
     >
-      <main className="container py-3 orders-shell-content">
+      <main className="container my-3">
         {orderState.status === "loading" ? (
-          <div className="card shadow-sm">
-            <div className="card-body p-4">
-              <p className="text-uppercase text-secondary small mb-2">Заказ</p>
-              <h1 className="h4 mb-2">Загружаем заказ</h1>
-              <p className="text-secondary mb-0">
-                React-страница инициализирует заказ из{" "}
-                <code>/api/v1/orders/{orderId ?? ""}</code>.
-              </p>
-            </div>
+          <div className="alert alert-info" role="status">
+            Загрузка заказа...
           </div>
         ) : null}
 
         {orderState.status === "error" ? (
-          <div className="card shadow-sm">
-            <div className="card-body p-4">
-              <p className="text-uppercase text-secondary small mb-2">Заказ</p>
-              <h1 className="h4 mb-2">Не удалось загрузить заказ</h1>
-              <p className="text-danger mb-3">{orderState.message}</p>
-              <a className="btn btn-outline-secondary" href="/">
-                <i className="bi bi-arrow-left me-2" aria-hidden="true" />К
-                списку заказов
-              </a>
-            </div>
+          <div className="alert alert-danger" role="alert">
+            {orderState.message}
           </div>
         ) : null}
 

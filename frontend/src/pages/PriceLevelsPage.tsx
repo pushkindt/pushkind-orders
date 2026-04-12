@@ -390,6 +390,24 @@ export function PriceLevelsPage() {
     }
   };
 
+  const handleDeleteInline = async (priceLevelId: number) => {
+    setIsDeleting(true);
+    try {
+      const response = await deletePriceLevel(priceLevelId);
+      await loadCollection(searchDraft.trim() || null);
+      window.showFlashMessage?.(response.message, "primary");
+    } catch (error) {
+      window.showFlashMessage?.(
+        error instanceof Error
+          ? error.message
+          : "Не удалось удалить уровень цен.",
+        "danger",
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleClientAssignment = async (
     client: CrmClientListItem,
     priceLevelId: string,
@@ -457,22 +475,33 @@ export function PriceLevelsPage() {
       fetchedMenuItems={shellState.authMenuItems}
       search={
         <form
-          className="d-flex"
+          className="d-flex w-100"
+          role="search"
+          action="/price-levels"
           onSubmit={(event) => {
             event.preventDefault();
             void loadCollection(searchDraft.trim() || null);
           }}
         >
-          <input
-            className="form-control"
-            placeholder="Поиск уровней цен"
-            value={searchDraft}
-            onChange={(event) => setSearchDraft(event.currentTarget.value)}
-          />
+          <div className="input-group me-2">
+            <input
+              required
+              name="search"
+              className="form-control"
+              type="search"
+              placeholder="Поиск"
+              aria-label="Search"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.currentTarget.value)}
+            />
+            <button className="btn btn-outline-secondary" type="submit">
+              <i className="bi bi-search" />
+            </button>
+          </div>
         </form>
       }
     >
-      <div className="container bg-white border rounded my-2 py-3">
+      <div className="container bg-white border rounded my-2">
         <div className="row">
           <div className="col text-center add-item-container">
             {isAdmin ? (
@@ -494,104 +523,156 @@ export function PriceLevelsPage() {
             {collectionState.message}
           </div>
         ) : (
-          <div className="d-flex flex-column gap-2 mt-3">
-            {collectionState.data.items.map((item) => (
-              <div
-                key={item.id}
-                className={`d-flex justify-content-between align-items-center border rounded p-3 ${item.isDefault ? "border-success bg-success-subtle" : ""}`}
-              >
-                <div>
-                  <strong>{item.name}</strong>
-                  <div className="small text-muted">{item.updatedAt}</div>
-                </div>
-                {isAdmin ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-primary"
-                    onClick={() => openEdit(item.id)}
-                  >
-                    Изменить
-                  </button>
-                ) : null}
+          <>
+            <div className="row d-none d-sm-flex fw-bold">
+              <div className="col-sm overflow-hidden">Название</div>
+              <div className="col-sm overflow-hidden">Добавлено</div>
+              <div className="col-sm overflow-hidden">Обновлено</div>
+              <div className="col-sm-2 overflow-hidden text-sm-end">
+                Действия
               </div>
-            ))}
-          </div>
+            </div>
+            <div id="priceList">
+              {collectionState.data.items.length > 0 ? (
+                collectionState.data.items.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`row my-1 py-1 border-top${item.isDefault ? " price-level-default" : ""}`}
+                  >
+                    <div className="col-sm">
+                      <span className="d-sm-none fw-bold">Название:</span>
+                      <span className="d-flex align-items-center gap-2">
+                        {item.name}
+                        {item.isDefault ? (
+                          <span className="badge text-bg-success-subtle text-success-emphasis border-success-subtle border">
+                            По умолчанию
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                    <div className="col-sm">
+                      <span className="d-sm-none fw-bold">Добавлено:</span>
+                      {item.createdAt}
+                    </div>
+                    <div className="col-sm">
+                      <span className="d-sm-none fw-bold">Обновлено:</span>
+                      {item.updatedAt}
+                    </div>
+                    <div className="col-sm-2 col-12 d-flex justify-content-sm-end align-items-center mt-2 mt-sm-0">
+                      <span className="d-sm-none fw-bold me-2">Действия:</span>
+                      {isAdmin ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-warning d-flex align-items-center gap-2 me-2"
+                            onClick={() => openEdit(item.id)}
+                          >
+                            <i className="bi bi-pen" />
+                            <span className="d-none d-sm-inline">Изменить</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger d-flex align-items-center gap-2"
+                            onClick={() => void handleDeleteInline(item.id)}
+                            disabled={isDeleting}
+                          >
+                            <i className="bi bi-trash" />
+                            <span className="d-none d-sm-inline">Удалить</span>
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-muted">Только просмотр</span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="alert alert-warning my-2" role="alert">
+                  Нет уровней цен для отображения.
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 
       {isAdmin ? (
-        <div className="container bg-white border rounded my-2 py-3">
-          <h2 className="h5">Клиенты</h2>
-          <div className="mb-3">
-            <input
-              className="form-control"
-              placeholder="Фильтр по имени, телефону или public id"
-              value={clientFilter}
-              onChange={(event) => setClientFilter(event.currentTarget.value)}
-            />
-          </div>
-          {clientsState.status === "error" ? (
-            <div className="alert alert-danger">{clientsState.message}</div>
-          ) : clientsState.status !== "ready" ? (
-            <div className="alert alert-info">Загрузка списка клиентов...</div>
-          ) : (
-            <div className="table-responsive">
-              <table className="table table-striped align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th>Название</th>
-                    <th>Телефон</th>
-                    <th>Уровень</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredClients.map((client) => {
-                    const assigned = clientsState.assignments.assignments.find(
-                      (assignment) => assignment.phone === client.phone,
-                    );
-                    const selectedValue =
-                      assigned?.priceLevelId != null
-                        ? String(assigned.priceLevelId)
-                        : "";
-
-                    return (
-                      <tr key={client.id}>
-                        <td>
-                          <div>{client.name}</div>
-                          <div className="small text-muted">
-                            {client.publicId ?? "Без public id"}
-                          </div>
-                        </td>
-                        <td>{client.phone ?? "Без телефона"}</td>
-                        <td>
-                          <select
-                            className="form-select form-select-sm"
-                            value={selectedValue}
-                            disabled={!client.phone || !client.publicId}
-                            onChange={(event) =>
-                              void handleClientAssignment(
-                                client,
-                                event.currentTarget.value,
-                              )
-                            }
-                          >
-                            <option value="">По умолчанию</option>
-                            {collectionState.status === "ready"
-                              ? collectionState.data.items.map((item) => (
-                                  <option key={item.id} value={item.id}>
-                                    {item.name}
-                                  </option>
-                                ))
-                              : null}
-                          </select>
-                        </td>
+        <div className="container bg-white border rounded my-2">
+          <div className="row">
+            <div className="col">
+              <h2 className="h5 my-3">Клиенты</h2>
+              <div className="mb-3">
+                <input
+                  className="form-control"
+                  placeholder="Фильтр по имени или телефону"
+                  value={clientFilter}
+                  onChange={(event) =>
+                    setClientFilter(event.currentTarget.value)
+                  }
+                />
+              </div>
+              {clientsState.status === "error" ? (
+                <div className="alert alert-danger">{clientsState.message}</div>
+              ) : clientsState.status !== "ready" ? (
+                <div className="alert alert-info" role="status">
+                  Загрузка списка клиентов...
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table table-striped table-hover align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th scope="col">Название</th>
+                        <th scope="col">Телефон</th>
+                        <th scope="col">Уровень</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {filteredClients.map((client) => {
+                        const assigned =
+                          clientsState.assignments.assignments.find(
+                            (assignment) => assignment.phone === client.phone,
+                          );
+                        const selectedValue =
+                          assigned?.priceLevelId != null
+                            ? String(assigned.priceLevelId)
+                            : "";
+
+                        return (
+                          <tr key={client.id}>
+                            <td>{client.name}</td>
+                            <td>{client.phone ?? "Без телефона"}</td>
+                            <td>
+                              <select
+                                className="form-select form-select-sm"
+                                value={selectedValue}
+                                disabled={!client.phone || !client.publicId}
+                                onChange={(event) =>
+                                  void handleClientAssignment(
+                                    client,
+                                    event.currentTarget.value,
+                                  )
+                                }
+                              >
+                                <option value="">По умолчанию</option>
+                                {collectionState.status === "ready"
+                                  ? collectionState.data.items.map((item) => (
+                                      <option key={item.id} value={item.id}>
+                                        {item.name}
+                                      </option>
+                                    ))
+                                  : null}
+                              </select>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       ) : null}
 

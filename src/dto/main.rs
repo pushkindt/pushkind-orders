@@ -8,6 +8,12 @@ use crate::domain::order::Order;
 pub struct IndexQuery {
     /// Optional search string entered by the user.
     pub search: Option<String>,
+    /// Optional order status filter.
+    pub status: Option<String>,
+    /// Optional lower bound for the updated_at date in YYYY-MM-DD format.
+    pub updated_after: Option<String>,
+    /// Optional upper bound for the updated_at date in YYYY-MM-DD format.
+    pub updated_before: Option<String>,
     /// Page number requested by the user interface.
     pub page: Option<usize>,
 }

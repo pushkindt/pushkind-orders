@@ -61,6 +61,9 @@ export type OrderPagination = {
 
 export type OrderCollectionFilters = {
   search: string | null;
+  status: string | null;
+  updatedAfter: string | null;
+  updatedBefore: string | null;
 };
 
 export type OrderCollectionData = {
@@ -277,6 +280,7 @@ export type CategoryMutationSuccess = {
 export type TagListItem = {
   id: number;
   name: string;
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -306,6 +310,7 @@ export type PriceLevelListItem = {
   id: number;
   name: string;
   isDefault: boolean;
+  createdAt: string;
   updatedAt: string;
 };
 

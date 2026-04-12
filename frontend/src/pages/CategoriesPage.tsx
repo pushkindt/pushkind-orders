@@ -79,7 +79,7 @@ function CategoryTree({
   onEdit: (node: CategoryTreeNode) => void;
 }) {
   return (
-    <div className="d-flex flex-column gap-3">
+    <>
       {nodes.map((node) => (
         <CategoryTreeNodeCard
           key={node.id}
@@ -90,7 +90,7 @@ function CategoryTree({
           onEdit={onEdit}
         />
       ))}
-    </div>
+    </>
   );
 }
 
@@ -111,63 +111,70 @@ function CategoryTreeNodeCard({
 
   return (
     <div>
-      <div
-        className={`d-flex align-items-start gap-3 rounded-3 border bg-white p-3 shadow-sm ${node.isArchived ? "opacity-75" : ""}`}
-      >
-        {node.children.length > 0 ? (
-          <button
-            type="button"
-            className="btn btn-sm btn-link px-0 text-secondary"
-            onClick={() => setExpanded((value) => !value)}
-          >
-            <i
-              className={`bi ${expanded ? "bi-chevron-down" : "bi-chevron-right"}`}
-            />
-          </button>
-        ) : (
-          <span className="text-secondary px-1">
-            <i className="bi bi-dot" />
-          </span>
-        )}
-        <div className="flex-grow-1">
-          <div className="d-flex flex-wrap align-items-center gap-2">
-            {node.imageUrl ? (
-              <img src={node.imageUrl} alt="" width={18} height={18} />
+      <div className="mb-2">
+        <div
+          className={`d-flex align-items-center bg-white p-2 rounded-3 shadow-sm${node.isArchived ? " category-archived" : ""}`}
+        >
+          <div className="d-flex align-items-center flex-grow-1">
+            {node.children.length > 0 ? (
+              <button
+                className="btn btn-sm btn-link p-0 text-secondary category-tree-toggle"
+                type="button"
+                aria-expanded={expanded}
+                onClick={() => setExpanded((value) => !value)}
+              >
+                <i
+                  className="bi bi-chevron-right icon-closed"
+                  aria-hidden="true"
+                />
+                <i
+                  className="bi bi-chevron-down icon-open"
+                  aria-hidden="true"
+                />
+                <span className="visually-hidden">Toggle subcategories</span>
+              </button>
             ) : null}
-            <strong>{node.name}</strong>
-            {node.isArchived ? (
-              <span className="badge text-bg-warning-subtle text-warning-emphasis">
-                Архивирована
-              </span>
+            <div className="ms-2">
+              <p className="fw-semibold mb-0 d-flex align-items-center gap-2">
+                {node.imageUrl ? (
+                  <img src={node.imageUrl} alt="" height="16" width="16" />
+                ) : null}
+                {node.name}
+                {node.isArchived ? (
+                  <span className="badge text-bg-warning-subtle text-warning-emphasis border-0">
+                    Архивирована
+                  </span>
+                ) : null}
+              </p>
+              <p className="small text-muted mb-0">{node.description ?? ""}</p>
+            </div>
+          </div>
+          <div className="d-flex align-items-center ms-auto">
+            {canCreate ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-success border-0 p-1"
+                onClick={() => onAddChild(node)}
+              >
+                <i className="bi bi-plus-lg" />
+              </button>
+            ) : null}
+            {isAdmin ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-primary border-0 p-1 ms-1"
+                onClick={() => onEdit(node)}
+              >
+                <i className="bi bi-pencil-square" />
+              </button>
+            ) : !canCreate ? (
+              <span className="text-muted small">Только просмотр</span>
             ) : null}
           </div>
-          {node.description ? (
-            <div className="small text-muted mt-1">{node.description}</div>
-          ) : null}
-        </div>
-        <div className="d-flex align-items-center gap-2">
-          {canCreate ? (
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-success"
-              onClick={() => onAddChild(node)}
-            >
-              <i className="bi bi-plus-lg" />
-            </button>
-          ) : null}
-          {isAdmin ? (
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-primary"
-              onClick={() => onEdit(node)}
-            >
-              <i className="bi bi-pencil-square" />
-            </button>
-          ) : null}
         </div>
       </div>
       {expanded && node.children.length > 0 ? (
-        <div className="mt-3 ms-4">
+        <div className="ps-4 mt-2">
           <CategoryTree
             nodes={node.children}
             canCreate={canCreate}
@@ -387,7 +394,13 @@ export function CategoriesPage() {
       localMenuItems={shellState.shell.localMenuItems}
       fetchedMenuItems={shellState.authMenuItems}
     >
-      <div className="container bg-white border rounded my-2 py-3">
+      <style>{`
+        .category-tree-toggle .icon-open { display: none; }
+        .category-tree-toggle[aria-expanded="true"] .icon-open { display: inline-flex; }
+        .category-tree-toggle[aria-expanded="true"] .icon-closed { display: none; }
+        .category-archived { opacity: 0.6; }
+      `}</style>
+      <div className="container bg-white border rounded my-2">
         <div className="row mb-3">
           <div className="col text-center add-item-container">
             {canCreate ? (

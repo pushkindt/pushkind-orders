@@ -1,5 +1,6 @@
 //! Service helpers serving shell and React-owned orders API data.
 
+use chrono::{NaiveDate, NaiveDateTime};
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::pagination::DEFAULT_ITEMS_PER_PAGE;
@@ -91,7 +92,38 @@ where
         list_query = list_query.search(search);
     }
 
+    if let Some(status) = query.status.as_deref() {
+        let status = crate::domain::order::OrderStatus::try_from(status)?;
+        list_query = list_query.status(status);
+    }
+
+    if let Some(updated_after) = query.updated_after.as_deref() {
+        list_query = list_query.updated_after(parse_filter_date_start(updated_after)?);
+    }
+
+    if let Some(updated_before) = query.updated_before.as_deref() {
+        list_query = list_query.updated_before(parse_filter_date_end(updated_before)?);
+    }
+
     Ok(list_query)
+}
+
+fn parse_filter_date_start(input: &str) -> ServiceResult<NaiveDateTime> {
+    let date = NaiveDate::parse_from_str(input, "%Y-%m-%d").map_err(|_| {
+        crate::services::ServiceError::Form("Дата фильтра указана неверно.".to_string())
+    })?;
+    date.and_hms_opt(0, 0, 0).ok_or_else(|| {
+        crate::services::ServiceError::Form("Дата фильтра указана неверно.".to_string())
+    })
+}
+
+fn parse_filter_date_end(input: &str) -> ServiceResult<NaiveDateTime> {
+    let date = NaiveDate::parse_from_str(input, "%Y-%m-%d").map_err(|_| {
+        crate::services::ServiceError::Form("Дата фильтра указана неверно.".to_string())
+    })?;
+    date.and_hms_opt(23, 59, 59).ok_or_else(|| {
+        crate::services::ServiceError::Form("Дата фильтра указана неверно.".to_string())
+    })
 }
 
 fn build_product_list_query<R>(
@@ -180,6 +212,9 @@ where
         total_items,
         OrderCollectionFiltersDto {
             search: query.search,
+            status: query.status,
+            updated_after: query.updated_after,
+            updated_before: query.updated_before,
         },
     ))
 }
@@ -362,6 +397,9 @@ where
             .collect(),
         active_filters: OrderCollectionFiltersDto {
             search: data.search,
+            status: None,
+            updated_after: None,
+            updated_before: None,
         },
         editor_options: PriceLevelEditorOptionsDto::from_parts(
             &data.price_levels,

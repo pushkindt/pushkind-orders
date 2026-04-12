@@ -359,6 +359,10 @@ pub struct OrderListQuery {
     pub vendor_id: Option<VendorId>,
     /// Optional search term that matches the reference or notes.
     pub search: Option<String>,
+    /// Optional lower bound on the last update timestamp.
+    pub updated_after: Option<NaiveDateTime>,
+    /// Optional upper bound on the last update timestamp.
+    pub updated_before: Option<NaiveDateTime>,
     /// Optional pagination options applied to the query.
     pub pagination: Option<Pagination>,
 }
@@ -372,6 +376,8 @@ impl OrderListQuery {
             customer_id: None,
             vendor_id: None,
             search: None,
+            updated_after: None,
+            updated_before: None,
             pagination: None,
         }
     }
@@ -402,6 +408,18 @@ impl OrderListQuery {
     /// Filter the results by a search term applied to notes or reference fields.
     pub fn search(mut self, term: impl Into<String>) -> Self {
         self.search = Some(term.into());
+        self
+    }
+
+    /// Filter the results by orders updated on or after the provided timestamp.
+    pub fn updated_after(mut self, updated_after: NaiveDateTime) -> Self {
+        self.updated_after = Some(updated_after);
+        self
+    }
+
+    /// Filter the results by orders updated on or before the provided timestamp.
+    pub fn updated_before(mut self, updated_before: NaiveDateTime) -> Self {
+        self.updated_before = Some(updated_before);
         self
     }
 

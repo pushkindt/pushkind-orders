@@ -26,6 +26,35 @@ type TagsQuery = {
   page: number;
 };
 
+function buildPaginationPages(totalPages: number, currentPage: number) {
+  if (totalPages <= 1) {
+    return [];
+  }
+
+  const pages = new Set<number>();
+  pages.add(1);
+  pages.add(totalPages);
+
+  for (let page = currentPage - 1; page <= currentPage + 1; page += 1) {
+    if (page >= 1 && page <= totalPages) {
+      pages.add(page);
+    }
+  }
+
+  const orderedPages = [...pages].sort((left, right) => left - right);
+  const sequence: Array<number | null> = [];
+
+  orderedPages.forEach((page, index) => {
+    const previous = orderedPages[index - 1];
+    if (previous != null && page - previous > 1) {
+      sequence.push(null);
+    }
+    sequence.push(page);
+  });
+
+  return sequence;
+}
+
 function readQuery(): TagsQuery {
   const params = new URLSearchParams(window.location.search);
   const page = Number.parseInt(params.get("page") ?? "1", 10);
@@ -180,6 +209,22 @@ export function TagsPage() {
     }
   };
 
+  const handleDeleteInline = async (tagId: number) => {
+    setIsDeleting(true);
+    try {
+      const response = await deleteTag(tagId);
+      window.showFlashMessage?.(response.message, "primary");
+      setQuery((current) => ({ ...current }));
+    } catch (error) {
+      window.showFlashMessage?.(
+        error instanceof Error ? error.message : "Не удалось удалить тег.",
+        "danger",
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const rows = useMemo(() => {
     if (collectionState.status !== "ready") {
       return null;
@@ -194,25 +239,39 @@ export function TagsPage() {
     }
 
     return collectionState.data.items.map((tag) => (
-      <div key={tag.id} className="row my-1 py-2 border-top align-items-center">
-        <div className="col-sm">{tag.name}</div>
-        <div className="col-sm">{tag.updatedAt}</div>
-        <div className="col-sm-3 d-flex justify-content-sm-end mt-2 mt-sm-0">
+      <div key={tag.id} className="row my-1 py-1 border-top" data-id={tag.id}>
+        <div className="col-sm">
+          <span className="d-sm-none fw-bold">Название:</span>
+          {tag.name}
+        </div>
+        <div className="col-sm">
+          <span className="d-sm-none fw-bold">Добавлено:</span>
+          {tag.createdAt}
+        </div>
+        <div className="col-sm">
+          <span className="d-sm-none fw-bold">Обновлено:</span>
+          {tag.updatedAt}
+        </div>
+        <div className="col-sm-2 col-12 d-flex justify-content-sm-end align-items-center mt-2 mt-sm-0">
+          <span className="d-sm-none fw-bold me-2">Действия:</span>
           {isAdmin ? (
             <>
               <button
                 type="button"
-                className="btn btn-sm btn-outline-warning me-2"
+                className="btn btn-sm btn-outline-warning d-flex align-items-center gap-2 me-2"
                 onClick={() => openEdit(tag.id)}
               >
-                Изменить
+                <i className="bi bi-pen" />
+                <span className="d-none d-sm-inline">Изменить</span>
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-outline-danger"
-                onClick={() => openEdit(tag.id)}
+                className="btn btn-sm btn-outline-danger d-flex align-items-center gap-2"
+                onClick={() => void handleDeleteInline(tag.id)}
+                disabled={isDeleting}
               >
-                Удалить
+                <i className="bi bi-trash" />
+                <span className="d-none d-sm-inline">Удалить</span>
               </button>
             </>
           ) : (
@@ -222,6 +281,14 @@ export function TagsPage() {
       </div>
     ));
   }, [collectionState, isAdmin]);
+
+  const paginationPages =
+    collectionState.status === "ready"
+      ? buildPaginationPages(
+          collectionState.data.pagination.totalPages,
+          collectionState.data.pagination.page,
+        )
+      : [];
 
   if (shellState.status === "loading") {
     return (
@@ -242,22 +309,33 @@ export function TagsPage() {
       fetchedMenuItems={shellState.authMenuItems}
       search={
         <form
-          className="d-flex"
+          className="d-flex w-100"
+          role="search"
+          action="/tags"
           onSubmit={(event) => {
             event.preventDefault();
             setQuery({ search: searchDraft.trim() || null, page: 1 });
           }}
         >
-          <input
-            className="form-control"
-            placeholder="Поиск тегов"
-            value={searchDraft}
-            onChange={(event) => setSearchDraft(event.currentTarget.value)}
-          />
+          <div className="input-group me-2">
+            <input
+              required
+              name="search"
+              className="form-control"
+              type="search"
+              placeholder="Поиск"
+              aria-label="Search"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.currentTarget.value)}
+            />
+            <button className="btn btn-outline-secondary" type="submit">
+              <i className="bi bi-search" />
+            </button>
+          </div>
         </form>
       }
     >
-      <div className="container bg-white border rounded my-2 py-3">
+      <div className="container bg-white border rounded my-2">
         <div className="row mb-3">
           <div className="col text-center add-item-container">
             {isAdmin ? (
@@ -278,45 +356,49 @@ export function TagsPage() {
         ) : (
           <>
             <div className="row d-none d-sm-flex fw-bold">
-              <div className="col-sm">Название</div>
-              <div className="col-sm">Обновлено</div>
-              <div className="col-sm-3 text-sm-end">Действия</div>
-            </div>
-            {rows}
-            <div className="d-flex justify-content-between align-items-center border-top pt-3 mt-3">
-              <span className="text-muted small">
-                Страница {collectionState.data.pagination.page} из{" "}
-                {collectionState.data.pagination.totalPages || 1}
-              </span>
-              <div className="btn-group">
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm"
-                  disabled={!collectionState.data.pagination.hasPreviousPage}
-                  onClick={() =>
-                    setQuery((current) => ({
-                      ...current,
-                      page: current.page - 1,
-                    }))
-                  }
-                >
-                  Назад
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm"
-                  disabled={!collectionState.data.pagination.hasNextPage}
-                  onClick={() =>
-                    setQuery((current) => ({
-                      ...current,
-                      page: current.page + 1,
-                    }))
-                  }
-                >
-                  Вперёд
-                </button>
+              <div className="col-sm overflow-hidden">Название</div>
+              <div className="col-sm overflow-hidden">Добавлено</div>
+              <div className="col-sm overflow-hidden">Обновлено</div>
+              <div className="col-sm-2 overflow-hidden text-sm-end">
+                Действия
               </div>
             </div>
+            {rows}
+            {paginationPages.length > 0 ? (
+              <nav aria-label="pagination">
+                <ul
+                  className="pagination justify-content-center flex-wrap"
+                  id="pagination"
+                >
+                  {paginationPages.map((page, index) =>
+                    page == null ? (
+                      <li key={`ellipsis-${index}`} className="page-item">
+                        <span className="ellipsis page-link border-0 bg-transparent">
+                          …
+                        </span>
+                      </li>
+                    ) : page !== query.page ? (
+                      <li key={page} className="page-item">
+                        <a
+                          className="page-link"
+                          href={buildUrl({ ...query, page })}
+                        >
+                          {page}
+                        </a>
+                      </li>
+                    ) : (
+                      <li
+                        key={page}
+                        className="page-item active"
+                        aria-current="page"
+                      >
+                        <span className="page-link">{page}</span>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </nav>
+            ) : null}
           </>
         )}
       </div>

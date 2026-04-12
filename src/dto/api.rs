@@ -144,6 +144,9 @@ pub struct OrderPaginationDto {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct OrderCollectionFiltersDto {
     pub search: Option<String>,
+    pub status: Option<String>,
+    pub updated_after: Option<String>,
+    pub updated_before: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -338,6 +341,7 @@ pub struct CategoryMutationSuccessDto {
 pub struct TagListItemDto {
     pub id: i32,
     pub name: String,
+    pub created_at: String,
     pub updated_at: String,
 }
 
@@ -366,6 +370,7 @@ pub struct PriceLevelListItemDto {
     pub id: i32,
     pub name: String,
     pub is_default: bool,
+    pub created_at: String,
     pub updated_at: String,
 }
 
@@ -731,6 +736,7 @@ impl TagListItemDto {
         Self {
             id: tag.id.get(),
             name: tag.name.to_string(),
+            created_at: format_datetime(tag.created_at),
             updated_at: format_datetime(tag.updated_at),
         }
     }
@@ -756,7 +762,12 @@ impl TagCollectionDto {
                 has_previous_page: page > 1,
                 has_next_page: page < total_pages,
             },
-            active_filters: OrderCollectionFiltersDto { search },
+            active_filters: OrderCollectionFiltersDto {
+                search,
+                status: None,
+                updated_after: None,
+                updated_before: None,
+            },
         }
     }
 }
@@ -777,6 +788,7 @@ impl PriceLevelListItemDto {
             id: price_level.id.get(),
             name: price_level.name.to_string(),
             is_default: price_level.is_default,
+            created_at: format_datetime(price_level.created_at),
             updated_at: format_datetime(price_level.updated_at),
         }
     }
@@ -836,7 +848,12 @@ impl VendorCollectionDto {
                 has_previous_page: page > 1,
                 has_next_page: page < total_pages,
             },
-            active_filters: OrderCollectionFiltersDto { search },
+            active_filters: OrderCollectionFiltersDto {
+                search,
+                status: None,
+                updated_after: None,
+                updated_before: None,
+            },
         }
     }
 }
@@ -966,6 +983,9 @@ mod tests {
             41,
             OrderCollectionFiltersDto {
                 search: Some("ord".to_string()),
+                status: None,
+                updated_after: None,
+                updated_before: None,
             },
         );
 

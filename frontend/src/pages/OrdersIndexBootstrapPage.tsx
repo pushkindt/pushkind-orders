@@ -14,6 +14,9 @@ type OrdersCollectionState =
 
 type OrdersIndexQuery = {
   search: string | null;
+  status: string | null;
+  updatedAfter: string | null;
+  updatedBefore: string | null;
   page: number;
 };
 
@@ -21,25 +24,55 @@ const formatterCache = new Map<string, Intl.NumberFormat | null>();
 
 function readIndexQueryFromLocation(): OrdersIndexQuery {
   if (typeof window === "undefined") {
-    return { search: null, page: 1 };
+    return {
+      search: null,
+      status: null,
+      updatedAfter: null,
+      updatedBefore: null,
+      page: 1,
+    };
   }
 
   const params = new URLSearchParams(window.location.search);
   const rawSearch = params.get("search")?.trim() ?? "";
+  const rawStatus = params.get("status")?.trim() ?? "";
+  const rawUpdatedAfter = params.get("updated_after")?.trim() ?? "";
+  const rawUpdatedBefore = params.get("updated_before")?.trim() ?? "";
   const rawPage = Number(params.get("page") ?? "1");
   const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
 
   return {
     search: rawSearch.length > 0 ? rawSearch : null,
+    status: rawStatus.length > 0 ? rawStatus : null,
+    updatedAfter: rawUpdatedAfter.length > 0 ? rawUpdatedAfter : null,
+    updatedBefore: rawUpdatedBefore.length > 0 ? rawUpdatedBefore : null,
     page,
   };
 }
 
-export function buildOrdersIndexPageUrl(page: number, search: string | null) {
+export function buildOrdersIndexPageUrl(
+  page: number,
+  search: string | null,
+  status: string | null,
+  updatedAfter: string | null,
+  updatedBefore: string | null,
+) {
   const params = new URLSearchParams();
 
   if (search) {
     params.set("search", search);
+  }
+
+  if (status) {
+    params.set("status", status);
+  }
+
+  if (updatedAfter) {
+    params.set("updated_after", updatedAfter);
+  }
+
+  if (updatedBefore) {
+    params.set("updated_before", updatedBefore);
   }
 
   if (page > 1) {
@@ -77,13 +110,10 @@ function renderOrderRow(item: OrderListItem) {
     <a
       key={item.id}
       href={`/order/${item.id}`}
-      className="row my-1 py-2 border-top text-decoration-none text-reset align-items-center"
+      className="row my-1 py-2 border-top selectable text-decoration-none text-reset align-items-center"
     >
       <div className="col-12 col-md-2">
         <strong>{item.id}</strong>
-        {item.reference ? (
-          <div className="text-muted small">{item.reference}</div>
-        ) : null}
         <div className="text-muted small">
           <i className="bi bi-clock-history" aria-hidden="true" />{" "}
           {item.updatedAt}
@@ -95,7 +125,11 @@ function renderOrderRow(item: OrderListItem) {
       </div>
       <div className="col-6 col-md-3 mt-2 mt-md-0">
         <div className="text-muted small">Сумма</div>
-        <div className="fw-semibold">
+        <div
+          className="fw-semibold"
+          data-order-total-cents={item.totalCents}
+          data-order-currency={item.currency}
+        >
           {formatMoney(item.totalCents, item.currency)}
         </div>
       </div>
@@ -115,12 +149,66 @@ function renderOrderRow(item: OrderListItem) {
 
 export function OrdersIndexEmptyState() {
   return (
-    <div className="card-body p-4">
-      <h2 className="h5 mb-2">Заказы не найдены</h2>
-      <p className="text-secondary mb-0">
-        Попробуйте изменить поиск или открыть первую страницу списка.
-      </p>
+    <div className="alert alert-warning my-2" role="alert">
+      Нет заказов для отображения.
     </div>
+  );
+}
+
+function OrdersPagination({
+  page,
+  totalPages,
+  search,
+  status,
+  updatedAfter,
+  updatedBefore,
+}: {
+  page: number;
+  totalPages: number;
+  search: string | null;
+  status: string | null;
+  updatedAfter: string | null;
+  updatedBefore: string | null;
+}) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  return (
+    <nav aria-label="pagination">
+      <ul
+        className="pagination justify-content-center flex-wrap"
+        id="pagination"
+      >
+        {Array.from({ length: totalPages }, (_, index) => index + 1).map(
+          (candidatePage) =>
+            candidatePage !== page ? (
+              <li key={candidatePage} className="page-item">
+                <a
+                  className="page-link"
+                  href={buildOrdersIndexPageUrl(
+                    candidatePage,
+                    search,
+                    status,
+                    updatedAfter,
+                    updatedBefore,
+                  )}
+                >
+                  {candidatePage}
+                </a>
+              </li>
+            ) : (
+              <li
+                key={candidatePage}
+                className="page-item active"
+                aria-current="page"
+              >
+                <span className="page-link">{candidatePage}</span>
+              </li>
+            ),
+        )}
+      </ul>
+    </nav>
   );
 }
 
@@ -138,6 +226,9 @@ export function OrdersIndexBootstrapPage() {
 
     void fetchOrdersCollection({
       search: query.search,
+      status: query.status,
+      updatedAfter: query.updatedAfter,
+      updatedBefore: query.updatedBefore,
       page: query.page,
     })
       .then((data) => {
@@ -164,7 +255,13 @@ export function OrdersIndexBootstrapPage() {
     return () => {
       active = false;
     };
-  }, [query.page, query.search]);
+  }, [
+    query.page,
+    query.search,
+    query.status,
+    query.updatedAfter,
+    query.updatedBefore,
+  ]);
 
   if (shellState.status === "error") {
     return <OrdersShellFatalState message={shellState.message} />;
@@ -175,18 +272,38 @@ export function OrdersIndexBootstrapPage() {
   }
 
   const searchForm = (
-    <form method="get" action="/" className="d-flex gap-2 my-2 my-sm-0">
-      <input
-        type="search"
-        name="search"
-        className="form-control"
-        defaultValue={query.search ?? ""}
-        placeholder="Поиск заказов"
-        aria-label="Поиск заказов"
-      />
-      <button className="btn btn-outline-secondary" type="submit">
-        Найти
-      </button>
+    <form className="d-flex w-100" role="search" action="/">
+      <div className="input-group me-2">
+        {query.status ? (
+          <input type="hidden" name="status" value={query.status} />
+        ) : null}
+        {query.updatedAfter ? (
+          <input
+            type="hidden"
+            name="updated_after"
+            value={query.updatedAfter}
+          />
+        ) : null}
+        {query.updatedBefore ? (
+          <input
+            type="hidden"
+            name="updated_before"
+            value={query.updatedBefore}
+          />
+        ) : null}
+        <input
+          required
+          name="search"
+          className="form-control"
+          type="search"
+          placeholder="Поиск"
+          aria-label="Search"
+          defaultValue={query.search ?? ""}
+        />
+        <button className="btn btn-outline-secondary" type="submit">
+          <i className="bi bi-search" />
+        </button>
+      </div>
     </form>
   );
 
@@ -199,110 +316,144 @@ export function OrdersIndexBootstrapPage() {
       fetchedMenuItems={shellState.authMenuItems}
       search={searchForm}
     >
-      <main className="container py-3">
-        {ordersState.status === "loading" ? (
-          <div className="card shadow-sm">
-            <div className="card-body p-4">
-              <p className="text-uppercase text-secondary small mb-2">Orders</p>
-              <h1 className="h4 mb-2">Загружаем заказы</h1>
-              <p className="text-secondary mb-0">
-                React-страница инициализирует список заказов из
-                `/api/v1/orders`.
-              </p>
-            </div>
-          </div>
-        ) : null}
-
-        {ordersState.status === "error" ? (
-          <div className="card shadow-sm">
-            <div className="card-body p-4">
-              <p className="text-uppercase text-secondary small mb-2">Orders</p>
-              <h1 className="h4 mb-2">Не удалось загрузить список заказов</h1>
-              <p className="text-danger mb-0">{ordersState.message}</p>
-            </div>
-          </div>
-        ) : null}
-
-        {ordersState.status === "ready" ? (
-          <>
-            <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
-              <div>
-                <p className="text-uppercase text-secondary small mb-1">
-                  Orders
-                </p>
-                <h1 className="h4 mb-1">Заказы</h1>
-                <p className="text-secondary mb-0">
-                  Всего: {ordersState.data.pagination.totalItems}
-                  {ordersState.data.activeFilters.search ? (
-                    <>
-                      {" "}
-                      | Поиск:{" "}
-                      <strong>{ordersState.data.activeFilters.search}</strong>
-                    </>
-                  ) : null}
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white border rounded my-2">
-              {ordersState.data.items.length > 0 ? (
-                ordersState.data.items.map(renderOrderRow)
-              ) : (
-                <OrdersIndexEmptyState />
-              )}
-            </div>
-
-            {ordersState.data.pagination.totalPages > 1 ? (
-              <nav
-                aria-label="Навигация по страницам заказов"
-                className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mt-3"
+      <main>
+        <div className="container bg-white border rounded my-2">
+          <div className="row justify-content-end">
+            <div className="col-auto align-self-end">
+              <button
+                className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 mt-1"
+                type="button"
+                data-bs-toggle="modal"
+                data-bs-target="#filtersModal"
               >
-                <span className="text-secondary">
-                  Страница {ordersState.data.pagination.page} из{" "}
-                  {ordersState.data.pagination.totalPages}
+                <i className="bi bi-funnel" />
+                <span id="activeFiltersBadge" className="badge text-bg-primary">
+                  •
                 </span>
-                <div className="d-flex gap-2">
-                  {ordersState.data.pagination.hasPreviousPage ? (
-                    <a
-                      className="btn btn-outline-secondary"
-                      href={buildOrdersIndexPageUrl(
-                        Math.max(1, ordersState.data.pagination.page - 1),
-                        ordersState.data.activeFilters.search,
-                      )}
-                    >
-                      Назад
-                    </a>
-                  ) : (
-                    <span
-                      className="btn btn-outline-secondary disabled"
-                      aria-disabled="true"
-                    >
-                      Назад
-                    </span>
-                  )}
-                  {ordersState.data.pagination.hasNextPage ? (
-                    <a
-                      className="btn btn-outline-secondary"
-                      href={buildOrdersIndexPageUrl(
-                        ordersState.data.pagination.page + 1,
-                        ordersState.data.activeFilters.search,
-                      )}
-                    >
-                      Вперёд
-                    </a>
-                  ) : (
-                    <span
-                      className="btn btn-outline-secondary disabled"
-                      aria-disabled="true"
-                    >
-                      Вперёд
-                    </span>
-                  )}
+              </button>
+            </div>
+          </div>
+
+          {ordersState.status === "loading" ? (
+            <div className="alert alert-info my-2" role="status">
+              Загрузка списка заказов...
+            </div>
+          ) : null}
+
+          {ordersState.status === "error" ? (
+            <div className="alert alert-danger my-2" role="alert">
+              {ordersState.message}
+            </div>
+          ) : null}
+
+          {ordersState.status === "ready" ? (
+            <>
+              <div id="orderList">
+                {ordersState.data.items.length > 0 ? (
+                  ordersState.data.items.map(renderOrderRow)
+                ) : (
+                  <OrdersIndexEmptyState />
+                )}
+              </div>
+              <OrdersPagination
+                page={ordersState.data.pagination.page}
+                totalPages={ordersState.data.pagination.totalPages}
+                search={ordersState.data.activeFilters.search}
+                status={ordersState.data.activeFilters.status}
+                updatedAfter={ordersState.data.activeFilters.updatedAfter}
+                updatedBefore={ordersState.data.activeFilters.updatedBefore}
+              />
+            </>
+          ) : null}
+        </div>
+
+        <div
+          className="modal fade"
+          id="filtersModal"
+          tabIndex={-1}
+          aria-labelledby="filtersModalLabel"
+          aria-hidden="true"
+        >
+          <div className="modal-dialog modal-lg modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h1 className="modal-title fs-5" id="filtersModalLabel">
+                  Фильтры заказов
+                </h1>
+                <button
+                  type="button"
+                  className="btn-close"
+                  data-bs-dismiss="modal"
+                  aria-label="Закрыть"
+                />
+              </div>
+              <form className="modal-body row g-3" method="get" action="/">
+                {query.search ? (
+                  <input type="hidden" name="search" value={query.search} />
+                ) : null}
+                <div className="col-12">
+                  <label
+                    htmlFor="filterStatus"
+                    className="form-label small text-uppercase text-muted mb-1"
+                  >
+                    Статус
+                  </label>
+                  <select
+                    id="filterStatus"
+                    name="status"
+                    className="form-select"
+                    defaultValue={query.status ?? ""}
+                  >
+                    <option value="">Все</option>
+                    <option value="Pending">В ожидании</option>
+                    <option value="Processing">В работе</option>
+                    <option value="Completed">Завершена</option>
+                    <option value="Cancelled">Отменена</option>
+                    <option value="Draft">Черновик</option>
+                  </select>
                 </div>
-              </nav>
-            ) : null}
-          </>
-        ) : null}
+                <div className="col-12 col-md-6">
+                  <label
+                    htmlFor="filterUpdatedAfter"
+                    className="form-label small text-uppercase text-muted mb-1"
+                  >
+                    Обновлена после
+                  </label>
+                  <input
+                    id="filterUpdatedAfter"
+                    name="updated_after"
+                    type="date"
+                    className="form-control"
+                    defaultValue={query.updatedAfter ?? ""}
+                  />
+                </div>
+                <div className="col-12 col-md-6">
+                  <label
+                    htmlFor="filterUpdatedBefore"
+                    className="form-label small text-uppercase text-muted mb-1"
+                  >
+                    Обновлена до
+                  </label>
+                  <input
+                    id="filterUpdatedBefore"
+                    name="updated_before"
+                    type="date"
+                    className="form-control"
+                    defaultValue={query.updatedBefore ?? ""}
+                  />
+                </div>
+                <div className="col-12 d-flex flex-wrap gap-2 justify-content-end pt-3">
+                  <button type="submit" className="btn btn-primary">
+                    Применить
+                  </button>
+                  <a href="/" className="btn btn-outline-secondary">
+                    Сбросить
+                  </a>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       </main>
     </OrdersShell>
   );

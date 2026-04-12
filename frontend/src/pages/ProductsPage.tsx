@@ -1399,6 +1399,28 @@ export function ProductsPage() {
           vendors: [],
         };
 
+  const searchForm = (
+    <form className="d-flex w-100" role="search" action="/products">
+      {query.showArchived ? (
+        <input type="hidden" name="show_archived" value="true" />
+      ) : null}
+      <div className="input-group me-2">
+        <input
+          required
+          name="search"
+          className="form-control"
+          type="search"
+          placeholder="Поиск"
+          aria-label="Search"
+          defaultValue={query.search ?? ""}
+        />
+        <button className="btn btn-outline-secondary" type="submit">
+          <i className="bi bi-search" />
+        </button>
+      </div>
+    </form>
+  );
+
   return (
     <OrdersShell
       navigation={shellState.shell.navigation}
@@ -1406,8 +1428,9 @@ export function ProductsPage() {
       homeUrl={shellState.shell.homeUrl}
       localMenuItems={shellState.shell.localMenuItems}
       fetchedMenuItems={shellState.authMenuItems}
+      search={searchForm}
     >
-      <main className="container py-3 orders-shell-content">
+      <main>
         <div className="container bg-white border rounded my-2">
           <div className="row mb-3">
             <div className="col text-center add-item-container">
@@ -1438,29 +1461,14 @@ export function ProductsPage() {
           </div>
 
           {productsState.status === "loading" ? (
-            <div className="card border-0 shadow-none">
-              <div className="card-body p-4">
-                <p className="text-uppercase text-secondary small mb-2">
-                  Товары
-                </p>
-                <h1 className="h4 mb-2">Загружаем товары</h1>
-                <p className="text-secondary mb-0">
-                  React-страница инициализирует список товаров из{" "}
-                  <code>/api/v1/products</code>.
-                </p>
-              </div>
+            <div className="alert alert-info my-2" role="status">
+              Загрузка списка товаров...
             </div>
           ) : null}
 
           {productsState.status === "error" ? (
-            <div className="card border-0 shadow-none">
-              <div className="card-body p-4">
-                <p className="text-uppercase text-secondary small mb-2">
-                  Товары
-                </p>
-                <h1 className="h4 mb-2">Не удалось загрузить список товаров</h1>
-                <p className="text-danger mb-0">{productsState.message}</p>
-              </div>
+            <div className="alert alert-danger my-2" role="alert">
+              {productsState.message}
             </div>
           ) : null}
 
@@ -1475,11 +1483,19 @@ export function ProductsPage() {
               <div id="productList">
                 {productsState.data.items.length > 0 ? (
                   productsState.data.items.map((product) => (
-                    <button
+                    <div
                       key={product.id}
-                      type="button"
-                      className={`row my-1 py-2 border-top selectable btn btn-link text-start text-decoration-none text-reset w-100 m-0 ${product.isArchived ? "product-archived" : ""}`}
+                      className={`row my-1 py-2 border-top selectable ${product.isArchived ? "product-archived" : ""}`}
+                      data-id={product.id}
                       onClick={() => handleProductRowClick(product.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          handleProductRowClick(product.id);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                     >
                       <div className="col-lg-4 col-12 d-flex justify-content-between align-items-start gap-2">
                         <div className="d-flex align-items-start gap-2 flex-grow-1">
@@ -1568,7 +1584,7 @@ export function ProductsPage() {
                           </div>
                         </div>
                       ) : null}
-                    </button>
+                    </div>
                   ))
                 ) : (
                   <ProductsEmptyState />

@@ -269,6 +269,9 @@ function parseOrderCollectionFilters(payload: unknown): OrderCollectionFilters {
 
   return {
     search: readNullableString(payload, "search"),
+    status: readNullableString(payload, "status"),
+    updatedAfter: readNullableString(payload, "updated_after"),
+    updatedBefore: readNullableString(payload, "updated_before"),
   };
 }
 
@@ -617,6 +620,7 @@ function parseTagListItem(payload: unknown): TagListItem {
   return {
     id: readNumber(payload, "id"),
     name: readString(payload, "name"),
+    createdAt: readString(payload, "created_at"),
     updatedAt: readString(payload, "updated_at"),
   };
 }
@@ -667,6 +671,7 @@ function parsePriceLevelListItem(payload: unknown) {
     id: readNumber(payload, "id"),
     name: readString(payload, "name"),
     isDefault: readBoolean(payload, "is_default"),
+    createdAt: readString(payload, "created_at"),
     updatedAt: readString(payload, "updated_at"),
   };
 }
@@ -1103,12 +1108,27 @@ export async function fetchNoAccessData(): Promise<NoAccessData> {
 
 export async function fetchOrdersCollection(params?: {
   search?: string | null;
+  status?: string | null;
+  updatedAfter?: string | null;
+  updatedBefore?: string | null;
   page?: number;
 }): Promise<OrderCollectionData> {
   const searchParams = new URLSearchParams();
 
   if (params?.search) {
     searchParams.set("search", params.search);
+  }
+
+  if (params?.status) {
+    searchParams.set("status", params.status);
+  }
+
+  if (params?.updatedAfter) {
+    searchParams.set("updated_after", params.updatedAfter);
+  }
+
+  if (params?.updatedBefore) {
+    searchParams.set("updated_before", params.updatedBefore);
   }
 
   if (params?.page && params.page > 1) {

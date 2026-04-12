@@ -28,12 +28,13 @@ describe("orders page helpers", () => {
   it("renders the dashboard empty state copy", () => {
     const markup = renderToStaticMarkup(<OrdersIndexEmptyState />);
 
-    expect(markup).toContain("Заказы не найдены");
-    expect(markup).toContain("Попробуйте изменить поиск");
+    expect(markup).toContain("Нет заказов для отображения.");
   });
 
   it("builds native pagination links for the dashboard", () => {
-    expect(buildOrdersIndexPageUrl(1, null)).toBe("/");
-    expect(buildOrdersIndexPageUrl(2, "coffee")).toBe("/?search=coffee&page=2");
+    expect(buildOrdersIndexPageUrl(1, null, null, null, null)).toBe("/");
+    expect(buildOrdersIndexPageUrl(2, "coffee", null, null, null)).toBe(
+      "/?search=coffee&page=2",
+    );
   });
 });

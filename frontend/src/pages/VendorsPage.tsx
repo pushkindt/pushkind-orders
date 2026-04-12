@@ -40,6 +40,35 @@ type LocalUsersState =
   | { status: "ready"; data: LocalUserCollectionData }
   | { status: "error"; message: string };
 
+function buildPaginationPages(totalPages: number, currentPage: number) {
+  if (totalPages <= 1) {
+    return [];
+  }
+
+  const pages = new Set<number>();
+  pages.add(1);
+  pages.add(totalPages);
+
+  for (let page = currentPage - 1; page <= currentPage + 1; page += 1) {
+    if (page >= 1 && page <= totalPages) {
+      pages.add(page);
+    }
+  }
+
+  const orderedPages = [...pages].sort((left, right) => left - right);
+  const sequence: Array<number | null> = [];
+
+  orderedPages.forEach((page, index) => {
+    const previous = orderedPages[index - 1];
+    if (previous != null && page - previous > 1) {
+      sequence.push(null);
+    }
+    sequence.push(page);
+  });
+
+  return sequence;
+}
+
 function readQuery(): VendorsQuery {
   const params = new URLSearchParams(window.location.search);
   const page = Number.parseInt(params.get("page") ?? "1", 10);
@@ -183,6 +212,14 @@ export function VendorsPage() {
     return vendorsState.data.items;
   }, [vendorsState]);
 
+  const paginationPages =
+    vendorsState.status === "ready"
+      ? buildPaginationPages(
+          vendorsState.data.pagination.totalPages,
+          vendorsState.data.pagination.page,
+        )
+      : [];
+
   const openCreate = () => {
     setCreateName("");
     setVendorFieldErrors({});
@@ -272,6 +309,24 @@ export function VendorsPage() {
     try {
       const response = await deleteVendor(editId);
       hideBootstrapModal(editModalRef.current);
+      window.showFlashMessage?.(response.message, "primary");
+      await reloadAll();
+    } catch (error) {
+      window.showFlashMessage?.(
+        error instanceof Error
+          ? error.message
+          : "Не удалось удалить поставщика.",
+        "danger",
+      );
+    } finally {
+      setIsDeletingVendor(false);
+    }
+  };
+
+  const handleDeleteVendorInline = async (vendorId: number) => {
+    setIsDeletingVendor(true);
+    try {
+      const response = await deleteVendor(vendorId);
       window.showFlashMessage?.(response.message, "primary");
       await reloadAll();
     } catch (error) {
@@ -383,259 +438,285 @@ export function VendorsPage() {
       fetchedMenuItems={shellState.authMenuItems}
       search={
         <form
-          className="d-flex"
+          className="d-flex w-100"
+          role="search"
+          action="/vendors"
           onSubmit={(event) => {
             event.preventDefault();
             setQuery({ search: searchDraft.trim() || null, page: 1 });
           }}
         >
-          <input
-            className="form-control"
-            placeholder="Поиск поставщиков"
-            value={searchDraft}
-            onChange={(event) => setSearchDraft(event.currentTarget.value)}
-          />
+          <div className="input-group me-2">
+            <input
+              required
+              name="search"
+              className="form-control"
+              type="search"
+              placeholder="Поиск"
+              aria-label="Search"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.currentTarget.value)}
+            />
+            <button className="btn btn-outline-secondary" type="submit">
+              <i className="bi bi-search" />
+            </button>
+          </div>
         </form>
       }
     >
-      <div className="container py-3">
-        <div className="bg-white border rounded p-3 mb-3">
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h2 className="h4 mb-0">Поставщики</h2>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={openCreate}
-            >
-              <i className="bi bi-plus-lg me-2" />
-              Добавить поставщика
+      <div className="container bg-white border rounded my-2">
+        <div className="row mb-3">
+          <div className="col text-center add-item-container">
+            <button type="button" className="btn btn-link" onClick={openCreate}>
+              <i className="bi bi-plus-circle" />
             </button>
           </div>
-
-          {vendorsState.status === "error" ? (
-            <div className="alert alert-danger mb-0" role="alert">
-              {vendorsState.message}
-            </div>
-          ) : vendorsState.status === "loading" ? (
-            <div className="text-muted">Загрузка поставщиков…</div>
-          ) : (
-            <>
-              <div className="table-responsive">
-                <table className="table align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th>Название</th>
-                      <th>Добавлено</th>
-                      <th>Обновлено</th>
-                      <th className="text-end">Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vendorsState.data.items.length > 0 ? (
-                      vendorsState.data.items.map((vendor) => (
-                        <tr key={vendor.id}>
-                          <td>{vendor.name}</td>
-                          <td>{vendor.createdAt}</td>
-                          <td>{vendor.updatedAt}</td>
-                          <td className="text-end">
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-primary"
-                              onClick={() => openEdit(vendor.id)}
-                            >
-                              Изменить
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={4} className="text-muted text-center py-4">
-                          Нет поставщиков для отображения.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+        </div>
+        {vendorsState.status === "error" ? (
+          <div className="alert alert-danger mb-0" role="alert">
+            {vendorsState.message}
+          </div>
+        ) : vendorsState.status === "loading" ? (
+          <div className="alert alert-info mb-0">Загрузка поставщиков...</div>
+        ) : (
+          <>
+            <div className="row d-none d-sm-flex fw-bold">
+              <div className="col-sm overflow-hidden">Название</div>
+              <div className="col-sm overflow-hidden">Добавлено</div>
+              <div className="col-sm overflow-hidden">Обновлено</div>
+              <div className="col-sm-2 overflow-hidden text-sm-end">
+                Действия
               </div>
+            </div>
+            <div id="vendorList">
+              {vendorsState.data.items.length > 0 ? (
+                vendorsState.data.items.map((vendor) => (
+                  <div
+                    key={vendor.id}
+                    className="row my-1 py-1 border-top"
+                    data-id={vendor.id}
+                  >
+                    <div className="col-sm">
+                      <span className="d-sm-none fw-bold">Название:</span>
+                      {vendor.name}
+                    </div>
+                    <div className="col-sm">
+                      <span className="d-sm-none fw-bold">Добавлено:</span>
+                      {vendor.createdAt}
+                    </div>
+                    <div className="col-sm">
+                      <span className="d-sm-none fw-bold">Обновлено:</span>
+                      {vendor.updatedAt}
+                    </div>
+                    <div className="col-sm-2 col-12 d-flex justify-content-sm-end align-items-center mt-2 mt-sm-0">
+                      <span className="d-sm-none fw-bold me-2">Действия:</span>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-warning d-flex align-items-center gap-2 me-2"
+                        onClick={() => openEdit(vendor.id)}
+                      >
+                        <i className="bi bi-pen" />
+                        <span className="d-none d-sm-inline">Изменить</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-danger d-flex align-items-center gap-2"
+                        onClick={() => void handleDeleteVendorInline(vendor.id)}
+                        disabled={isDeletingVendor}
+                      >
+                        <i className="bi bi-trash" />
+                        <span className="d-none d-sm-inline">Удалить</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="alert alert-warning my-2" role="alert">
+                  Нет поставщиков для отображения.
+                </div>
+              )}
+            </div>
+            {paginationPages.length > 0 ? (
+              <nav aria-label="pagination">
+                <ul
+                  className="pagination justify-content-center flex-wrap"
+                  id="pagination"
+                >
+                  {paginationPages.map((page, index) =>
+                    page == null ? (
+                      <li key={`ellipsis-${index}`} className="page-item">
+                        <span className="ellipsis page-link border-0 bg-transparent">
+                          …
+                        </span>
+                      </li>
+                    ) : page !== query.page ? (
+                      <li key={page} className="page-item">
+                        <a
+                          className="page-link"
+                          href={buildUrl({ ...query, page })}
+                        >
+                          {page}
+                        </a>
+                      </li>
+                    ) : (
+                      <li
+                        key={page}
+                        className="page-item active"
+                        aria-current="page"
+                      >
+                        <span className="page-link">{page}</span>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </nav>
+            ) : null}
+          </>
+        )}
+      </div>
 
-              {vendorsState.data.pagination.totalPages > 1 ? (
-                <div className="d-flex justify-content-between align-items-center mt-3">
+      <div className="container bg-white border rounded my-2">
+        <div className="row">
+          <div className="col">
+            <form method="post" onSubmit={handleCreateLocalUser}>
+              <div className="row">
+                <div className="col position-relative">
+                  <input
+                    className={`form-control mt-2 ${userFieldErrors.email ? "is-invalid" : ""}`}
+                    placeholder="Добавить пользователя c ролью поставщик"
+                    value={selectedAuthUser?.email ?? authSearchQuery}
+                    onChange={(event) => {
+                      setSelectedAuthUser(null);
+                      setAuthSearchQuery(event.currentTarget.value);
+                    }}
+                  />
+                  {userFieldErrors.email ? (
+                    <div className="invalid-feedback d-block">
+                      {userFieldErrors.email}
+                    </div>
+                  ) : null}
+                  {!selectedAuthUser && authSearchResults.length > 0 ? (
+                    <div
+                      className="list-group position-absolute start-0 end-0 shadow-sm mt-1"
+                      style={{ zIndex: 10 }}
+                    >
+                      {authSearchResults.map((item) => (
+                        <button
+                          key={item.sub}
+                          type="button"
+                          className="list-group-item list-group-item-action"
+                          onClick={() => {
+                            setSelectedAuthUser(item);
+                            setAuthSearchQuery(item.email);
+                            setAuthSearchResults([]);
+                          }}
+                        >
+                          <strong>
+                            {item.name} ({item.email})
+                          </strong>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="col-auto">
                   <button
-                    type="button"
-                    className="btn btn-outline-secondary"
-                    disabled={!vendorsState.data.pagination.hasPreviousPage}
-                    onClick={() =>
-                      setQuery((current) => ({
-                        ...current,
-                        page: current.page - 1,
-                      }))
-                    }
+                    type="submit"
+                    className="btn btn-primary my-1"
+                    disabled={isCreatingUser}
                   >
-                    Назад
-                  </button>
-                  <span className="text-muted">
-                    Страница {vendorsState.data.pagination.page} из{" "}
-                    {vendorsState.data.pagination.totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary"
-                    disabled={!vendorsState.data.pagination.hasNextPage}
-                    onClick={() =>
-                      setQuery((current) => ({
-                        ...current,
-                        page: current.page + 1,
-                      }))
-                    }
-                  >
-                    Вперёд
+                    <i className="bi bi-plus" />
                   </button>
                 </div>
+              </div>
+              {!selectedAuthUser && isSearchingUsers ? (
+                <div className="form-text">Поиск пользователей…</div>
               ) : null}
-            </>
-          )}
+            </form>
+          </div>
         </div>
 
-        <div className="bg-white border rounded p-3">
-          <h2 className="h4 mb-3">Пользователи поставщиков</h2>
-          <form
-            className="mb-4 position-relative"
-            onSubmit={handleCreateLocalUser}
-          >
-            <label className="form-label">
-              Добавить пользователя с ролью поставщика
-            </label>
-            <div className="input-group">
-              <input
-                className={`form-control ${userFieldErrors.email ? "is-invalid" : ""}`}
-                placeholder="Начните вводить имя или email"
-                value={selectedAuthUser?.email ?? authSearchQuery}
-                onChange={(event) => {
-                  setSelectedAuthUser(null);
-                  setAuthSearchQuery(event.currentTarget.value);
-                }}
-              />
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={isCreatingUser}
-              >
-                {isCreatingUser ? "Добавление…" : "Добавить"}
-              </button>
-            </div>
-            {userFieldErrors.email ? (
-              <div className="invalid-feedback d-block">
-                {userFieldErrors.email}
-              </div>
-            ) : null}
-            {!selectedAuthUser && authSearchResults.length > 0 ? (
-              <div
-                className="list-group position-absolute w-100 shadow-sm"
-                style={{ zIndex: 10 }}
-              >
-                {authSearchResults.map((item) => (
-                  <button
-                    key={item.sub}
-                    type="button"
-                    className="list-group-item list-group-item-action"
-                    onClick={() => {
-                      setSelectedAuthUser(item);
-                      setAuthSearchQuery(item.email);
-                      setAuthSearchResults([]);
-                    }}
-                  >
-                    <strong>{item.name}</strong>
-                    <span className="d-block text-muted">{item.email}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {!selectedAuthUser && isSearchingUsers ? (
-              <div className="form-text">Поиск пользователей…</div>
-            ) : null}
-          </form>
+        <h5 className="mt-3">Привязка пользователей</h5>
 
-          {localUsersState.status === "error" ? (
-            <div className="alert alert-danger mb-0" role="alert">
-              {localUsersState.message}
+        {localUsersState.status === "error" ? (
+          <div className="alert alert-danger mb-0" role="alert">
+            {localUsersState.message}
+          </div>
+        ) : localUsersState.status === "loading" ? (
+          <div className="text-muted">Загрузка пользователей…</div>
+        ) : (
+          <>
+            <div className="row d-none d-sm-flex fw-bold">
+              <div className="col-sm overflow-hidden">Пользователь</div>
+              <div className="col-sm overflow-hidden">Email</div>
+              <div className="col-sm overflow-hidden">Поставщик</div>
+              <div className="col-sm-3 overflow-hidden text-sm-end">
+                Действия
+              </div>
             </div>
-          ) : localUsersState.status === "loading" ? (
-            <div className="text-muted">Загрузка пользователей…</div>
-          ) : (
-            <div className="table-responsive">
-              <table className="table align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th>Пользователь</th>
-                    <th>Email</th>
-                    <th>Поставщик</th>
-                    <th className="text-end">Действия</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {localUsersState.data.items.length > 0 ? (
-                    localUsersState.data.items.map((item) => (
-                      <tr key={item.userId}>
-                        <td>{item.name}</td>
-                        <td>{item.email}</td>
-                        <td>{item.vendorName ?? "—"}</td>
-                        <td className="text-end">
-                          <div className="d-flex gap-2 justify-content-end">
-                            <select
-                              className="form-select form-select-sm"
-                              style={{ maxWidth: 260 }}
-                              value={assignments[item.userId] ?? ""}
-                              onChange={(event) =>
-                                setAssignments((current) => ({
-                                  ...current,
-                                  [item.userId]: event.currentTarget.value,
-                                }))
-                              }
-                            >
-                              <option value="">Выберите поставщика</option>
-                              {vendorOptions.map((vendor) => (
-                                <option key={vendor.id} value={vendor.id}>
-                                  {vendor.name}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-primary"
-                              disabled={activeAssignmentUserId === item.userId}
-                              onClick={() => void handleAssign(item.userId)}
-                            >
-                              Назначить
-                            </button>
-                            {item.vendorId != null ? (
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-outline-secondary"
-                                disabled={
-                                  activeAssignmentUserId === item.userId
-                                }
-                                onClick={() => void handleClear(item.userId)}
-                              >
-                                Снять
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={4} className="text-muted text-center py-4">
-                        Нет пользователей для отображения.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+            {localUsersState.data.items.length > 0 ? (
+              localUsersState.data.items.map((item) => (
+                <div key={item.userId} className="row my-1 py-2 border-top">
+                  <div className="col-sm">
+                    <span className="d-sm-none fw-bold">Пользователь:</span>
+                    {item.name}
+                  </div>
+                  <div className="col-sm">
+                    <span className="d-sm-none fw-bold">Email:</span>
+                    {item.email}
+                  </div>
+                  <div className="col-sm">
+                    <span className="d-sm-none fw-bold">Поставщик:</span>
+                    {item.vendorName ?? "—"}
+                  </div>
+                  <div className="col-sm-3 col-12 d-flex justify-content-sm-end align-items-center gap-2 mt-2 mt-sm-0">
+                    <div className="d-flex align-items-center gap-2">
+                      <select
+                        className="form-select form-select-sm"
+                        value={assignments[item.userId] ?? ""}
+                        onChange={(event) =>
+                          setAssignments((current) => ({
+                            ...current,
+                            [item.userId]: event.currentTarget.value,
+                          }))
+                        }
+                      >
+                        <option value="">Выберите поставщика</option>
+                        {vendorOptions.map((vendor) => (
+                          <option key={vendor.id} value={vendor.id}>
+                            {vendor.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary"
+                        disabled={activeAssignmentUserId === item.userId}
+                        onClick={() => void handleAssign(item.userId)}
+                      >
+                        Назначить
+                      </button>
+                    </div>
+                    {item.vendorId != null ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        disabled={activeAssignmentUserId === item.userId}
+                        onClick={() => void handleClear(item.userId)}
+                      >
+                        Снять
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="alert alert-warning my-2" role="alert">
+                Нет пользователей для отображения.
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="modal fade" tabIndex={-1} ref={createModalRef}>

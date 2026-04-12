@@ -48,6 +48,9 @@ describe("orders api helpers", () => {
           },
           active_filters: {
             search: "ord",
+            status: null,
+            updated_after: null,
+            updated_before: null,
           },
         }),
         {
@@ -111,6 +114,9 @@ describe("orders api helpers", () => {
           },
           active_filters: {
             search: null,
+            status: null,
+            updated_after: null,
+            updated_before: null,
           },
         }),
         {
