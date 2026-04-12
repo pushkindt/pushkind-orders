@@ -674,12 +674,13 @@ export function VendorsPage() {
                       <select
                         className="form-select form-select-sm"
                         value={assignments[item.userId] ?? ""}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const value = event.currentTarget.value;
                           setAssignments((current) => ({
                             ...current,
-                            [item.userId]: event.currentTarget.value,
-                          }))
-                        }
+                            [item.userId]: value,
+                          }));
+                        }}
                       >
                         <option value="">Выберите поставщика</option>
                         {vendorOptions.map((vendor) => (

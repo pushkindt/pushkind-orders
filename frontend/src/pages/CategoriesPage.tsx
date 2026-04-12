@@ -438,12 +438,13 @@ export function CategoriesPage() {
                   <input
                     className="form-control"
                     value={createForm.name}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
                       setCreateForm((current) => ({
                         ...current,
-                        name: event.currentTarget.value,
-                      }))
-                    }
+                        name: value,
+                      }));
+                    }}
                   />
                   {createFieldErrors.name ? (
                     <div className="text-danger small mt-1">
@@ -457,12 +458,13 @@ export function CategoriesPage() {
                     className="form-control"
                     rows={3}
                     value={createForm.description}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
                       setCreateForm((current) => ({
                         ...current,
-                        description: event.currentTarget.value,
-                      }))
-                    }
+                        description: value,
+                      }));
+                    }}
                   />
                 </div>
                 <div className="mb-0">
@@ -470,12 +472,13 @@ export function CategoriesPage() {
                   <input
                     className="form-control"
                     value={createForm.imageUrl}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
                       setCreateForm((current) => ({
                         ...current,
-                        imageUrl: event.currentTarget.value,
-                      }))
-                    }
+                        imageUrl: value,
+                      }));
+                    }}
                   />
                   {createFieldErrors.image_url ? (
                     <div className="text-danger small mt-1">
@@ -526,12 +529,13 @@ export function CategoriesPage() {
                     <input
                       className="form-control"
                       value={editForm.name}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
                         setEditForm((current) => ({
                           ...current,
-                          name: event.currentTarget.value,
-                        }))
-                      }
+                          name: value,
+                        }));
+                      }}
                     />
                     {editFieldErrors.name ? (
                       <div className="text-danger small mt-1">
@@ -545,12 +549,13 @@ export function CategoriesPage() {
                       className="form-control"
                       rows={3}
                       value={editForm.description}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
                         setEditForm((current) => ({
                           ...current,
-                          description: event.currentTarget.value,
-                        }))
-                      }
+                          description: value,
+                        }));
+                      }}
                     />
                   </div>
                   <div className="mb-3">
@@ -558,12 +563,13 @@ export function CategoriesPage() {
                     <input
                       className="form-control"
                       value={editForm.imageUrl}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
                         setEditForm((current) => ({
                           ...current,
-                          imageUrl: event.currentTarget.value,
-                        }))
-                      }
+                          imageUrl: value,
+                        }));
+                      }}
                     />
                     {editFieldErrors.image_url ? (
                       <div className="text-danger small mt-1">
@@ -577,12 +583,13 @@ export function CategoriesPage() {
                       type="checkbox"
                       className="form-check-input"
                       checked={editForm.isArchived}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const checked = event.currentTarget.checked;
                         setEditForm((current) => ({
                           ...current,
-                          isArchived: event.currentTarget.checked,
-                        }))
-                      }
+                          isArchived: checked,
+                        }));
+                      }}
                     />
                     <label
                       className="form-check-label"

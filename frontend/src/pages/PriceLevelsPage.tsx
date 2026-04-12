@@ -203,19 +203,32 @@ export function PriceLevelsPage() {
     return data;
   };
 
+  const loadClientsSection = async (crmServiceUrl: string) => {
+    setClientsState({ status: "idle" });
+
+    try {
+      const [assignments, clients] = await Promise.all([
+        fetchClientPriceLevelAssignments(),
+        fetchCrmClients(crmServiceUrl),
+      ]);
+      setClientsState({ status: "ready", assignments, clients });
+    } catch (error) {
+      setClientsState({
+        status: "error",
+        message: "Не удалось загрузить список клиентов.",
+      });
+    }
+  };
+
   useEffect(() => {
     void loadCollection()
       .then((data) => {
         if (!isAdmin) {
+          setClientsState({ status: "idle" });
           return;
         }
 
-        return Promise.all([
-          fetchClientPriceLevelAssignments(),
-          fetchCrmClients(data.crmServiceUrl),
-        ]).then(([assignments, clients]) =>
-          setClientsState({ status: "ready", assignments, clients }),
-        );
+        void loadClientsSection(data.crmServiceUrl);
       })
       .catch((error) =>
         setCollectionState({
@@ -309,11 +322,7 @@ export function PriceLevelsPage() {
       const response = await createPriceLevel(input);
       const data = await loadCollection(searchDraft.trim() || null);
       if (isAdmin) {
-        const [assignments, clients] = await Promise.all([
-          fetchClientPriceLevelAssignments(),
-          fetchCrmClients(data.crmServiceUrl),
-        ]);
-        setClientsState({ status: "ready", assignments, clients });
+        void loadClientsSection(data.crmServiceUrl);
       }
       hideBootstrapModal(createModalRef.current);
       window.showFlashMessage?.(response.message, "primary");
@@ -346,9 +355,8 @@ export function PriceLevelsPage() {
         default: editDefault,
       });
       const data = await loadCollection(searchDraft.trim() || null);
-      if (isAdmin && clientsState.status === "ready") {
-        setClientsState({ ...clientsState });
-        void fetchCrmClients(data.crmServiceUrl);
+      if (isAdmin) {
+        void loadClientsSection(data.crmServiceUrl);
       }
       hideBootstrapModal(editModalRef.current);
       window.showFlashMessage?.(response.message, "primary");
@@ -394,7 +402,10 @@ export function PriceLevelsPage() {
     setIsDeleting(true);
     try {
       const response = await deletePriceLevel(priceLevelId);
-      await loadCollection(searchDraft.trim() || null);
+      const data = await loadCollection(searchDraft.trim() || null);
+      if (isAdmin) {
+        void loadClientsSection(data.crmServiceUrl);
+      }
       window.showFlashMessage?.(response.message, "primary");
     } catch (error) {
       window.showFlashMessage?.(
