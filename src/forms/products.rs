@@ -1,11 +1,11 @@
-use std::{collections::HashMap, io::Seek};
+use std::{borrow::Cow, collections::HashMap, io::Seek};
 
 use actix_multipart::form::{MultipartForm, tempfile::TempFile};
 use csv::{StringRecord, Trim};
 use pushkind_common::routes::empty_string_as_none_fromstr;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de::Error as DeError};
 use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
 
 use crate::domain::{
     price_level::PriceLevel,
@@ -27,79 +27,153 @@ fn sanitize_image_urls(input: Option<String>) -> Vec<ImageUrl> {
         .unwrap_or_default()
 }
 
+fn optional_scalar_from_json_or_form<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                T::from_str(trimmed).map(Some).map_err(D::Error::custom)
+            }
+        }
+        serde_json::Value::Number(number) => T::from_str(&number.to_string())
+            .map(Some)
+            .map_err(D::Error::custom),
+        serde_json::Value::Bool(value) => T::from_str(if value { "true" } else { "false" })
+            .map(Some)
+            .map_err(D::Error::custom),
+        other => Err(D::Error::custom(format!(
+            "unsupported optional scalar value: {other}"
+        ))),
+    }
+}
+
 /// Result type returned by the product form helpers.
 pub type ProductFormResult<T> = Result<T, ProductFormError>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FormFieldError {
+    pub field: Cow<'static, str>,
+    pub message: Cow<'static, str>,
+}
 
 /// Errors that can occur while processing product forms.
 #[derive(Debug, Error)]
 pub enum ProductFormError {
     /// Validation failures from the `validator` crate.
-    #[error("validation failed: {0}")]
+    #[error("{}", validation_errors_display(.0))]
     Validation(#[from] ValidationErrors),
+    /// The submitted product identifier does not match the resource route.
+    #[error("Идентификатор товара указан неверно.")]
+    ProductIdMismatch,
     /// The provided name is empty after sanitization.
-    #[error("product name cannot be empty")]
+    #[error("Название товара указано неверно.")]
     EmptyName,
     /// The provided description is empty after sanitization.
-    #[error("product description cannot be empty")]
+    #[error("Описание товара указано неверно.")]
     EmptyDescription,
     /// The provided currency code is invalid.
-    #[error("invalid currency code")]
+    #[error("Валюта товара указана неверно.")]
     InvalidCurrency,
     /// The provided SKU is invalid.
-    #[error("invalid sku")]
+    #[error("Артикул указан неверно.")]
     InvalidSku,
     /// The provided units value is invalid.
-    #[error("invalid units")]
+    #[error("Единица измерения указана неверно.")]
     InvalidUnits,
-    #[error("invalid amount")]
+    #[error("Объём товара указан неверно.")]
     InvalidAmount,
     /// The uploaded CSV is missing required columns.
-    #[error("upload is missing the required `name` or `currency` headers")]
+    #[error("CSV-файл должен содержать столбцы name и currency.")]
     MissingRequiredHeaders,
     /// A CSV row did not include a product name.
-    #[error("row {row} is missing a product name")]
+    #[error("В строке {row} не указано название товара.")]
     UploadMissingName { row: usize },
     /// A CSV row did not include a currency code.
-    #[error("row {row} is missing a currency code")]
+    #[error("В строке {row} не указана валюта товара.")]
     UploadMissingCurrency { row: usize },
     /// A CSV row contained an invalid currency code.
-    #[error("row {row} has invalid currency `{value}`")]
+    #[error("В строке {row} указана некорректная валюта: {value}.")]
     UploadInvalidCurrency { row: usize, value: String },
     /// A CSV row contained an invalid price for a price level.
-    #[error("row {row} has invalid price `{value}` for price level `{price_level}`")]
+    #[error("В строке {row} указана некорректная цена {value} для уровня «{price_level}».")]
     UploadInvalidPrice {
         row: usize,
         price_level: String,
         value: String,
     },
     /// The form referenced a price level that does not exist.
-    #[error("unknown price level id `{price_level_id}`")]
+    #[error("Уровень цены указан неверно.")]
     UnknownPriceLevel { price_level_id: i32 },
     /// A provided price could not be parsed for the specified price level.
-    #[error("invalid price `{value}` for price level `{price_level}`")]
+    #[error("Цена для уровня «{price_level}» указана неверно.")]
     InvalidPriceLevelAmount { price_level: String, value: String },
     /// The uploaded CSV did not contain any usable products.
-    #[error("upload contains no products")]
+    #[error("CSV-файл не содержит товаров для загрузки.")]
     EmptyUpload,
     /// CSV parsing failures.
-    #[error("failed to parse CSV: {0}")]
+    #[error("Не удалось прочитать CSV-файл: {0}")]
     Csv(#[from] csv::Error),
     /// File system failures while reading the uploaded payload.
-    #[error("failed to read uploaded file: {0}")]
+    #[error("Не удалось прочитать загруженный файл: {0}")]
     FileRead(#[from] std::io::Error),
     /// The provided category identifier could not be parsed.
-    #[error("invalid category id `{value}`")]
+    #[error("Категория указана неверно.")]
     InvalidCategoryId { value: String },
     /// The provided vendor identifier could not be parsed.
-    #[error("invalid vendor id `{value}`")]
+    #[error("Поставщик указан неверно.")]
     InvalidVendorId { value: String },
+}
+
+impl ProductFormError {
+    pub fn field_errors(&self) -> Vec<FormFieldError> {
+        match self {
+            Self::Validation(errors) => collect_validation_errors(errors),
+            Self::ProductIdMismatch => {
+                vec![field_error("product_id", self.to_string())]
+            }
+            Self::EmptyName => vec![field_error("name", self.to_string())],
+            Self::EmptyDescription => {
+                vec![field_error("description", self.to_string())]
+            }
+            Self::InvalidCurrency => vec![field_error("currency", self.to_string())],
+            Self::InvalidSku => vec![field_error("sku", self.to_string())],
+            Self::InvalidUnits => vec![field_error("units", self.to_string())],
+            Self::InvalidAmount => vec![field_error("amount", self.to_string())],
+            Self::MissingRequiredHeaders
+            | Self::UploadMissingName { .. }
+            | Self::UploadMissingCurrency { .. }
+            | Self::UploadInvalidCurrency { .. }
+            | Self::UploadInvalidPrice { .. }
+            | Self::EmptyUpload
+            | Self::Csv(_)
+            | Self::FileRead(_) => vec![field_error("csv", self.to_string())],
+            Self::UnknownPriceLevel { .. } | Self::InvalidPriceLevelAmount { .. } => {
+                vec![field_error("price_levels", self.to_string())]
+            }
+            Self::InvalidCategoryId { .. } => {
+                vec![field_error("category_id", self.to_string())]
+            }
+            Self::InvalidVendorId { .. } => {
+                vec![field_error("vendor_id", self.to_string())]
+            }
+        }
+    }
 }
 
 /// Form payload emitted when submitting the "Add product" form.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddProductForm {
     /// Name entered by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название товара обязательно."))]
     pub name: String,
     /// Optional SKU supplied by the user.
     #[serde(default)]
@@ -114,16 +188,16 @@ pub struct AddProductForm {
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub units: Option<String>,
     /// ISO 4217 currency code (e.g. `USD`).
-    #[validate(length(equal = 3))]
+    #[validate(length(equal = 3, message = "Валюта должна состоять из 3 символов."))]
     pub currency: String,
     /// Optional category identifier selected by the user.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Категория указана неверно."))]
     #[serde(default)]
-    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
+    #[serde(deserialize_with = "optional_scalar_from_json_or_form")]
     pub category_id: Option<i32>,
     /// Optional vendor identifier selected by the user.
     #[serde(default)]
-    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
+    #[serde(deserialize_with = "optional_scalar_from_json_or_form")]
     pub vendor_id: Option<i32>,
     /// Optional set of tag identifiers selected by the user.
     #[serde(default)]
@@ -137,14 +211,14 @@ pub struct AddProductForm {
     pub price_levels: Vec<AddProductPriceLevelForm>,
     /// Optional amount per unit
     #[serde(default)]
-    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
+    #[serde(deserialize_with = "optional_scalar_from_json_or_form")]
     pub amount: Option<f32>,
 }
 
 /// Price level payload submitted alongside a product form.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddProductPriceLevelForm {
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Уровень цены указан неверно."))]
     pub price_level_id: i32,
     pub price: String,
 }
@@ -214,21 +288,32 @@ impl<'a> TryFrom<(AddProductForm, i32, &'a [PriceLevel])> for AddProductPayload 
         }
 
         if let Some(category_id) = category_id {
-            let category_id =
-                CategoryId::new(category_id).map_err(|_| ProductFormError::InvalidCategoryId {
-                    value: category_id.to_string(),
+            if category_id > 0 {
+                let category_id = CategoryId::new(category_id).map_err(|_| {
+                    ProductFormError::InvalidCategoryId {
+                        value: category_id.to_string(),
+                    }
                 })?;
-            new_product = new_product.with_category_id(category_id);
+                new_product = new_product.with_category_id(category_id);
+            } else if category_id < 0 {
+                return Err(ProductFormError::InvalidCategoryId {
+                    value: category_id.to_string(),
+                });
+            }
         }
 
-        if let Some(vendor_id) = vendor_id
-            && vendor_id > 0
-        {
-            let vendor_id =
-                VendorId::new(vendor_id).map_err(|_| ProductFormError::InvalidVendorId {
+        if let Some(vendor_id) = vendor_id {
+            if vendor_id > 0 {
+                let vendor_id =
+                    VendorId::new(vendor_id).map_err(|_| ProductFormError::InvalidVendorId {
+                        value: vendor_id.to_string(),
+                    })?;
+                new_product = new_product.with_vendor_id(vendor_id);
+            } else if vendor_id < 0 {
+                return Err(ProductFormError::InvalidVendorId {
                     value: vendor_id.to_string(),
-                })?;
-            new_product = new_product.with_vendor_id(vendor_id);
+                });
+            }
         }
 
         if let Some(amount) = amount {
@@ -290,6 +375,11 @@ pub struct UploadProductsForm {
     #[multipart(limit = "10MB")]
     /// Uploaded CSV containing product data.
     pub csv: TempFile,
+}
+
+#[derive(Debug)]
+pub struct UploadProductsPayload {
+    pub products: Vec<AddProductPayload>,
 }
 
 /// Sanitized product plus associated price levels parsed from an upload row.
@@ -401,8 +491,12 @@ impl UploadProductsForm {
                 value: hub_id.to_string(),
             })?;
             let name = ProductName::new(sanitized_name).map_err(|_| ProductFormError::EmptyName)?;
-            let currency =
-                CurrencyCode::new(currency).map_err(|_| ProductFormError::InvalidCurrency)?;
+            let currency = CurrencyCode::new(currency).map_err(|_| {
+                ProductFormError::UploadInvalidCurrency {
+                    row: row_number,
+                    value: currency_raw.to_string(),
+                }
+            })?;
 
             let mut product = NewProduct::new(hub_id, name, currency);
 
@@ -466,13 +560,23 @@ impl UploadProductsForm {
     }
 }
 
+impl<'a> TryFrom<(UploadProductsForm, i32, &'a [PriceLevel])> for UploadProductsPayload {
+    type Error = ProductFormError;
+
+    fn try_from(value: (UploadProductsForm, i32, &'a [PriceLevel])) -> Result<Self, Self::Error> {
+        let (mut form, hub_id, price_levels) = value;
+        let products = form.into_new_products(hub_id, price_levels)?;
+        Ok(Self { products })
+    }
+}
+
 /// Form payload emitted when editing an existing product.
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditProductForm {
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Идентификатор товара указан неверно."))]
     pub product_id: i32,
     /// Optional new name.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название товара обязательно."))]
     pub name: String,
     /// Optional SKU update (empty string clears the existing SKU).
     #[serde(default)]
@@ -487,7 +591,7 @@ pub struct EditProductForm {
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub units: Option<String>,
     /// Optional currency update.
-    #[validate(length(equal = 3))]
+    #[validate(length(equal = 3, message = "Валюта должна состоять из 3 символов."))]
     pub currency: String,
     /// Optional newline-separated image URLs.
     #[serde(default)]
@@ -498,11 +602,11 @@ pub struct EditProductForm {
     pub is_archived: bool,
     /// Optional category update (negative or zero clears the category).
     #[serde(default)]
-    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
+    #[serde(deserialize_with = "optional_scalar_from_json_or_form")]
     pub category_id: Option<i32>,
     /// Optional vendor update (zero clears the vendor).
     #[serde(default)]
-    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
+    #[serde(deserialize_with = "optional_scalar_from_json_or_form")]
     pub vendor_id: Option<i32>,
     /// Optional set of tags to associate with the product.
     #[serde(default)]
@@ -512,14 +616,14 @@ pub struct EditProductForm {
     pub price_levels: Vec<EditProductPriceLevelForm>,
     /// Optional amount per unit
     #[serde(default)]
-    #[serde(deserialize_with = "empty_string_as_none_fromstr")]
+    #[serde(deserialize_with = "optional_scalar_from_json_or_form")]
     pub amount: Option<f32>,
 }
 
 /// Price level payload submitted when editing a product.
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditProductPriceLevelForm {
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Уровень цены указан неверно."))]
     pub price_level_id: i32,
     #[serde(default)]
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
@@ -598,14 +702,19 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
             }
         }
 
-        if let Some(category_raw) = category_id
-            && category_raw > 0
-        {
-            let category_id =
-                CategoryId::new(category_raw).map_err(|_| ProductFormError::InvalidCategoryId {
-                    value: category_raw.to_string(),
+        if let Some(category_raw) = category_id {
+            if category_raw > 0 {
+                let category_id = CategoryId::new(category_raw).map_err(|_| {
+                    ProductFormError::InvalidCategoryId {
+                        value: category_raw.to_string(),
+                    }
                 })?;
-            updates = updates.with_category_id(category_id);
+                updates = updates.with_category_id(category_id);
+            } else if category_raw < 0 {
+                return Err(ProductFormError::InvalidCategoryId {
+                    value: category_raw.to_string(),
+                });
+            }
         }
 
         if let Some(vendor_raw) = vendor_id {
@@ -617,6 +726,10 @@ impl<'a> TryFrom<(EditProductForm, &'a [PriceLevel])> for EditProductPayload {
                 updates = updates.with_vendor_id(vendor_id);
             } else if vendor_raw == 0 {
                 updates = updates.clear_vendor();
+            } else {
+                return Err(ProductFormError::InvalidVendorId {
+                    value: vendor_raw.to_string(),
+                });
             }
         }
 
@@ -769,6 +882,88 @@ fn parse_price_to_cents(input: &str) -> Option<i32> {
     }
 
     i32::try_from(cents).ok()
+}
+
+fn collect_validation_errors(errors: &ValidationErrors) -> Vec<FormFieldError> {
+    let mut collected = Vec::new();
+    collect_validation_errors_with_prefix(None, errors, &mut collected);
+    collected
+}
+
+fn collect_validation_errors_with_prefix(
+    prefix: Option<&str>,
+    errors: &ValidationErrors,
+    collected: &mut Vec<FormFieldError>,
+) {
+    for (field, kind) in errors.errors() {
+        match kind {
+            ValidationErrorsKind::Field(field_errors) => {
+                let field_name = match prefix {
+                    Some(prefix) => format!("{prefix}.{field}"),
+                    None => field.to_string(),
+                };
+
+                for error in field_errors {
+                    collected.push(owned_field_error(
+                        field_name.clone(),
+                        validation_error_message(error),
+                    ));
+                }
+            }
+            ValidationErrorsKind::Struct(nested) => {
+                let nested_prefix = match prefix {
+                    Some(prefix) => format!("{prefix}.{field}"),
+                    None => field.to_string(),
+                };
+
+                collect_validation_errors_with_prefix(Some(&nested_prefix), nested, collected);
+            }
+            ValidationErrorsKind::List(items) => {
+                for (index, nested) in items {
+                    let nested_prefix = match prefix {
+                        Some(prefix) => format!("{prefix}.{field}.{index}"),
+                        None => format!("{field}.{index}"),
+                    };
+
+                    collect_validation_errors_with_prefix(Some(&nested_prefix), nested, collected);
+                }
+            }
+        }
+    }
+}
+
+fn validation_error_message(error: &ValidationError) -> Cow<'static, str> {
+    error
+        .message
+        .clone()
+        .unwrap_or(Cow::Borrowed("Поле заполнено некорректно."))
+}
+
+fn validation_errors_display(errors: &ValidationErrors) -> String {
+    let messages = collect_validation_errors(errors)
+        .into_iter()
+        .map(|error| error.message.into_owned())
+        .collect::<Vec<_>>();
+
+    if messages.is_empty() {
+        "Ошибка валидации формы.".to_string()
+    } else {
+        format!("Ошибка валидации формы: {}", messages.join("; "))
+    }
+}
+
+fn field_error(field: &'static str, message: impl Into<Cow<'static, str>>) -> FormFieldError {
+    FormFieldError {
+        field: Cow::Borrowed(field),
+        message: message.into(),
+    }
+}
+
+fn owned_field_error(field: String, message: impl Into<Cow<'static, str>>) -> FormFieldError {
+    FormFieldError {
+        field: Cow::Owned(field),
+        message: message.into(),
+    }
 }
 
 #[cfg(test)]

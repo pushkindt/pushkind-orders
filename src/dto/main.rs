@@ -12,10 +12,10 @@ pub struct IndexQuery {
     pub page: Option<usize>,
 }
 
-/// Data required to render the main index template.
+/// Data required to build the orders index resource payload.
 pub struct IndexPageData {
     /// Paginated list of orders to show in the table.
     pub orders: Paginated<Order>,
-    /// Search query echoed back to the template when present.
+    /// Search query echoed back to the client when present.
     pub search: Option<String>,
 }

@@ -71,24 +71,31 @@ where
     })
 }
 
+/// Ensures the current user can access the vendors page shell.
+pub fn ensure_vendors_page_access(user: &AuthenticatedUser) -> ServiceResult<()> {
+    ensure_admin(user)
+}
+
 /// Creates a new user record.
-pub fn add_user<R>(form: AddUserForm, user: &AuthenticatedUser, repo: &R) -> ServiceResult<()>
+pub fn add_user_from_payload<R>(
+    payload: AddUserPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<crate::domain::user::User>
 where
     R: UserWriter + ?Sized,
 {
     ensure_admin(user)?;
 
-    let payload: AddUserPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
     let new_user = NewUser::new(hub_id, payload.name, payload.email);
 
-    repo.create_user(&new_user)?;
-    Ok(())
+    Ok(repo.create_user(&new_user)?)
 }
 
 /// Creates a new vendor for the authenticated user's hub.
-pub fn create_vendor<R>(
-    form: AddVendorForm,
+pub fn create_vendor_from_payload<R>(
+    payload: AddVendorPayload,
     user: &AuthenticatedUser,
     repo: &R,
 ) -> ServiceResult<crate::domain::vendor::Vendor>
@@ -97,7 +104,6 @@ where
 {
     ensure_admin(user)?;
 
-    let payload: AddVendorPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
     let new_vendor = NewVendor::new(hub_id, payload.name);
 
@@ -125,8 +131,9 @@ where
 }
 
 /// Updates an existing vendor for the authenticated user's hub.
-pub fn modify_vendor<R>(
-    form: EditVendorForm,
+pub fn modify_vendor_from_payload<R>(
+    vendor_id: i32,
+    payload: EditVendorPayload,
     user: &AuthenticatedUser,
     repo: &R,
 ) -> ServiceResult<crate::domain::vendor::Vendor>
@@ -135,11 +142,18 @@ where
 {
     ensure_admin(user)?;
 
-    let payload: EditVendorPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
+    let path_vendor_id = VendorId::new(vendor_id)?;
+
+    if path_vendor_id != payload.vendor_id {
+        return Err(ServiceError::TypeConstraint(
+            "Идентификатор поставщика указан неверно.".to_string(),
+        ));
+    }
+
     let updates = UpdateVendor::new(payload.name);
 
-    Ok(repo.update_vendor(payload.vendor_id, hub_id, &updates)?)
+    Ok(repo.update_vendor(path_vendor_id, hub_id, &updates)?)
 }
 
 /// Deletes a vendor for the authenticated user's hub.
@@ -156,8 +170,8 @@ where
 }
 
 /// Assigns a user to a vendor in the authenticated user's hub.
-pub fn assign_user_to_vendor<R>(
-    form: AssignVendorUserForm,
+pub fn assign_user_to_vendor_from_payload<R>(
+    payload: AssignVendorUserPayload,
     user: &AuthenticatedUser,
     repo: &R,
 ) -> ServiceResult<()>
@@ -166,7 +180,6 @@ where
 {
     ensure_admin(user)?;
 
-    let payload: AssignVendorUserPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
 
     if let Some(existing) = repo.get_vendor_for_user(payload.user_id, hub_id)? {
@@ -180,8 +193,8 @@ where
 }
 
 /// Clears the vendor assignment for a user in the authenticated user's hub.
-pub fn clear_vendor_for_user<R>(
-    form: ClearVendorUserForm,
+pub fn clear_vendor_for_user_from_payload<R>(
+    payload: ClearVendorUserPayload,
     user: &AuthenticatedUser,
     repo: &R,
 ) -> ServiceResult<()>
@@ -190,10 +203,65 @@ where
 {
     ensure_admin(user)?;
 
-    let payload: ClearVendorUserPayload = form.try_into()?;
     let hub_id = HubId::new(user.hub_id)?;
 
     Ok(repo.clear_vendor_for_user(payload.user_id, hub_id)?)
+}
+
+pub fn add_user<R>(form: AddUserForm, user: &AuthenticatedUser, repo: &R) -> ServiceResult<()>
+where
+    R: UserWriter + ?Sized,
+{
+    let payload: AddUserPayload = form.try_into()?;
+    add_user_from_payload(payload, user, repo).map(|_| ())
+}
+
+pub fn create_vendor<R>(
+    form: AddVendorForm,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<crate::domain::vendor::Vendor>
+where
+    R: VendorWriter + ?Sized,
+{
+    let payload: AddVendorPayload = form.try_into()?;
+    create_vendor_from_payload(payload, user, repo)
+}
+
+pub fn modify_vendor<R>(
+    form: EditVendorForm,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<crate::domain::vendor::Vendor>
+where
+    R: VendorWriter + ?Sized,
+{
+    let payload: EditVendorPayload = form.try_into()?;
+    modify_vendor_from_payload(payload.vendor_id.get(), payload, user, repo)
+}
+
+pub fn assign_user_to_vendor<R>(
+    form: AssignVendorUserForm,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<()>
+where
+    R: VendorUserWriter + VendorUserReader + ?Sized,
+{
+    let payload: AssignVendorUserPayload = form.try_into()?;
+    assign_user_to_vendor_from_payload(payload, user, repo)
+}
+
+pub fn clear_vendor_for_user<R>(
+    form: ClearVendorUserForm,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<()>
+where
+    R: VendorUserWriter + ?Sized,
+{
+    let payload: ClearVendorUserPayload = form.try_into()?;
+    clear_vendor_for_user_from_payload(payload, user, repo)
 }
 
 #[cfg(test)]

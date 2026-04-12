@@ -16,7 +16,7 @@ use pushkind_orders::domain::{
     tag::NewTag,
     types::{CategoryName, HubId, PriceCents, ProductId},
 };
-use pushkind_orders::models::config::ServerConfig;
+use pushkind_orders::models::config::AppConfig;
 use pushkind_orders::repository::{
     CategoryWriter, CustomerReader, CustomerWriter, DieselRepository, OrderWriter,
     PriceLevelWriter, ProductWriter, TagWriter,
@@ -30,13 +30,10 @@ use serde_json::json;
 
 mod common;
 
-fn test_server_config() -> web::Data<ServerConfig> {
-    web::Data::new(ServerConfig {
+fn test_app_config() -> web::Data<AppConfig> {
+    web::Data::new(AppConfig {
         domain: "example.com".to_string(),
-        address: "127.0.0.1".to_string(),
-        port: 8080,
         database_url: ":memory:".to_string(),
-        templates_dir: "templates/**/*".to_string(),
         secret: "orders-test-secret".to_string(),
         auth_service_url: "http://localhost".to_string(),
         crm_service_url: "http://localhost".to_string(),
@@ -87,7 +84,7 @@ async fn store_endpoints_return_data() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(
                 web::scope("/api/v1/store")
                     .service(get_store_product)
@@ -173,7 +170,7 @@ async fn store_products_respect_query_parameters() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(
                 web::scope("/api/v1/store")
                     .service(get_store_product)
@@ -257,7 +254,7 @@ async fn store_categories_respect_parent_query_parameter() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(
                 web::scope("/api/v1/store")
                     .service(get_store_product)
@@ -299,7 +296,7 @@ async fn store_routes_reject_invalid_hub_id() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(
                 web::scope("/api/v1/store")
                     .service(get_store_product)
@@ -344,7 +341,7 @@ async fn store_product_returns_not_found_for_unknown_id() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(
                 web::scope("/api/v1/store")
                     .service(get_store_product)
@@ -387,7 +384,7 @@ async fn create_store_order_requires_authentication() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(web::scope("/api/v1/store").service(create_store_order_handler)),
     )
     .await;
@@ -432,7 +429,7 @@ async fn create_store_order_validates_payload() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(web::scope("/api/v1/store").service(create_store_order_handler)),
     )
     .await;
@@ -489,7 +486,7 @@ async fn create_store_order_creates_order() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(web::scope("/api/v1/store").service(create_store_order_handler)),
     )
     .await;
@@ -527,7 +524,7 @@ async fn list_store_orders_requires_authentication() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(web::scope("/api/v1/store").service(list_store_orders_handler)),
     )
     .await;
@@ -564,7 +561,7 @@ async fn list_store_orders_returns_orders_for_customer() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(web::scope("/api/v1/store").service(list_store_orders_handler)),
     )
     .await;
@@ -603,7 +600,7 @@ async fn list_store_orders_returns_empty_results() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(web::scope("/api/v1/store").service(list_store_orders_handler)),
     )
     .await;
@@ -651,7 +648,7 @@ async fn create_store_order_creates_local_customer_from_jwt_when_missing() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(web::scope("/api/v1/store").service(create_store_order_handler)),
     )
     .await;
@@ -698,7 +695,7 @@ async fn list_store_orders_returns_empty_when_jwt_has_no_local_customer() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(app_repo))
-            .app_data(test_server_config())
+            .app_data(test_app_config())
             .service(web::scope("/api/v1/store").service(list_store_orders_handler)),
     )
     .await;

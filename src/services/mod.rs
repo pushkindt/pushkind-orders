@@ -7,6 +7,7 @@ use crate::domain::types::{HubId, UserEmail, VendorId};
 use crate::repository::{UserReader, VendorUserReader};
 use crate::{ADMIN_ACCESS_ROLE, SERVICE_ACCESS_ROLE, VENDOR_ACCESS_ROLE};
 
+pub mod api;
 pub mod categories;
 pub mod main;
 pub mod orders;

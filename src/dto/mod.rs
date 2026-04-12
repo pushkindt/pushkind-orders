@@ -1,5 +1,6 @@
-//! Data transfer objects for rendering templates and API responses.
+//! Data transfer objects for React page data and API responses.
 
+pub mod api;
 pub mod categories;
 pub mod main;
 pub mod orders;

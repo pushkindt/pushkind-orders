@@ -20,10 +20,14 @@ pub struct ProductsQuery {
     pub show_archived: bool,
 }
 
-/// Data required to render the products index template.
+/// Data required to build the products collection resource payload.
 pub struct ProductsPageData {
     /// Paginated list of products displayed in the table.
     pub products: Paginated<ProductView>,
+    /// Raw list items used to build resource responses.
+    pub product_items: Vec<ProductView>,
+    /// Total items matching the current query before pagination.
+    pub total_items: usize,
     /// Search query echoed back to the view when present.
     pub search: Option<String>,
     /// All price levels used to render the modal form.
@@ -38,8 +42,8 @@ pub struct ProductsPageData {
     pub show_archived: bool,
 }
 
-/// View model exposed to the products index template.
-#[derive(Debug, Serialize)]
+/// Product view model exposed through collection and details APIs.
+#[derive(Clone, Debug, Serialize)]
 pub struct ProductView {
     pub id: i32,
     pub hub_id: i32,
@@ -116,7 +120,7 @@ impl ProductView {
 }
 
 /// View model for a product price level entry.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProductPriceLevelView {
     pub price_level_id: i32,
     pub price_level_name: String,
@@ -142,7 +146,7 @@ impl ProductPriceLevelView {
 }
 
 /// View model for a product tag entry.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProductTagView {
     pub id: i32,
     pub name: String,

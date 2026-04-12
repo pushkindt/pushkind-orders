@@ -5,8 +5,8 @@ use pushkind_common::domain::auth::AuthenticatedUser;
 
 use crate::domain::order::{Order, OrderProductApprovalUpdate, UpdateOrder as DomainUpdateOrder};
 use crate::domain::types::{HubId, OrderId, PriceCents, ProductId, ProductQuantity, VendorId};
-use crate::dto::orders::{OrderDetails, OrderProductApprovalPayload};
-use crate::forms::orders::{EditOrderForm, EditOrderPayload};
+use crate::dto::orders::OrderDetails;
+use crate::forms::orders::{EditOrderPayload, UpdateOrderApprovalsPayload};
 use crate::repository::{
     CustomerReader, OrderReader, OrderWriter, UserReader, VendorOrderReader, VendorUserReader,
 };
@@ -42,10 +42,34 @@ where
     Ok(OrderDetails { order, customer })
 }
 
+/// Performs the lightweight access check needed before serving the React order page shell.
+pub fn ensure_order_page_access<R>(
+    order_id: i32,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<()>
+where
+    R: OrderReader + UserReader + VendorUserReader + VendorOrderReader + ?Sized,
+{
+    let access = resolve_hub_access(user, repo)?;
+    let order_id = OrderId::new(order_id)?;
+    let hub_id = HubId::new(user.hub_id)?;
+
+    if let HubAccessScope::Vendor { vendor_id } = access {
+        ensure_vendor_order_access(order_id, hub_id, vendor_id, repo)?;
+    }
+
+    if repo.get_order_by_id(order_id, hub_id)?.is_some() {
+        Ok(())
+    } else {
+        Err(ServiceError::NotFound)
+    }
+}
+
 /// Updates editable metadata for an existing order.
 pub fn update_order<R>(
     order_id: i32,
-    form: EditOrderForm,
+    payload: EditOrderPayload,
     user: &AuthenticatedUser,
     repo: &R,
 ) -> ServiceResult<Order>
@@ -61,7 +85,6 @@ where
         ensure_vendor_order_access(order_id, hub_id, vendor_id, repo)?;
     }
 
-    let payload: EditOrderPayload = form.try_into()?;
     let updates = DomainUpdateOrder::new(payload.status)
         .with_notes(payload.notes)
         .with_reference(payload.reference)
@@ -73,10 +96,30 @@ where
     Ok(repo.update_order(order_id, hub_id, &updates)?)
 }
 
+/// Updates editable metadata for an order and returns the refreshed details resource.
+pub fn update_order_details<R>(
+    order_id: i32,
+    payload: EditOrderPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<OrderDetails>
+where
+    R: OrderWriter + CustomerReader + UserReader + VendorUserReader + VendorOrderReader + ?Sized,
+{
+    let order = update_order(order_id, payload, user, repo)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let customer = match order.customer_id {
+        Some(customer_id) => repo.get_customer_by_id(customer_id, hub_id)?,
+        None => None,
+    };
+
+    Ok(OrderDetails { order, customer })
+}
+
 /// Updates approved quantities for order products and recalculates the order total.
 pub fn update_order_product_approvals<R>(
     order_id: i32,
-    approvals: Vec<OrderProductApprovalPayload>,
+    approvals: UpdateOrderApprovalsPayload,
     user: &AuthenticatedUser,
     repo: &R,
 ) -> ServiceResult<OrderDetails>
@@ -91,12 +134,6 @@ where
 {
     let access = resolve_hub_access(user, repo)?;
 
-    if approvals.is_empty() {
-        return Err(ServiceError::Form(
-            "Не выбраны позиции для обновления.".to_string(),
-        ));
-    }
-
     let order_id = OrderId::new(order_id)?;
     let hub_id = HubId::new(user.hub_id)?;
 
@@ -105,12 +142,8 @@ where
     }
 
     let mut approvals_map: HashMap<ProductId, ProductQuantity> = HashMap::new();
-    for payload in approvals {
-        let product_id = ProductId::new(payload.product_id)
-            .map_err(|_| ServiceError::Form("Неверный товар в запросе.".to_string()))?;
-        let approved_quantity = ProductQuantity::new(payload.approved_quantity)
-            .map_err(|_| ServiceError::Form("Количество должно быть положительным.".to_string()))?;
-        approvals_map.insert(product_id, approved_quantity);
+    for payload in approvals.approvals {
+        approvals_map.insert(payload.product_id, payload.approved_quantity);
     }
 
     let order = repo
@@ -205,7 +238,10 @@ mod tests {
         order::{Order, OrderProduct, OrderStatus},
         user::User,
     };
-    use crate::forms::orders::EditOrderForm;
+    use crate::forms::orders::{
+        EditOrderForm, EditOrderPayload, UpdateOrderApprovalItemPayload,
+        UpdateOrderApprovalsPayload,
+    };
     use crate::repository::UserListQuery;
     use crate::repository::mock::{
         MockCustomerReader, MockOrderReader, MockOrderWriter, MockUserReader,
@@ -413,7 +449,7 @@ mod tests {
         }
     }
 
-    fn sample_edit_form(status: &str) -> EditOrderForm {
+    fn sample_edit_payload(status: &str) -> EditOrderPayload {
         EditOrderForm {
             order_id: 5,
             status: status.to_string(),
@@ -423,6 +459,21 @@ mod tests {
             consignee: Some(" Recipient ".to_string()),
             delivery_notes: Some(" Leave by door ".to_string()),
             payer: Some(" Payer ".to_string()),
+        }
+        .try_into()
+        .expect("sample edit payload should be valid")
+    }
+
+    fn sample_approvals_payload(
+        product_id: i32,
+        approved_quantity: i32,
+    ) -> UpdateOrderApprovalsPayload {
+        UpdateOrderApprovalsPayload {
+            approvals: vec![UpdateOrderApprovalItemPayload {
+                product_id: ProductId::new(product_id).expect("valid product id"),
+                approved_quantity: ProductQuantity::new(approved_quantity)
+                    .expect("valid approved quantity"),
+            }],
         }
     }
 
@@ -564,9 +615,9 @@ mod tests {
     fn update_order_requires_role() {
         let repo = OrderServiceRepo::new();
         let user = user_with_roles(&[]);
-        let form = sample_edit_form("Pending");
+        let payload = sample_edit_payload("Pending");
 
-        let result = update_order(5, form, &user, &repo);
+        let result = update_order(5, payload, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -576,7 +627,7 @@ mod tests {
         let mut repo = OrderServiceRepo::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let expected_hub = user.hub_id;
-        let form = sample_edit_form("Completed");
+        let payload = sample_edit_payload("Completed");
 
         repo.order_writer
             .expect_update_order()
@@ -590,7 +641,7 @@ mod tests {
             })
             .returning(move |_, _, _| Ok(sample_order(5, expected_hub, None)));
 
-        let result = update_order(5, form, &user, &repo);
+        let result = update_order(5, payload, &user, &repo);
 
         let order = match result {
             Ok(order) => order,
@@ -605,35 +656,15 @@ mod tests {
     fn update_order_returns_not_found_when_missing() {
         let mut repo = OrderServiceRepo::new();
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-        let form = sample_edit_form("Processing");
+        let payload = sample_edit_payload("Processing");
 
         repo.order_writer
             .expect_update_order()
             .returning(|_, _, _| Err(RepositoryError::NotFound));
 
-        let result = update_order(5, form, &user, &repo);
+        let result = update_order(5, payload, &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
-    }
-
-    #[test]
-    fn update_order_propagates_form_errors() {
-        let repo = OrderServiceRepo::new();
-        let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
-        let form = EditOrderForm {
-            order_id: 5,
-            status: "Unknown".to_string(),
-            reference: None,
-            notes: None,
-            shipping_address: None,
-            consignee: None,
-            delivery_notes: None,
-            payer: None,
-        };
-
-        let result = update_order(5, form, &user, &repo);
-
-        assert!(matches!(result, Err(ServiceError::Form(_))));
     }
 
     #[test]
@@ -641,15 +672,8 @@ mod tests {
         let repo = OrderServiceRepo::new();
         let user = user_with_roles(&[]);
 
-        let result = update_order_product_approvals(
-            1,
-            vec![OrderProductApprovalPayload {
-                product_id: 10,
-                approved_quantity: 2,
-            }],
-            &user,
-            &repo,
-        );
+        let result =
+            update_order_product_approvals(1, sample_approvals_payload(10, 2), &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::Unauthorized)));
     }
@@ -700,16 +724,9 @@ mod tests {
                 Ok(Some(sample_customer(id.get(), hub_id.get())))
             });
 
-        let result = update_order_product_approvals(
-            1,
-            vec![OrderProductApprovalPayload {
-                product_id: 10,
-                approved_quantity: 2,
-            }],
-            &user,
-            &repo,
-        )
-        .expect("expected successful update");
+        let result =
+            update_order_product_approvals(1, sample_approvals_payload(10, 2), &user, &repo)
+                .expect("expected successful update");
 
         assert_eq!(result.order.total_cents.get(), 3000);
         assert_eq!(result.order.products[0].approved_quantity.unwrap().get(), 2);
@@ -782,16 +799,9 @@ mod tests {
                 Ok(updated_order.clone())
             });
 
-        let result = update_order_product_approvals(
-            1,
-            vec![OrderProductApprovalPayload {
-                product_id: 10,
-                approved_quantity: 3,
-            }],
-            &user,
-            &repo,
-        )
-        .expect("expected successful update");
+        let result =
+            update_order_product_approvals(1, sample_approvals_payload(10, 3), &user, &repo)
+                .expect("expected successful update");
 
         assert_eq!(result.order.total_cents.get(), 300);
         assert_eq!(result.order.products[0].approved_quantity.unwrap().get(), 3);
@@ -809,15 +819,8 @@ mod tests {
             .expect_get_order_by_id()
             .returning(move |_, _| Ok(Some(order.clone())));
 
-        let result = update_order_product_approvals(
-            1,
-            vec![OrderProductApprovalPayload {
-                product_id: 99,
-                approved_quantity: 1,
-            }],
-            &user,
-            &repo,
-        );
+        let result =
+            update_order_product_approvals(1, sample_approvals_payload(99, 1), &user, &repo);
 
         assert!(matches!(result, Err(ServiceError::NotFound)));
     }

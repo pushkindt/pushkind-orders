@@ -5,46 +5,45 @@ use actix_files::Files;
 use actix_identity::IdentityMiddleware;
 use actix_session::{SessionMiddleware, storage::CookieSessionStore};
 use actix_web::cookie::Key;
-use actix_web::{App, HttpServer, middleware, web};
-use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
+use actix_web::{App, HttpServer, dev::Server, middleware, web};
 use pushkind_common::db::establish_connection_pool;
 use pushkind_common::middleware::RedirectUnauthorized;
 use pushkind_common::models::config::CommonServerConfig;
-use pushkind_common::routes::{logout, not_assigned};
-use tera::Tera;
+use pushkind_common::routes::logout;
+use std::net::TcpListener;
 
-use crate::models::config::ServerConfig;
+use crate::models::config::{AppConfig, Settings};
 use crate::repository::DieselRepository;
 use crate::routes::api::{
-    api_v1_client_price_levels, api_v1_orders, api_v1_update_client_price_level,
+    api_v1_assign_vendor_user, api_v1_categories, api_v1_category, api_v1_clear_vendor_user,
+    api_v1_client_price_levels, api_v1_create_category, api_v1_create_local_user,
+    api_v1_create_price_level, api_v1_create_product, api_v1_create_tag, api_v1_create_vendor,
+    api_v1_delete_category, api_v1_delete_price_level, api_v1_delete_tag, api_v1_delete_vendor,
+    api_v1_iam, api_v1_local_users, api_v1_no_access, api_v1_order, api_v1_orders,
+    api_v1_price_level, api_v1_price_levels, api_v1_product, api_v1_products, api_v1_tag,
+    api_v1_tags, api_v1_update_category, api_v1_update_client_price_level, api_v1_update_order,
+    api_v1_update_order_product_approvals, api_v1_update_price_level, api_v1_update_product,
+    api_v1_update_tag, api_v1_update_vendor, api_v1_upload_products, api_v1_vendor, api_v1_vendors,
 };
-use crate::routes::categories::{
-    add_category, delete_category, edit_category, show_categories, show_edit_category_modal,
-};
+use crate::routes::aux::not_assigned;
+use crate::routes::categories::show_categories;
 use crate::routes::main::show_index;
-use crate::routes::orders::{
-    edit_order, show_edit_order_modal, show_order, update_order_product_approvals_handler,
-};
-use crate::routes::price_levels::{
-    add_price_level, delete_price_level, edit_price_level, show_edit_price_level_modal,
-    show_price_levels,
-};
-use crate::routes::products::{add_product, edit_product, show_products, upload_products};
+use crate::routes::orders::show_order;
+use crate::routes::price_levels::show_price_levels;
+use crate::routes::products::show_products;
 use crate::routes::store::{
     create_store_order_handler, get_store_product, list_store_categories,
     list_store_orders_handler, list_store_products, list_store_tags, list_store_vendors,
     update_store_order_handler,
 };
-use crate::routes::tags::{add_tag, delete_tag, edit_tag, show_edit_tag_modal, show_tags};
-use crate::routes::vendors::{
-    add_vendor, assign_vendor_user, clear_vendor_user, delete_vendor, edit_vendor,
-    show_edit_vendor_modal, show_vendors, users_add,
-};
+use crate::routes::tags::show_tags;
+use crate::routes::vendors::show_vendors;
 
 pub mod domain;
 pub mod dto;
 pub mod error_conversions;
 pub mod forms;
+pub mod frontend;
 pub mod models;
 pub mod repository;
 pub mod routes;
@@ -56,39 +55,38 @@ pub const ADMIN_ACCESS_ROLE: &str = "orders_admin";
 pub const VENDOR_ACCESS_ROLE: &str = "orders_vendor";
 
 /// Builds and runs the Actix-Web HTTP server using the provided configuration.
-pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
+pub async fn run(settings: Settings) -> std::io::Result<()> {
+    let bind_address = (settings.server.address.clone(), settings.server.port);
+    let listener = TcpListener::bind(bind_address)?;
+
+    build_server(listener, settings.app)?.await
+}
+
+/// Builds an Actix-Web HTTP server on a pre-bound listener.
+pub fn build_server(listener: TcpListener, app_config: AppConfig) -> std::io::Result<Server> {
     let common_config = CommonServerConfig {
-        auth_service_url: server_config.auth_service_url.to_string(),
-        secret: server_config.secret.clone(),
+        auth_service_url: app_config.auth_service_url.to_string(),
+        secret: app_config.secret.clone(),
     };
 
     // Establish Diesel connection pool for the SQLite database.
-    let pool = establish_connection_pool(&server_config.database_url).map_err(|e| {
+    let pool = establish_connection_pool(&app_config.database_url).map_err(|e| {
         std::io::Error::other(format!("Failed to establish database connection: {e}"))
     })?;
 
     let repo = DieselRepository::new(pool);
 
-    // Keys and stores for identity, sessions, and flash messages.
-    let secret_key = Key::from(server_config.secret.as_bytes());
+    // Keys and stores for identity and sessions.
+    let secret_key = Key::from(app_config.secret.as_bytes());
 
-    let message_store = CookieMessageStore::builder(secret_key.clone()).build();
-    let message_framework = FlashMessagesFramework::builder(message_store).build();
-
-    let tera = Tera::new(&server_config.templates_dir)
-        .map_err(|e| std::io::Error::other(format!("Template parsing error(s): {e}")))?;
-
-    let bind_address = (server_config.address.clone(), server_config.port);
-
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
-            .wrap(message_framework.clone())
             .wrap(IdentityMiddleware::default())
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
                     .cookie_secure(false) // set to true in prod
-                    .cookie_domain(Some(format!(".{}", server_config.domain)))
+                    .cookie_domain(Some(format!(".{}", app_config.domain)))
                     .build(),
             )
             .wrap(middleware::Compress::default())
@@ -109,7 +107,41 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
             .service(
                 web::scope("/api")
                     .wrap(RedirectUnauthorized)
+                    .service(api_v1_iam)
+                    .service(api_v1_no_access)
+                    .service(api_v1_categories)
+                    .service(api_v1_category)
+                    .service(api_v1_create_category)
+                    .service(api_v1_update_category)
+                    .service(api_v1_delete_category)
+                    .service(api_v1_tags)
+                    .service(api_v1_tag)
+                    .service(api_v1_create_tag)
+                    .service(api_v1_update_tag)
+                    .service(api_v1_delete_tag)
+                    .service(api_v1_price_levels)
+                    .service(api_v1_price_level)
+                    .service(api_v1_create_price_level)
+                    .service(api_v1_update_price_level)
+                    .service(api_v1_delete_price_level)
+                    .service(api_v1_vendors)
+                    .service(api_v1_vendor)
+                    .service(api_v1_create_vendor)
+                    .service(api_v1_update_vendor)
+                    .service(api_v1_delete_vendor)
+                    .service(api_v1_local_users)
+                    .service(api_v1_create_local_user)
+                    .service(api_v1_assign_vendor_user)
+                    .service(api_v1_clear_vendor_user)
                     .service(api_v1_orders)
+                    .service(api_v1_order)
+                    .service(api_v1_update_order)
+                    .service(api_v1_update_order_product_approvals)
+                    .service(api_v1_products)
+                    .service(api_v1_product)
+                    .service(api_v1_create_product)
+                    .service(api_v1_update_product)
+                    .service(api_v1_upload_products)
                     .service(api_v1_client_price_levels)
                     .service(api_v1_update_client_price_level),
             )
@@ -119,43 +151,18 @@ pub async fn run(server_config: ServerConfig) -> std::io::Result<()> {
                     .service(show_index)
                     .service(show_order)
                     .service(show_categories)
-                    .service(add_category)
-                    .service(edit_category)
-                    .service(show_edit_category_modal)
-                    .service(delete_category)
                     .service(show_tags)
-                    .service(add_tag)
-                    .service(edit_tag)
-                    .service(show_edit_tag_modal)
-                    .service(delete_tag)
                     .service(show_price_levels)
-                    .service(add_price_level)
-                    .service(edit_price_level)
-                    .service(show_edit_price_level_modal)
-                    .service(delete_price_level)
                     .service(show_products)
-                    .service(add_product)
-                    .service(edit_product)
-                    .service(upload_products)
                     .service(show_vendors)
-                    .service(add_vendor)
-                    .service(edit_vendor)
-                    .service(show_edit_vendor_modal)
-                    .service(delete_vendor)
-                    .service(assign_vendor_user)
-                    .service(clear_vendor_user)
-                    .service(update_order_product_approvals_handler)
-                    .service(edit_order)
-                    .service(show_edit_order_modal)
-                    .service(users_add)
                     .service(logout),
             )
-            .app_data(web::Data::new(tera.clone()))
             .app_data(web::Data::new(repo.clone()))
             .app_data(web::Data::new(common_config.clone()))
-            .app_data(web::Data::new(server_config.clone()))
+            .app_data(web::Data::new(app_config.clone()))
     })
-    .bind(bind_address)?
-    .run()
-    .await
+    .listen(listener)?
+    .run();
+
+    Ok(server)
 }

@@ -13,7 +13,7 @@ pub struct VendorQuery {
     pub page: Option<usize>,
 }
 
-/// Data required to render the vendors index template.
+/// Data required to build the vendors collection resource payload.
 pub struct VendorsPageData {
     /// Paginated list of vendors displayed in the table.
     pub vendors: Paginated<Vendor>,

@@ -1,7 +1,7 @@
 //! Error conversion glue for `data` feature consumers.
 //!
 //! The domain layer must not depend on service/repository error types, but
-//! downstream crates using `pushkind-emailer` with only the `data` feature may
+//! downstream crates using `pushkind-orders` data types may
 //! still want convenient conversions.
 
 use pushkind_common::repository::errors::RepositoryError;
@@ -9,7 +9,7 @@ use pushkind_common::services::errors::ServiceError;
 
 use crate::domain::types::TypeConstraintError;
 use crate::forms::categories::CategoryFormError;
-use crate::forms::orders::EditOrderFormError;
+use crate::forms::orders::{EditOrderFormError, UpdateOrderApprovalsFormError};
 use crate::forms::price_levels::PriceLevelFormError;
 use crate::forms::products::ProductFormError;
 use crate::forms::store::{StoreFormError, StoreOrderUpdateError};
@@ -42,6 +42,12 @@ impl From<CategoryFormError> for ServiceError {
 
 impl From<EditOrderFormError> for ServiceError {
     fn from(val: EditOrderFormError) -> Self {
+        ServiceError::Form(val.to_string())
+    }
+}
+
+impl From<UpdateOrderApprovalsFormError> for ServiceError {
+    fn from(val: UpdateOrderApprovalsFormError) -> Self {
         ServiceError::Form(val.to_string())
     }
 }

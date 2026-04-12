@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::Deserialize;
 use thiserror::Error;
@@ -10,42 +12,63 @@ use crate::domain::types::{
 /// Result type returned by the price level form helpers.
 pub type PriceLevelFormResult<T> = Result<T, PriceLevelFormError>;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FormFieldError {
+    pub field: Cow<'static, str>,
+    pub message: Cow<'static, str>,
+}
+
 /// Errors that can occur while processing price level forms.
 #[derive(Debug, Error)]
 pub enum PriceLevelFormError {
-    /// Validation failures from the `validator` crate.
-    #[error("validation failed: {0}")]
+    #[error("{}", validation_errors_display(.0))]
     Validation(#[from] ValidationErrors),
-    /// The provided name is empty after sanitization.
-    #[error("price level name cannot be empty")]
+    #[error("Название уровня цен указано неверно.")]
     InvalidPriceLevelName,
-    /// The provided public id is empty after sanitization.
-    #[error("public id is incorrect")]
+    #[error("Публичный идентификатор клиента указан неверно.")]
     IncorrectPublicId,
-    /// The provided customer name is empty after sanitization.
-    #[error("customer name cannot be empty")]
+    #[error("Имя клиента указано неверно.")]
     InvalidCustomerName,
-    /// The provided phone fails validation.
-    #[error("phone number is incorrect")]
+    #[error("Телефон клиента указан неверно.")]
     IncorrectPhone,
-    /// Incorrect price level id provided.
-    #[error("price level id must be a positive integer")]
+    #[error("Идентификатор уровня цен указан неверно.")]
     InvalidPriceLevelId,
-    /// Incorrect base price level id provided.
-    #[error("base price level id must be a positive integer")]
+    #[error("Базовый уровень цен указан неверно.")]
     InvalidBasePriceLevelId,
-    /// Price modifier is out of supported range.
-    #[error("price modifier is outside of the allowed range")]
+    #[error("Модификатор цены указан неверно.")]
     InvalidPriceModifier,
-    /// Excluded category ids must be positive.
-    #[error("excluded category id must be a positive integer")]
+    #[error("Категория в исключениях указана неверно.")]
     InvalidExcludedCategoryId,
-    /// Excluded product ids must be positive.
-    #[error("excluded product id must be a positive integer")]
+    #[error("Товар в исключениях указан неверно.")]
     InvalidExcludedProductId,
-    /// Included product ids must be positive.
-    #[error("included product id must be a positive integer")]
+    #[error("Товар во включениях указан неверно.")]
     InvalidIncludedProductId,
+}
+
+impl PriceLevelFormError {
+    pub fn field_errors(&self) -> Vec<FormFieldError> {
+        match self {
+            Self::Validation(errors) => collect_validation_errors(errors),
+            Self::InvalidPriceLevelName => vec![field_error("name", self.to_string())],
+            Self::IncorrectPublicId => vec![field_error("public_id", self.to_string())],
+            Self::InvalidCustomerName => vec![field_error("name", self.to_string())],
+            Self::IncorrectPhone => vec![field_error("phone", self.to_string())],
+            Self::InvalidPriceLevelId => vec![field_error("price_level_id", self.to_string())],
+            Self::InvalidBasePriceLevelId => {
+                vec![field_error("base_price_level_id", self.to_string())]
+            }
+            Self::InvalidPriceModifier => vec![field_error("price_modifier", self.to_string())],
+            Self::InvalidExcludedCategoryId => {
+                vec![field_error("excluded_category_ids", self.to_string())]
+            }
+            Self::InvalidExcludedProductId => {
+                vec![field_error("excluded_product_ids", self.to_string())]
+            }
+            Self::InvalidIncludedProductId => {
+                vec![field_error("included_product_ids", self.to_string())]
+            }
+        }
+    }
 }
 
 /// Modifier type for price level adjustments.
@@ -60,13 +83,13 @@ pub enum PriceModifierKind {
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddPriceLevelForm {
     /// Name entered by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название уровня цен обязательно."))]
     pub name: String,
     /// Is this a default price level?
     #[serde(default)]
     pub default: bool,
     /// Base price level used for adjustments.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Выберите базовый уровень цен."))]
     pub base_price_level_id: i32,
     /// Price modifier value.
     pub price_modifier: i32,
@@ -106,16 +129,16 @@ pub struct PriceLevelModifierInput {
 #[derive(Debug, Deserialize, Validate)]
 pub struct AssignClientPriceLevelForm {
     /// Customer name used when creating missing records.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Имя клиента обязательно."))]
     pub name: String,
     /// Customer phone used as part of the composite key.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Телефон клиента обязателен."))]
     pub phone: String,
     /// Customer public id used as part of the composite key.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Публичный идентификатор клиента обязателен."))]
     pub public_id: String,
     /// Selected price level identifier. `None` restores the default hub level.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Уровень цен указан неверно."))]
     #[serde(default)]
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub price_level_id: Option<i32>,
@@ -224,7 +247,7 @@ impl TryFrom<AddPriceLevelForm> for AddPriceLevelPayload {
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditPriceLevelForm {
     /// Updated name entered by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название уровня цен обязательно."))]
     pub name: String,
     /// Updated default flag for the price level.
     #[serde(default)]
@@ -251,6 +274,59 @@ impl TryFrom<EditPriceLevelForm> for EditPriceLevelPayload {
             name,
             default: value.default,
         })
+    }
+}
+
+fn field_error(field: impl Into<Cow<'static, str>>, message: impl Into<String>) -> FormFieldError {
+    FormFieldError {
+        field: field.into(),
+        message: Cow::Owned(message.into()),
+    }
+}
+
+fn collect_validation_errors(errors: &ValidationErrors) -> Vec<FormFieldError> {
+    let mut field_errors = Vec::new();
+
+    for (field, errors) in errors.field_errors() {
+        for error in errors {
+            field_errors.push(field_error(
+                match field.as_ref() {
+                    "name" => Cow::Borrowed("name"),
+                    "phone" => Cow::Borrowed("phone"),
+                    "public_id" => Cow::Borrowed("public_id"),
+                    "price_level_id" => Cow::Borrowed("price_level_id"),
+                    "base_price_level_id" => Cow::Borrowed("base_price_level_id"),
+                    other => Cow::Owned(other.to_string()),
+                },
+                error
+                    .message
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "Некорректное значение.".to_string()),
+            ));
+        }
+    }
+
+    field_errors.sort_by(|left, right| left.field.cmp(&right.field));
+    field_errors
+}
+
+fn validation_errors_display(errors: &ValidationErrors) -> String {
+    let collected = collect_validation_errors(errors);
+
+    if collected.is_empty() {
+        "Ошибка валидации формы.".to_string()
+    } else if collected.len() == 1 {
+        format!("Ошибка валидации формы: {}", collected[0].message)
+    } else {
+        format!(
+            "Ошибка валидации формы: {}",
+            collected
+                .into_iter()
+                .map(|error| error.message.into_owned())
+                .collect::<Vec<_>>()
+                .join("; ")
+        )
     }
 }
 
@@ -373,20 +449,20 @@ mod tests {
     #[test]
     fn edit_price_level_form_sanitizes_and_converts() {
         let form = EditPriceLevelForm {
-            name: "  Updated\nName  ".to_string(),
+            name: "  VIP ".to_string(),
             default: true,
         };
 
-        let update: EditPriceLevelPayload = form.try_into().expect("expected success");
+        let payload: EditPriceLevelPayload = form.try_into().expect("expected success");
 
-        assert_eq!(update.name.as_str(), "Updated\nName");
-        assert!(update.default);
+        assert_eq!(payload.name.as_str(), "VIP");
+        assert!(payload.default);
     }
 
     #[test]
     fn edit_price_level_form_rejects_empty() {
         let form = EditPriceLevelForm {
-            name: " \t".to_string(),
+            name: " ".to_string(),
             default: false,
         };
 

@@ -2,3 +2,5 @@
 .env
 app.*
 tarpaulin-report*
+frontend/node_modules/
+assets/dist/

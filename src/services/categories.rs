@@ -37,6 +37,11 @@ where
     Ok(CategoryTreeData { tree })
 }
 
+/// Ensures the categories page can be opened without preloading the whole tree.
+pub fn ensure_categories_page_access(user: &AuthenticatedUser) -> ServiceResult<()> {
+    ensure_catalog_read_access(user)
+}
+
 /// Loads a single category for the authenticated user's hub.
 pub fn load_category_for_edit<R>(
     category_id: i32,
@@ -69,6 +74,20 @@ where
     ensure_catalog_write_access(user)?;
 
     let payload: AddCategoryPayload = form.try_into()?;
+    create_category_from_payload(payload, user, repo)
+}
+
+/// Creates a new category for the authenticated user's hub from a normalized payload.
+pub fn create_category_from_payload<R>(
+    payload: AddCategoryPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<Category>
+where
+    R: CategoryWriter + ?Sized,
+{
+    ensure_catalog_write_access(user)?;
+
     let hub_id = HubId::new(user.hub_id)?;
     let mut new_category = NewCategory::new(hub_id, payload.name);
 
@@ -98,6 +117,21 @@ where
     ensure_admin(user)?;
 
     let payload: EditCategoryPayload = form.try_into()?;
+    modify_category_from_payload(category_id, payload, user, repo)
+}
+
+/// Updates an existing category for the authenticated user's hub from a normalized payload.
+pub fn modify_category_from_payload<R>(
+    category_id: i32,
+    payload: EditCategoryPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<Category>
+where
+    R: CategoryReader + CategoryWriter + ?Sized,
+{
+    ensure_admin(user)?;
+
     let update = UpdateCategory::new(
         payload.name,
         payload.description,
