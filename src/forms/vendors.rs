@@ -1,40 +1,17 @@
 use serde::Deserialize;
-use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 use crate::domain::types::{UserEmail, UserId, UserName, VendorId, VendorName};
+use crate::forms::FormError;
 
 /// Result type returned by the vendor form helpers.
-pub type VendorFormResult<T> = Result<T, VendorFormError>;
-
-/// Errors that can occur while processing vendor forms.
-#[derive(Debug, Error)]
-pub enum VendorFormError {
-    /// Validation failures from the `validator` crate.
-    #[error("validation failed: {0}")]
-    Validation(#[from] ValidationErrors),
-    /// The provided vendor id is invalid.
-    #[error("vendor id is invalid")]
-    InvalidVendorId,
-    /// The provided user id is invalid.
-    #[error("user id is invalid")]
-    InvalidUserId,
-    /// The provided name is invalid.
-    #[error("vendor name is invalid")]
-    InvalidVendorName,
-    /// The provided user name is invalid.
-    #[error("user name is invalid")]
-    InvalidUserName,
-    /// The provided user email is invalid.
-    #[error("user email is invalid")]
-    InvalidUserEmail,
-}
+pub type VendorFormResult<T> = Result<T, FormError>;
 
 /// Form payload emitted when submitting the "Add vendor" form.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddVendorForm {
     /// Name entered by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название поставщика обязательно."))]
     pub name: String,
 }
 
@@ -45,14 +22,14 @@ pub struct AddVendorPayload {
 }
 
 impl TryFrom<AddVendorForm> for AddVendorPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: AddVendorForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
         VendorName::new(value.name)
             .map(|name| Self { name })
-            .map_err(|_| VendorFormError::InvalidVendorName)
+            .map_err(|_| FormError::InvalidVendorName)
     }
 }
 
@@ -60,10 +37,10 @@ impl TryFrom<AddVendorForm> for AddVendorPayload {
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditVendorForm {
     /// Identifier of the vendor to update.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Идентификатор поставщика указан неверно."))]
     pub vendor_id: i32,
     /// Updated name supplied by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название поставщика обязательно."))]
     pub name: String,
 }
 
@@ -75,14 +52,13 @@ pub struct EditVendorPayload {
 }
 
 impl TryFrom<EditVendorForm> for EditVendorPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: EditVendorForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let vendor_id =
-            VendorId::new(value.vendor_id).map_err(|_| VendorFormError::InvalidVendorId)?;
-        let name = VendorName::new(value.name).map_err(|_| VendorFormError::InvalidVendorName)?;
+        let vendor_id = VendorId::new(value.vendor_id).map_err(|_| FormError::InvalidVendorId)?;
+        let name = VendorName::new(value.name).map_err(|_| FormError::InvalidVendorName)?;
 
         Ok(Self { vendor_id, name })
     }
@@ -92,10 +68,10 @@ impl TryFrom<EditVendorForm> for EditVendorPayload {
 #[derive(Debug, Deserialize, Validate)]
 pub struct AssignVendorUserForm {
     /// Identifier of the user to assign.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Идентификатор пользователя указан неверно."))]
     pub user_id: i32,
     /// Identifier of the vendor.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Идентификатор поставщика указан неверно."))]
     pub vendor_id: i32,
 }
 
@@ -107,14 +83,13 @@ pub struct AssignVendorUserPayload {
 }
 
 impl TryFrom<AssignVendorUserForm> for AssignVendorUserPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: AssignVendorUserForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let user_id = UserId::new(value.user_id).map_err(|_| VendorFormError::InvalidUserId)?;
-        let vendor_id =
-            VendorId::new(value.vendor_id).map_err(|_| VendorFormError::InvalidVendorId)?;
+        let user_id = UserId::new(value.user_id).map_err(|_| FormError::InvalidUserId)?;
+        let vendor_id = VendorId::new(value.vendor_id).map_err(|_| FormError::InvalidVendorId)?;
 
         Ok(Self { user_id, vendor_id })
     }
@@ -124,7 +99,7 @@ impl TryFrom<AssignVendorUserForm> for AssignVendorUserPayload {
 #[derive(Debug, Deserialize, Validate)]
 pub struct ClearVendorUserForm {
     /// Identifier of the user to clear.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Идентификатор пользователя указан неверно."))]
     pub user_id: i32,
 }
 
@@ -135,12 +110,12 @@ pub struct ClearVendorUserPayload {
 }
 
 impl TryFrom<ClearVendorUserForm> for ClearVendorUserPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: ClearVendorUserForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let user_id = UserId::new(value.user_id).map_err(|_| VendorFormError::InvalidUserId)?;
+        let user_id = UserId::new(value.user_id).map_err(|_| FormError::InvalidUserId)?;
 
         Ok(Self { user_id })
     }
@@ -150,10 +125,10 @@ impl TryFrom<ClearVendorUserForm> for ClearVendorUserPayload {
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddUserForm {
     /// Name entered by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Имя пользователя обязательно."))]
     pub name: String,
     /// Email entered by the user.
-    #[validate(email)]
+    #[validate(email(message = "Электронный адрес пользователя указан неверно."))]
     pub email: String,
 }
 
@@ -165,13 +140,13 @@ pub struct AddUserPayload {
 }
 
 impl TryFrom<AddUserForm> for AddUserPayload {
-    type Error = VendorFormError;
+    type Error = FormError;
 
     fn try_from(value: AddUserForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let name = UserName::new(value.name).map_err(|_| VendorFormError::InvalidUserName)?;
-        let email = UserEmail::new(value.email).map_err(|_| VendorFormError::InvalidUserEmail)?;
+        let name = UserName::new(value.name).map_err(|_| FormError::InvalidUserName)?;
+        let email = UserEmail::new(value.email).map_err(|_| FormError::InvalidUserEmail)?;
         Ok(Self { name, email })
     }
 }

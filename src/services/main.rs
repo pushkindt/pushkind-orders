@@ -162,6 +162,9 @@ mod tests {
         let user = user_with_roles(&[SERVICE_ACCESS_ROLE]);
         let query = IndexQuery {
             search: Some("alp".to_string()),
+            status: None,
+            updated_after: None,
+            updated_before: None,
             page: Some(2),
         };
 

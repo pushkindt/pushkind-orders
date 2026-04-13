@@ -2,19 +2,22 @@ use std::collections::HashMap;
 
 use pushkind_common::domain::auth::AuthenticatedUser;
 use pushkind_common::pagination::{DEFAULT_ITEMS_PER_PAGE, Paginated};
+use pushkind_common::routes::ensure_role;
 
+use crate::SERVICE_ACCESS_ROLE;
 use crate::domain::{
-    category::CategoryTreeQuery,
+    category::{Category, CategoryTreeQuery},
     price_level::{PriceLevel, PriceLevelListQuery},
     product::{Product, ProductListQuery},
     product_price_level::NewProductPriceLevelRate,
-    tag::TagListQuery,
+    tag::{Tag, TagListQuery},
     types::{HubId, PriceCents, PriceLevelId, ProductId, TagId},
-    vendor::VendorListQuery,
+    vendor::{Vendor, VendorListQuery},
 };
 use crate::dto::products::{ProductView, ProductsPageData, ProductsQuery};
 use crate::forms::products::{
     AddProductForm, AddProductPayload, EditProductForm, EditProductPayload, UploadProductsForm,
+    UploadProductsPayload,
 };
 use crate::repository::{
     CategoryReader, CategoryWriter, PriceLevelReader, ProductReader, ProductWriter, TagReader,
@@ -22,6 +25,23 @@ use crate::repository::{
 };
 use crate::services::categories::{create_category_chain, find_category_chain};
 use crate::services::{HubAccessScope, ServiceError, ServiceResult, resolve_hub_access};
+
+pub struct ProductDetailsPageData {
+    pub product: Product,
+    pub price_levels: Vec<PriceLevel>,
+    pub categories: Vec<Category>,
+    pub tags: Vec<Tag>,
+    pub vendors: Vec<Vendor>,
+}
+
+type ProductEditorSupportingData = (Vec<PriceLevel>, Vec<Category>, Vec<Tag>, Vec<Vendor>);
+
+pub fn ensure_products_page_access<R>(user: &AuthenticatedUser, repo: &R) -> ServiceResult<()>
+where
+    R: UserReader + VendorUserReader + ?Sized,
+{
+    resolve_hub_access(user, repo).map(|_| ())
+}
 
 /// Loads the products overview page.
 pub fn load_products_page<R>(
@@ -64,11 +84,8 @@ where
     }
 
     let (total, items) = repo.list_products(list_query)?;
-    let (_, price_levels) = repo.list_price_levels(PriceLevelListQuery::new(hub_id))?;
-    let vendors = match access {
-        HubAccessScope::Admin => repo.list_vendors(VendorListQuery::new(hub_id))?.1,
-        _ => Vec::new(),
-    };
+    let (price_levels, categories, tags, vendors) =
+        load_editor_supporting_data(user, access, repo)?;
 
     let mut vendor_lookup: HashMap<i32, String> = vendors
         .iter()
@@ -81,17 +98,10 @@ where
         vendor_lookup.insert(vendor.id.get(), vendor.name.as_str().to_string());
     }
 
-    let (_, mut categories) = repo.list_categories(CategoryTreeQuery::new(hub_id))?;
     let category_lookup: HashMap<i32, String> = categories
         .iter()
         .map(|category| (category.id.get(), category.name.as_str().to_string()))
         .collect();
-    categories.retain(|category| !category.is_archived);
-    categories.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
-
-    let tag_query = TagListQuery::try_new(hub_id.get())?;
-    let (_, mut tags) = repo.list_tags(tag_query)?;
-    tags.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
 
     let level_lookup: HashMap<i32, &PriceLevel> = price_levels
         .iter()
@@ -106,10 +116,12 @@ where
         .collect();
 
     let total_pages = total.div_ceil(DEFAULT_ITEMS_PER_PAGE);
-    let products = Paginated::new(view_items, page, total_pages);
+    let products = Paginated::new(view_items.clone(), page, total_pages);
 
     Ok(ProductsPageData {
         products,
+        product_items: view_items,
+        total_items: total,
         search,
         price_levels,
         categories,
@@ -134,11 +146,22 @@ where
         + VendorUserReader
         + ?Sized,
 {
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let price_levels = load_available_price_levels(user.hub_id, repo)?;
+    let payload: AddProductPayload = (form, user.hub_id, &price_levels[..]).try_into()?;
+    create_product_from_payload(payload, user, repo)
+}
+
+/// Creates a new product for the authenticated user's hub from a validated payload.
+pub fn create_product_from_payload<R>(
+    mut payload: AddProductPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<Product>
+where
+    R: ProductWriter + CategoryReader + CategoryWriter + UserReader + VendorUserReader + ?Sized,
+{
     let access = resolve_hub_access(user, repo)?;
-
-    let price_levels = fetch_all_price_levels(user.hub_id, repo)?;
-
-    let mut payload: AddProductPayload = (form, user.hub_id, &price_levels[..]).try_into()?;
 
     match access {
         HubAccessScope::Admin => {}
@@ -155,7 +178,7 @@ where
 
 /// Imports products from an uploaded CSV file.
 pub fn import_products<R>(
-    mut form: UploadProductsForm,
+    form: UploadProductsForm,
     user: &AuthenticatedUser,
     repo: &R,
 ) -> ServiceResult<usize>
@@ -168,14 +191,25 @@ where
         + VendorUserReader
         + ?Sized,
 {
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let price_levels = load_available_price_levels(user.hub_id, repo)?;
+    let payload: UploadProductsPayload = (form, user.hub_id, &price_levels[..]).try_into()?;
+    import_products_from_payload(payload, user, repo)
+}
+
+/// Imports products from a validated upload payload.
+pub fn import_products_from_payload<R>(
+    payload: UploadProductsPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<usize>
+where
+    R: ProductWriter + CategoryReader + CategoryWriter + UserReader + VendorUserReader + ?Sized,
+{
     let access = resolve_hub_access(user, repo)?;
 
-    let price_levels = fetch_all_price_levels(user.hub_id, repo)?;
-
-    let uploads = form.into_new_products(user.hub_id, &price_levels)?;
-
     let mut created = 0usize;
-    for mut upload in uploads {
+    for mut upload in payload.products {
         if let HubAccessScope::Vendor { vendor_id } = access {
             upload.product = upload.product.with_vendor_id(vendor_id);
         }
@@ -196,6 +230,22 @@ pub fn update_product<R>(
 where
     R: ProductReader + ProductWriter + PriceLevelReader + UserReader + VendorUserReader + ?Sized,
 {
+    ensure_role(user, SERVICE_ACCESS_ROLE)?;
+    let available_price_levels = load_available_price_levels(user.hub_id, repo)?;
+    let payload: EditProductPayload = (form, &available_price_levels[..]).try_into()?;
+    update_product_from_payload(product_id, payload, user, repo)
+}
+
+/// Updates an existing product for the authenticated user's hub from a validated payload.
+pub fn update_product_from_payload<R>(
+    product_id: i32,
+    payload: EditProductPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<Product>
+where
+    R: ProductReader + ProductWriter + UserReader + VendorUserReader + ?Sized,
+{
     let access = resolve_hub_access(user, repo)?;
 
     let hub_id = HubId::new(user.hub_id)?;
@@ -203,9 +253,7 @@ where
     let product = repo.get_product_by_id(product_id, hub_id)?;
 
     let Some(product) = product else {
-        return Err(ServiceError::Form(
-            "Некорректный идентификатор товара.".to_string(),
-        ));
+        return Err(ServiceError::NotFound);
     };
 
     if let HubAccessScope::Vendor { vendor_id } = access
@@ -213,10 +261,6 @@ where
     {
         return Err(ServiceError::NotFound);
     }
-
-    let available_price_levels = fetch_all_price_levels(user.hub_id, repo)?;
-
-    let payload: EditProductPayload = (form, &available_price_levels[..]).try_into()?;
 
     let EditProductPayload {
         product: mut updates,
@@ -259,13 +303,86 @@ where
 }
 
 /// Fetches all price levels for a hub.
-fn fetch_all_price_levels<R>(hub_id: i32, repo: &R) -> ServiceResult<Vec<PriceLevel>>
+pub fn load_available_price_levels<R>(hub_id: i32, repo: &R) -> ServiceResult<Vec<PriceLevel>>
 where
     R: PriceLevelReader + ?Sized,
 {
     let query = PriceLevelListQuery::new(HubId::new(hub_id)?);
     let (_, price_levels) = repo.list_price_levels(query)?;
     Ok(price_levels)
+}
+
+fn load_editor_supporting_data<R>(
+    user: &AuthenticatedUser,
+    access: HubAccessScope,
+    repo: &R,
+) -> ServiceResult<ProductEditorSupportingData>
+where
+    R: PriceLevelReader
+        + CategoryReader
+        + TagReader
+        + VendorReader
+        + UserReader
+        + VendorUserReader
+        + ?Sized,
+{
+    let hub_id = HubId::new(user.hub_id)?;
+    let price_levels = load_available_price_levels(user.hub_id, repo)?;
+
+    let (_, mut categories) = repo.list_categories(CategoryTreeQuery::new(hub_id))?;
+    categories.retain(|category| !category.is_archived);
+    categories.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
+
+    let tag_query = TagListQuery::try_new(hub_id.get())?;
+    let (_, mut tags) = repo.list_tags(tag_query)?;
+    tags.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
+
+    let vendors = match access {
+        HubAccessScope::Admin => repo.list_vendors(VendorListQuery::new(hub_id))?.1,
+        _ => Vec::new(),
+    };
+
+    Ok((price_levels, categories, tags, vendors))
+}
+
+pub fn load_product_details<R>(
+    product_id: i32,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<ProductDetailsPageData>
+where
+    R: ProductReader
+        + PriceLevelReader
+        + CategoryReader
+        + TagReader
+        + VendorReader
+        + UserReader
+        + VendorUserReader
+        + ?Sized,
+{
+    let access = resolve_hub_access(user, repo)?;
+    let hub_id = HubId::new(user.hub_id)?;
+    let product_id = ProductId::new(product_id)?;
+    let product = repo
+        .get_product_by_id(product_id, hub_id)?
+        .ok_or(ServiceError::NotFound)?;
+
+    if let HubAccessScope::Vendor { vendor_id } = access
+        && product.vendor_id != Some(vendor_id)
+    {
+        return Err(ServiceError::NotFound);
+    }
+
+    let (price_levels, categories, tags, vendors) =
+        load_editor_supporting_data(user, access, repo)?;
+
+    Ok(ProductDetailsPageData {
+        product,
+        price_levels,
+        categories,
+        tags,
+        vendors,
+    })
 }
 
 /// Persists a new product with associated price levels, images, tags, and category.
@@ -1279,6 +1396,11 @@ Banana,USD,7.50,
         let product_id = 24;
         let hub_id = user.hub_id;
 
+        repo.price_level_reader
+            .expect_list_price_levels()
+            .times(1)
+            .returning(|_| Ok((0, Vec::new())));
+
         repo.product_reader
             .expect_get_product_by_id()
             .times(1)
@@ -1303,11 +1425,7 @@ Banana,USD,7.50,
 
         let result = update_product(product_id, form, &user, &repo);
 
-        assert!(matches!(
-            result,
-            Err(ServiceError::Form(message))
-            if message == "Некорректный идентификатор товара."
-        ));
+        assert!(matches!(result, Err(ServiceError::NotFound)));
     }
 
     #[test]

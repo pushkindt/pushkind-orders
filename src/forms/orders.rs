@@ -1,56 +1,30 @@
 use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::Deserialize;
-use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 use crate::{
     domain::order::OrderStatus,
     domain::types::{
         OrderConsignee, OrderDeliveryNotes, OrderNotes, OrderPayer, OrderReference,
-        OrderShippingAddress,
+        OrderShippingAddress, ProductId, ProductQuantity,
     },
+    forms::FormError,
 };
 
 /// Result type returned by the order form helpers.
-pub type OrderFormResult<T> = Result<T, EditOrderFormError>;
+pub type OrderFormResult<T> = Result<T, FormError>;
 
-/// Errors that can occur while processing the edit order form.
-#[derive(Debug, Error)]
-pub enum EditOrderFormError {
-    /// Validation failures from the `validator` crate.
-    #[error("validation failed: {0}")]
-    Validation(#[from] ValidationErrors),
-    /// The submitted status value is not recognised.
-    #[error("Статус заказа указан неверно.")]
-    InvalidStatus,
-    /// The provided reference value could not be converted.
-    #[error("Внешний номер заказа указан неверно.")]
-    InvalidReference,
-    /// The provided notes value could not be converted.
-    #[error("Заметки заказа указаны неверно.")]
-    InvalidNotes,
-    /// The provided shipping address could not be converted.
-    #[error("Адрес доставки указан неверно.")]
-    InvalidShippingAddress,
-    /// The provided consignee value could not be converted.
-    #[error("Получатель указан неверно.")]
-    InvalidConsignee,
-    /// The provided delivery instructions could not be converted.
-    #[error("Инструкции по доставке указаны неверно.")]
-    InvalidDeliveryNotes,
-    /// The provided payer value could not be converted.
-    #[error("Плательщик указан неверно.")]
-    InvalidPayer,
-}
+/// Result type returned by the order approvals form helpers.
+pub type OrderApprovalsFormResult<T> = Result<T, FormError>;
 
 /// Payload emitted when submitting the edit order modal.
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditOrderForm {
     /// Identifier of the order being updated.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Идентификатор заказа указан неверно."))]
     pub order_id: i32,
     /// Selected status for the order.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Выберите статус заказа."))]
     pub status: String,
     /// Optional external reference displayed to customers.
     #[serde(default)]
@@ -90,52 +64,71 @@ pub struct EditOrderPayload {
     pub payer: Option<OrderPayer>,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+pub struct UpdateOrderApprovalItemForm {
+    #[validate(range(min = 1, message = "Выберите товар."))]
+    pub product_id: i32,
+    #[validate(range(min = 1, message = "Количество должно быть положительным целым."))]
+    pub approved_quantity: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOrderApprovalsForm {
+    pub approvals: Vec<UpdateOrderApprovalItemForm>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateOrderApprovalItemPayload {
+    pub product_id: ProductId,
+    pub approved_quantity: ProductQuantity,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateOrderApprovalsPayload {
+    pub approvals: Vec<UpdateOrderApprovalItemPayload>,
+}
+
 impl TryFrom<EditOrderForm> for EditOrderPayload {
-    type Error = EditOrderFormError;
+    type Error = FormError;
 
     fn try_from(value: EditOrderForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
         let status = OrderStatus::try_from(value.status.trim())
-            .map_err(|_| EditOrderFormError::InvalidStatus)?;
+            .map_err(|_| FormError::InvalidOrderStatus)?;
 
         let reference = value
             .reference
-            .map(|value| {
-                OrderReference::new(value).map_err(|_| EditOrderFormError::InvalidReference)
-            })
+            .map(|value| OrderReference::new(value).map_err(|_| FormError::InvalidOrderReference))
             .transpose()?;
 
         let notes = value
             .notes
-            .map(|value| OrderNotes::new(value).map_err(|_| EditOrderFormError::InvalidNotes))
+            .map(|value| OrderNotes::new(value).map_err(|_| FormError::InvalidOrderNotes))
             .transpose()?;
 
         let shipping_address = value
             .shipping_address
             .map(|value| {
-                OrderShippingAddress::new(value)
-                    .map_err(|_| EditOrderFormError::InvalidShippingAddress)
+                OrderShippingAddress::new(value).map_err(|_| FormError::InvalidOrderShippingAddress)
             })
             .transpose()?;
 
         let consignee = value
             .consignee
-            .map(|value| {
-                OrderConsignee::new(value).map_err(|_| EditOrderFormError::InvalidConsignee)
-            })
+            .map(|value| OrderConsignee::new(value).map_err(|_| FormError::InvalidOrderConsignee))
             .transpose()?;
 
         let delivery_notes = value
             .delivery_notes
             .map(|value| {
-                OrderDeliveryNotes::new(value).map_err(|_| EditOrderFormError::InvalidDeliveryNotes)
+                OrderDeliveryNotes::new(value).map_err(|_| FormError::InvalidOrderDeliveryNotes)
             })
             .transpose()?;
 
         let payer = value
             .payer
-            .map(|value| OrderPayer::new(value).map_err(|_| EditOrderFormError::InvalidPayer))
+            .map(|value| OrderPayer::new(value).map_err(|_| FormError::InvalidOrderPayer))
             .transpose()?;
 
         Ok(Self {
@@ -150,9 +143,58 @@ impl TryFrom<EditOrderForm> for EditOrderPayload {
     }
 }
 
+impl TryFrom<UpdateOrderApprovalsForm> for UpdateOrderApprovalsPayload {
+    type Error = FormError;
+
+    fn try_from(value: UpdateOrderApprovalsForm) -> Result<Self, Self::Error> {
+        if value.approvals.is_empty() {
+            return Err(FormError::EmptyOrderApprovals);
+        }
+
+        let approvals = value
+            .approvals
+            .into_iter()
+            .enumerate()
+            .map(|(index, item)| {
+                item.validate()
+                    .map_err(|errors| FormError::PrefixedValidation {
+                        prefix: indexed_field_prefix(index),
+                        errors,
+                    })?;
+
+                let product_id = ProductId::new(item.product_id)
+                    .map_err(|_| FormError::InvalidOrderApprovalProductId { index })?;
+                let approved_quantity = ProductQuantity::new(item.approved_quantity)
+                    .map_err(|_| FormError::InvalidOrderApprovalQuantity { index })?;
+
+                Ok(UpdateOrderApprovalItemPayload {
+                    product_id,
+                    approved_quantity,
+                })
+            })
+            .collect::<Result<Vec<_>, FormError>>()?;
+
+        Ok(Self { approvals })
+    }
+}
+
+fn indexed_field_prefix(index: usize) -> String {
+    format!("approvals.{index}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn field_errors(error: &FormError) -> Vec<(String, String)> {
+        let mut field_errors = error
+            .field_errors()
+            .into_iter()
+            .map(|error| (error.field.to_string(), error.message.into_owned()))
+            .collect::<Vec<_>>();
+        field_errors.sort();
+        field_errors
+    }
 
     #[test]
     fn edit_order_form_converts_and_sanitizes_values() {
@@ -214,6 +256,90 @@ mod tests {
 
         let result: OrderFormResult<EditOrderPayload> = form.try_into();
 
-        assert!(matches!(result, Err(EditOrderFormError::InvalidStatus)));
+        assert!(matches!(result, Err(FormError::InvalidOrderStatus)));
+    }
+
+    #[test]
+    fn edit_order_form_uses_localized_validation_messages() {
+        let form = EditOrderForm {
+            order_id: 0,
+            status: String::new(),
+            reference: None,
+            notes: None,
+            shipping_address: None,
+            consignee: None,
+            delivery_notes: None,
+            payer: None,
+        };
+
+        let error = FormError::from(form.validate().expect_err("form should be invalid"));
+
+        assert_eq!(
+            field_errors(&error),
+            vec![
+                (
+                    "order_id".to_string(),
+                    "Идентификатор заказа указан неверно.".to_string(),
+                ),
+                ("status".to_string(), "Выберите статус заказа.".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn approvals_form_converts_to_strongly_typed_payload() {
+        let form = UpdateOrderApprovalsForm {
+            approvals: vec![UpdateOrderApprovalItemForm {
+                product_id: 5,
+                approved_quantity: 3,
+            }],
+        };
+
+        let payload: UpdateOrderApprovalsPayload = form
+            .try_into()
+            .expect("approvals payload conversion should succeed");
+
+        assert_eq!(payload.approvals.len(), 1);
+        assert_eq!(payload.approvals[0].product_id.get(), 5);
+        assert_eq!(payload.approvals[0].approved_quantity.get(), 3);
+    }
+
+    #[test]
+    fn approvals_form_rejects_empty_payload() {
+        let form = UpdateOrderApprovalsForm {
+            approvals: Vec::new(),
+        };
+
+        let result: OrderApprovalsFormResult<UpdateOrderApprovalsPayload> = form.try_into();
+
+        let error = result.expect_err("empty approvals should fail");
+        assert_eq!(
+            field_errors(&error),
+            vec![(
+                "approvals".to_string(),
+                "Не выбраны позиции для обновления.".to_string(),
+            )]
+        );
+    }
+
+    #[test]
+    fn approvals_form_reports_indexed_field_errors() {
+        let form = UpdateOrderApprovalsForm {
+            approvals: vec![UpdateOrderApprovalItemForm {
+                product_id: 1,
+                approved_quantity: 0,
+            }],
+        };
+
+        let result: OrderApprovalsFormResult<UpdateOrderApprovalsPayload> = form.try_into();
+
+        let error = result.expect_err("invalid approvals should fail");
+        assert_eq!(
+            field_errors(&error),
+            vec![(
+                "approvals.0.approved_quantity".to_string(),
+                "Количество должно быть положительным целым.".to_string(),
+            )]
+        );
     }
 }

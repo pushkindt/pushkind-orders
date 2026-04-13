@@ -1,38 +1,18 @@
 use pushkind_common::routes::empty_string_as_none_fromstr;
 use serde::Deserialize;
-use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 use crate::domain::types::{CategoryDescription, CategoryId, CategoryName, ImageUrl};
+use crate::forms::FormError;
 
 /// Result type returned by the category form helpers.
-pub type CategoryFormResult<T> = Result<T, CategoryFormError>;
-
-/// Errors that can occur while processing category forms.
-#[derive(Debug, Error)]
-pub enum CategoryFormError {
-    /// Validation failures from the `validator` crate.
-    #[error("validation failed: {0}")]
-    Validation(#[from] ValidationErrors),
-    /// The provided name is empty after sanitization.
-    #[error("category name cannot be empty")]
-    EmptyName,
-    /// Invalid image URL format.
-    #[error("invalid image URL format")]
-    InvalidImageUrl,
-    /// Invalid category parent id.
-    #[error("invalid parent category id")]
-    InvalidParentId,
-    /// Invalid category description.
-    #[error("invalid category description")]
-    InvalidDescription,
-}
+pub type CategoryFormResult<T> = Result<T, FormError>;
 
 /// Form payload emitted when submitting the "Add category" form.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddCategoryForm {
     /// Name entered by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название категории обязательно."))]
     pub name: String,
     /// Optional description for the category.
     #[serde(default)]
@@ -44,7 +24,7 @@ pub struct AddCategoryForm {
     pub parent_id: Option<i32>,
     /// Optional image URL for the category
     #[serde(default)]
-    #[validate(url)]
+    #[validate(url(message = "Ссылка на изображение указана неверно."))]
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub image_url: Option<String>,
 }
@@ -59,12 +39,12 @@ pub struct AddCategoryPayload {
 }
 
 impl TryFrom<AddCategoryForm> for AddCategoryPayload {
-    type Error = CategoryFormError;
+    type Error = FormError;
 
     fn try_from(value: AddCategoryForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let name = CategoryName::new(value.name).map_err(|_| CategoryFormError::EmptyName)?;
+        let name = CategoryName::new(value.name).map_err(|_| FormError::InvalidCategoryName)?;
 
         let description = value
             .description
@@ -72,13 +52,13 @@ impl TryFrom<AddCategoryForm> for AddCategoryPayload {
             .filter(|value| !value.is_empty())
             .map(CategoryDescription::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidDescription)?;
+            .map_err(|_| FormError::InvalidCategoryDescription)?;
 
         let parent_id = value
             .parent_id
             .map(CategoryId::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidParentId)?;
+            .map_err(|_| FormError::InvalidCategoryParentId)?;
 
         let image_url = value
             .image_url
@@ -86,7 +66,7 @@ impl TryFrom<AddCategoryForm> for AddCategoryPayload {
             .filter(|value| !value.is_empty())
             .map(ImageUrl::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidImageUrl)?;
+            .map_err(|_| FormError::InvalidCategoryImageUrl)?;
 
         Ok(Self {
             name,
@@ -101,7 +81,7 @@ impl TryFrom<AddCategoryForm> for AddCategoryPayload {
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditCategoryForm {
     /// Name submitted by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название категории обязательно."))]
     pub name: String,
     /// Optional description update.
     #[serde(default)]
@@ -112,7 +92,7 @@ pub struct EditCategoryForm {
     pub is_archived: bool,
     /// Optional image URL for the category
     #[serde(default)]
-    #[validate(url)]
+    #[validate(url(message = "Ссылка на изображение указана неверно."))]
     #[serde(deserialize_with = "empty_string_as_none_fromstr")]
     pub image_url: Option<String>,
 }
@@ -127,12 +107,12 @@ pub struct EditCategoryPayload {
 }
 
 impl TryFrom<EditCategoryForm> for EditCategoryPayload {
-    type Error = CategoryFormError;
+    type Error = FormError;
 
     fn try_from(value: EditCategoryForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let name = CategoryName::new(value.name).map_err(|_| CategoryFormError::EmptyName)?;
+        let name = CategoryName::new(value.name).map_err(|_| FormError::InvalidCategoryName)?;
 
         let description = value
             .description
@@ -140,7 +120,7 @@ impl TryFrom<EditCategoryForm> for EditCategoryPayload {
             .filter(|value| !value.is_empty())
             .map(CategoryDescription::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidDescription)?;
+            .map_err(|_| FormError::InvalidCategoryDescription)?;
 
         let image_url = value
             .image_url
@@ -148,7 +128,7 @@ impl TryFrom<EditCategoryForm> for EditCategoryPayload {
             .filter(|value| !value.is_empty())
             .map(ImageUrl::new)
             .transpose()
-            .map_err(|_| CategoryFormError::InvalidImageUrl)?;
+            .map_err(|_| FormError::InvalidCategoryImageUrl)?;
 
         Ok(Self {
             name,
@@ -193,7 +173,7 @@ mod tests {
 
         let result: CategoryFormResult<AddCategoryPayload> = form.try_into();
 
-        assert!(matches!(result, Err(CategoryFormError::EmptyName)));
+        assert!(matches!(result, Err(FormError::InvalidCategoryName)));
     }
 
     #[test]
@@ -206,7 +186,7 @@ mod tests {
         };
 
         let result: CategoryFormResult<AddCategoryPayload> = form.try_into();
-        assert!(matches!(result, Err(CategoryFormError::InvalidParentId)));
+        assert!(matches!(result, Err(FormError::InvalidCategoryParentId)));
     }
 
     #[test]
@@ -241,7 +221,7 @@ mod tests {
 
         let result: CategoryFormResult<EditCategoryPayload> = form.try_into();
 
-        assert!(matches!(result, Err(CategoryFormError::EmptyName)));
+        assert!(matches!(result, Err(FormError::InvalidCategoryName)));
     }
 
     #[test]

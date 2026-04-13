@@ -9,11 +9,11 @@ pub struct PriceLevelsQuery {
     pub search: Option<String>,
 }
 
-/// Data required to render the price levels index template.
+/// Data required to build the price-levels collection resource payload.
 pub struct PriceLevelsPageData {
-    /// Paginated list of price levels to show in the table.
+    /// List of price levels to show in the table.
     pub price_levels: Vec<PriceLevel>,
-    /// Search query echoed back to the template when present.
+    /// Search query echoed back to the client when present.
     pub search: Option<String>,
     /// Categories available for price level targeting.
     pub categories: Vec<Category>,

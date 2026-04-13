@@ -4,10 +4,13 @@
 
 `pushkind-orders` is the Pushkind hub service for:
 
-- Hub-operator management pages (server-rendered via Tera) for browsing and maintaining orders and catalog data.
+- Hub-operator management pages for browsing and maintaining orders and catalog data.
+  `GET /`, `GET /na`, `GET /order/{order_id}`, `GET /products`,
+  `GET /categories`, `GET /tags`, `GET /price-levels`, and `GET /vendors`
+  are served from Vite-built React documents.
 - Customer-facing Store API (`/api/v1/store/{hub_id}`) for product browsing, JWT-authenticated customer access, and order placement.
 
-The system is implemented as an Actix Web application with Diesel (SQLite) and follows a layered architecture (domain → repository → services → routes/templates).
+The system is implemented as an Actix Web application with Diesel (SQLite) and follows a layered architecture (domain → repository → services → routes).
 
 ## Storefront Auth Contract
 
@@ -29,11 +32,11 @@ defines the current storefront authentication split.
 
 ### Hub user (operator)
 
-- Authenticated via `pushkind-common` identity/session middleware and the Pushkind auth service (`ServerConfig.auth_service_url`).
+- Authenticated via `pushkind-common` identity/session middleware and the Pushkind auth service (`AppConfig.auth_service_url`).
 - Must have `SERVICE_ACCESS_ROLE` (`src/lib.rs`: `orders`) to access hub pages and `/api/v1/*` JSON endpoints.
 - Administrative actions require `ADMIN_ACCESS_ROLE` (`src/lib.rs`: `orders_admin`).
 - Only hub operators with `ADMIN_ACCESS_ROLE` can create vendors and assign users to vendors.
-- Users lacking access are redirected to `/na` (served by `pushkind_common::routes::not_assigned`).
+- Users lacking access are redirected to the local `/na` page owned by `pushkind-orders`.
 
 ### Vendor hub user
 
@@ -56,11 +59,10 @@ defines the current storefront authentication split.
 
 ## High-Level Architecture
 
-- `src/domain`: strong types and domain entities (`Order`, `Product`, `PriceLevel`, `Customer`, `StoreOtp`, etc.).
+- `src/domain`: strong types and domain entities (`Order`, `Product`, `PriceLevel`, `Customer`, `Vendor`, etc.).
 - `src/repository`: repository traits (Reader/Writer) and the Diesel-backed `DieselRepository` implementation.
-- `src/services`: business logic (authorization checks, pricing rules, OTP throttling/expiry, etc.); returns `ServiceResult<T>`.
-- `src/routes`: Actix handlers; extract inputs, call services, render templates or return JSON/redirect.
-- `templates/`: Tera templates for hub UI; shared layout helpers come from `pushkind-common`.
+- `src/services`: business logic (authorization checks, pricing rules, vendor scoping, etc.); returns `ServiceResult<T>`.
+- `src/routes`: Actix handlers; extract inputs, call services, serve built frontend HTML, or return JSON/redirect.
 - `migrations/` + `src/schema.rs`: SQLite schema managed via Diesel migrations.
 
 ## Configuration
@@ -77,10 +79,6 @@ Key settings (`src/models/config.rs`):
 - `APP_DOMAIN` (required): cookie domain; sessions set `.{domain}`.
 - `APP_ADDRESS` (default `127.0.0.1`), `APP_PORT` (default `80`, local `8080`).
 - `APP_DATABASE_URL` (default `app.db`): SQLite file path.
-- `APP_TEMPLATES_DIR` (default `templates/**/*`): Tera glob.
-- `APP_ZMQ_SMS_PUB` (default `tcp://127.0.0.1:5561`): ZeroMQ PUB for outbound SMS events.
-- `APP_ZMQ_CLIENTS_PUB` (default `tcp://127.0.0.1:5565`): ZeroMQ PUB for client sync events.
-- `APP_SMS_SENDER` (default `cns.shared`): SMS sender id.
 - `APP_AUTH_SERVICE_URL`, `APP_CRM_SERVICE_URL`: upstream service URLs used for navigation and links.
 
 ## Data Model (SQLite)
@@ -93,7 +91,6 @@ Primary tables (SQLite schema; see `src/schema.rs` and `migrations/`):
 - `price_levels`: named pricing tiers; one can be marked `is_default` per hub.
 - `customers`: phone-based customers; may have `price_level_id` and optional `public_id`.
 - `categories` (tree via `parent_id`) and `tags` (+ join tables).
-- `store_otps`: OTP records keyed by `(hub_id, phone)` with expiry + throttle timestamp.
 - `vendors`: vendor entities per hub.
 - `vendor_user`: assignment of hub users to vendors (one vendor per user).
 - `vendor_order`: association between a vendor and an order (derived from order line items that reference vendor-owned products; an order may be linked to at most one vendor).
@@ -107,7 +104,6 @@ This section states invariants as *hard rules* when they are enforced by code/DB
 
 - **Hub scoping (hard rule)**: core records are scoped by `hub_id` (orders/products/categories/tags/price levels/customers/users).
 - **Customer phone uniqueness (hard rule)**: phone numbers are unique **per hub** (`UNIQUE(hub_id, phone)`), and Store API normalizes inputs to E.164 before lookup/creation.
-- **Store OTP uniqueness (hard rule)**: OTP records are unique per `(hub_id, phone)`; new OTP requests overwrite the existing record (upsert).
 - **Vendor scoping (required behavior)**: vendors are scoped by `hub_id`, and vendor assignments/associations (`vendor_user`, `vendor_order`, `products.vendor_id`) must not cross hub boundaries.
 - **Vendor user cardinality (required behavior)**: a hub user may be assigned to **at most one** vendor; users with `VENDOR_ACCESS_ROLE` must have exactly one vendor assignment.
 - **Order vendor constraint (required behavior)**: an order must not contain products from multiple vendors. An order either:
@@ -151,9 +147,9 @@ The DB connection pool enables SQLite `PRAGMA foreign_keys = ON` (and WAL) on ev
 
 ### Orders, approvals, and mutability (current behavior)
 
-- **Order line “approval” is mutable**: `approved_quantity` (and derived line totals) can be updated repeatedly via `POST /orders/{order_id}/products/approvals`; there is no status-based lock.
+- **Order line “approval” is mutable**: `approved_quantity` (and derived line totals) can be updated repeatedly via `PUT /api/v1/orders/{order_id}/products/approvals`; there is no status-based lock.
 - **Order metadata is mutable**:
-  - Hub users can update status/notes/reference/shipping fields via `POST /orders/{order_id}/edit` regardless of current status.
+  - Hub users can update status/notes/reference/shipping fields via `PUT /api/v1/orders/{order_id}` regardless of current status.
   - Store customers can update only shipping-related fields via `PATCH /api/v1/store/{hub_id}/orders/{order_id}`; there is no status-based lock.
 - **Order product snapshots are stable vs catalog changes**: order lines store name/SKU/description/currency as snapshots; catalog edits do not rewrite historical lines. (However, approvals *do* change `approved_quantity` and `price_cents` snapshots.)
 
@@ -173,7 +169,7 @@ Order statuses are constrained by both domain parsing and a DB `CHECK` constrain
 
 There is currently no explicit state machine enforcing allowed transitions:
 
-- Hub users can set `status` via `POST /orders/{order_id}/edit` without transition validation.
+- Hub users can set `status` via `PUT /api/v1/orders/{order_id}` without transition validation.
 - Store customers cannot change `status` via the Store API.
 
 ### Terminal states (convention)
@@ -183,7 +179,7 @@ The system does not prevent edits in any state, but operationally:
 - `Completed` and `Cancelled` are typically treated as terminal in downstream workflows.
 - If a formal state machine is introduced, specify allowed transitions and “locked fields” here (for example, disallow approvals/metadata edits after `Completed`).
 
-## Hub UI (Server-Rendered Pages)
+## Hub UI
 
 Hub pages require an authenticated hub user.
 
@@ -193,36 +189,27 @@ Hub pages require an authenticated hub user.
 
 ### Routes
 
-- `GET /` — orders dashboard (pagination + search; opens details in a modal via separate route).
-- `GET /order/{order_id}` — order details page.
-- `GET /order/{order_id}/modal` — edit order modal HTML fragment.
-- `POST /orders/{order_id}/edit` — submit edits from the modal.
-- `POST /orders/{order_id}/products/approvals` — JSON endpoint to update approved quantities.
+- `GET /` — React-owned orders dashboard document. The page fetches its data from resource-style JSON endpoints after load.
+- `GET /na` — React-owned local no-access page for authenticated users without the `orders` role.
+- `GET /order/{order_id}` — React-owned order details document. The backend performs lightweight auth and resource existence checks, then serves the built `app/order.html`.
 
-- `GET /products` — product management page (filters + pagination).
-- `POST /products/add` — create product (form encoded; supports nested price level fields).
-- `POST /products/edit` — update product.
-- `POST /products/upload` — batch upload products via CSV multipart form.
+- `GET /products` — React-owned product management document. The backend performs lightweight auth and serves the built `app/products.html`; the page fetches typed resource data from `/api/v1/products`.
 
-- `GET /categories` — category management (tree view).
-- `POST /categories/add` — create category.
-- `GET /category/{category_id}/modal` — edit category modal fragment.
-- `POST /category/{category_id}/edit` — update category.
-- `POST /category/{category_id}/delete` — delete category.
+- `GET /categories` — React-owned category management document. The backend performs lightweight auth and serves the built `app/categories.html`.
 
-- `GET /tags` — tag management (search + pagination).
-- `POST /tags/add` — create tag.
-- `GET /tag/{tag_id}/modal` — edit tag modal fragment.
-- `POST /tags/edit` — update tag.
-- `POST /tags/{tag_id}/delete` — delete tag.
+- `GET /tags` — React-owned tag management document. The backend performs lightweight auth and serves the built `app/tags.html`.
 
-- `GET /price-levels` — price level management (search + list).
-- `POST /price-levels/add` — create price level (optionally seeds product rates via a modifier).
-- `GET /price-level/{price_level_id}/modal` — edit price level modal fragment.
-- `POST /price-level/{price_level_id}/edit` — update price level.
-- `POST /price-level/{price_level_id}/delete` — delete price level.
+- `GET /price-levels` — React-owned price-level management document. The backend performs lightweight auth and serves the built `app/price-levels.html`.
+
+- `GET /vendors` — React-owned vendor management document. The backend performs lightweight auth and serves the built `app/vendors.html`.
 
 Static assets are served from `GET /assets/*` (folder `./assets`).
+
+The React migration direction for full-page routes is:
+
+- Vite-built static HTML documents served after backend auth and authorization checks
+- typed JSON initialization via `/api/v1/...`
+- reusable resource-style GET contracts rather than page-shaped bootstrap endpoints
 
 ## Hub JSON API (`/api/v1/*`)
 
@@ -231,13 +218,104 @@ All endpoints require an authenticated hub user (wrapped by `RedirectUnauthorize
 - Full access requires `ADMIN_ACCESS_ROLE`.
 - When accessed by a vendor user (`VENDOR_ACCESS_ROLE`), product/order endpoints must return only vendor-associated data.
 - Vendor users may read hub-wide configuration, but must not be able to create/update/delete tags, categories, or price levels.
+- React-facing GET endpoints must follow resource-style contracts. Page-shaped bootstrap endpoints such as `/api/v1/index` are not part of the target contract.
 
-- `GET /api/v1/orders` — list orders (same query model as `GET /`).
+- `GET /api/v1/iam` — shell data for React-owned pages.
+  - intentionally available to authenticated users even without `orders`, because the local `/na` page also uses the shell
+- `GET /api/v1/no-access` — local content for the React-owned `/na` page.
+- `GET /api/v1/vendors` — canonical typed vendor collection.
+  - query model supports `search` and `page`
+  - response shape is resource-style:
+    - `items`
+    - `pagination`
+    - `active_filters`
+- `GET /api/v1/vendors/{vendor_id}` — canonical typed vendor details resource.
+- `POST /api/v1/vendors` — canonical typed vendor create mutation.
+  - request body matches the strongly typed add-vendor form contract
+  - `200 OK` returns `{ message, vendor }`
+- `PUT /api/v1/vendors/{vendor_id}` — canonical typed vendor update mutation.
+  - request body matches the strongly typed edit-vendor form contract
+  - `200 OK` returns `{ message, vendor }`
+- `DELETE /api/v1/vendors/{vendor_id}` — canonical typed vendor delete mutation.
+  - `200 OK` returns `{ message }`
+- `GET /api/v1/users` — canonical typed local-user collection for vendor assignment management.
+- `POST /api/v1/users` — canonical typed local-user creation mutation for vendor users managed inside Orders.
+  - request body matches the strongly typed add-user form contract
+  - `200 OK` returns `{ message }`
+- `POST /api/v1/vendors/assignments` — canonical typed user-to-vendor assignment mutation.
+  - request body matches the strongly typed assign-vendor-user form contract
+  - `200 OK` returns `{ message }`
+- `DELETE /api/v1/vendors/assignments/{user_id}` — canonical typed vendor-assignment clear mutation.
+  - `200 OK` returns `{ message }`
+- `GET /api/v1/orders` — canonical typed order collection.
+  - query model currently supports `search` and `page`
+  - response shape is resource-style:
+    - `items`
+    - `pagination`
+    - `active_filters`
+- `GET /api/v1/orders/{order_id}` — canonical typed order details resource used by the React order page.
+- `PUT /api/v1/orders/{order_id}` — canonical typed order metadata mutation.
+  - request body matches the strongly typed edit-order form contract
+  - `200 OK` returns `{ message, order }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `PUT /api/v1/orders/{order_id}/products/approvals` — canonical typed approvals mutation.
+  - request body matches the strongly typed approvals form contract
+  - `200 OK` returns `{ message, order }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `GET /api/v1/products` — canonical typed product collection.
+  - query model currently supports `search`, `page`, and `show_archived`
+  - response shape is resource-style:
+    - `items`
+    - `pagination`
+    - `active_filters`
+    - `editor_options`
+- `GET /api/v1/products/{product_id}` — canonical typed product details resource used by the React products page.
+- `POST /api/v1/products` — canonical typed create-product mutation.
+  - request body matches the strongly typed add-product form contract
+  - `200 OK` returns `{ message, product }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `PUT /api/v1/products/{product_id}` — canonical typed edit-product mutation.
+  - request body matches the strongly typed edit-product form contract
+  - `200 OK` returns `{ message, product }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `POST /api/v1/products/upload` — canonical typed CSV upload mutation.
+  - request body is multipart and matches the strongly typed upload form contract
+  - `200 OK` returns `{ message, created_count }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `GET /api/v1/categories` — canonical typed category tree resource for the React categories page.
+- `GET /api/v1/categories/{category_id}` — canonical typed category details resource.
+- `POST /api/v1/categories` — canonical typed category creation mutation.
+  - `200 OK` returns `{ message, category }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `PUT /api/v1/categories/{category_id}` — canonical typed category update mutation.
+  - `200 OK` returns `{ message, category }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `DELETE /api/v1/categories/{category_id}` — canonical typed category deletion mutation.
+  - `200 OK` returns `{ message }`
+- `GET /api/v1/tags` — canonical typed tag collection resource for the React tags page.
+- `GET /api/v1/tags/{tag_id}` — canonical typed tag details resource.
+- `POST /api/v1/tags` — canonical typed tag creation mutation.
+  - `200 OK` returns `{ message, tag }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `PUT /api/v1/tags/{tag_id}` — canonical typed tag update mutation.
+  - `200 OK` returns `{ message, tag }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `DELETE /api/v1/tags/{tag_id}` — canonical typed tag deletion mutation.
+  - `200 OK` returns `{ message }`
+- `GET /api/v1/price-levels` — canonical typed price-level collection resource for the React price-levels page.
+- `GET /api/v1/price-levels/{price_level_id}` — canonical typed price-level details resource.
+- `POST /api/v1/price-levels` — canonical typed price-level creation mutation.
+  - `200 OK` returns `{ message, price_level }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `PUT /api/v1/price-levels/{price_level_id}` — canonical typed price-level update mutation.
+  - `200 OK` returns `{ message, price_level }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
+- `DELETE /api/v1/price-levels/{price_level_id}` — canonical typed price-level deletion mutation.
+  - `200 OK` returns `{ message }`
 - `GET /api/v1/client-price-levels` — list hub customers with assigned `price_level_id` (plus hub default level).
 - `PUT /api/v1/client-price-levels` — assign or clear a customer’s price level by phone.
-  - `204 No Content` on success
-  - `404 Not Found` when a referenced entity is missing
-  - `422 Unprocessable Entity` with `{ "error": "..." }` for validation errors
+  - `200 OK` returns `{ message }`
+  - `422 Unprocessable Entity` returns `{ message, field_errors }`
 
 ## Store API (`/api/v1/store/{hub_id}/*`)
 
@@ -266,23 +344,13 @@ These endpoints do not require authentication, but apply customer-specific prici
   - Returns top-level categories when `parentId` is omitted
 - `GET /api/v1/store/{hub_id}/tags`
 
-### OTP authentication
+### Storefront authentication
 
-- `POST /api/v1/store/{hub_id}/auth/otp`
-  - Body: `StoreOtpRequestPayload`
-  - Validates + throttles requests per `(hub_id, phone)`:
-    - Throttle window: 2 minutes (`OTP_THROTTLE_MINUTES`)
-    - OTP validity: 10 minutes (`OTP_EXPIRY_MINUTES`)
-  - On accept: `200 OK` with `StoreOtpAcceptResponse { success: true }`
-  - On validation/throttle error: `422` with `{ "error": "..." }`
-  - Side effect: publishes `ZMQSendSmsMessage` via ZeroMQ (configured by `APP_ZMQ_SMS_PUB`)
-
-- `POST /api/v1/store/{hub_id}/auth/otp/verify`
-  - Body: `StoreOtpVerifyPayload`
-  - Verifies OTP code and expiry; deletes the OTP record on success.
-  - Creates a `Customer` if no customer exists for the phone + hub.
-  - On success: persists the `Customer` in the store session and returns `200 OK` with `StoreOtpVerifyResponse { success: true, customer }`.
-  - Side effect: publishes a `ZmqClientMessage` via ZeroMQ (configured by `APP_ZMQ_CLIENTS_PUB`).
+- `pushkind-orders` does not own storefront login endpoints.
+- Storefront authentication is performed by `pushkind-crm`, which issues the `store-session` cookie described in the Storefront Auth Contract.
+- Store API endpoints in orders either:
+  - work anonymously for product browsing, or
+  - require a valid `store-session` cookie for customer-specific order history and mutations.
 
 ### Orders
 
@@ -430,17 +498,7 @@ Example:
 }
 ```
 
-### OTP responses
-
-- `StoreOtpAcceptResponse`: `{ "success": true }`
-- `StoreOtpVerifyResponse`: `{ "success": true, "customer": { ... } }` (customer is the domain customer object currently stored in the session)
-
 ### Request payloads
-
-OTP:
-
-- `POST /auth/otp`: `{ "phone": "+15551234567" }`
-- `POST /auth/otp/verify`: `{ "phone": "+15551234567", "otp": "123456" }`
 
 Order creation:
 
@@ -467,18 +525,13 @@ Unless explicitly stated below, endpoints provide **no idempotency guarantees** 
 - `POST /api/v1/store/{hub_id}/orders`:
   - **Not idempotent**: repeated requests create repeated orders.
   - Order creation is a single DB transaction (order + order lines).
-- `POST /api/v1/store/{hub_id}/auth/otp`:
-  - **Not idempotent**: repeated calls overwrite the OTP record and update throttling timestamps; rapid repeats are rejected by throttle.
-- `POST /api/v1/store/{hub_id}/auth/otp/verify`:
-  - Intended as **single-use**: success deletes the OTP record; a later verify typically fails with “Invalid or expired OTP”.
-  - Concurrent verifies for the same phone/hub are not coordinated; clients should avoid parallel submissions.
 - `PATCH /api/v1/store/{hub_id}/orders/{order_id}`:
   - Not explicitly versioned for concurrency (no ETag/If-Match); last write wins at the DB level.
 
 ## Error and Status Code Conventions (HTTP)
 
-- Hub UI routes:
-  - Unauthorized users are redirected to `/na` with a flash message.
+- Hub document routes:
+  - Unauthorized users are redirected to `/na`.
   - Infrastructure errors generally return `500 Internal Server Error`.
 - JSON APIs (`/api/*` and store API):
   - `400 Bad Request` for invalid path parameters (non-integer ids).
@@ -488,19 +541,11 @@ Unless explicitly stated below, endpoints provide **no idempotency guarantees** 
 
 ## External Integrations
 
-- **Auth service**: URL configured by `APP_AUTH_SERVICE_URL`; used by `pushkind-common` middleware for identity and by templates for navigation.
+- **Auth service**: URL configured by `APP_AUTH_SERVICE_URL`; used by `pushkind-common` middleware for identity and by React shell data for navigation.
 - **CRM service**: `APP_CRM_SERVICE_URL`; referenced from order/price-level pages for outbound links.
-- **ZeroMQ**:
-  - SMS: publishes `ZMQSendSmsMessage` JSON to `APP_ZMQ_SMS_PUB`.
-  - Clients: publishes `ZmqClientMessage` JSON to `APP_ZMQ_CLIENTS_PUB`.
 
 ## Failure Modes and Operational Notes
 
-- **ZeroMQ unavailable at startup**: if either sender cannot start, the server fails to start (hard dependency at boot).
-- **ZeroMQ publish failures at runtime (OTP endpoints)**:
-  - OTP request persists the OTP record *before* attempting to publish SMS; if publish fails, the endpoint returns `500` and the throttling window may prevent immediate retry.
-  - OTP verify deletes the OTP record (and may create a customer) *before* publishing the client sync message; if publish fails, the endpoint returns `500` but the OTP has been consumed.
-  - There is no cross-system transaction; treat publishes as best-effort side effects.
 - **SQLite locking**: the connection pool enables WAL and sets a busy timeout, but callers may still see `500` on persistent DB contention.
 
 ## Observability (Optional / Current State)
@@ -508,7 +553,7 @@ Unless explicitly stated below, endpoints provide **no idempotency guarantees** 
 - **Logging**: Actix `Logger` middleware is enabled; application code uses the `log` crate (`error!`, `warn!`, `info!`) in routes/services for failures and key events.
 - **Correlation IDs**: no request/trace correlation ID is currently injected or propagated (no `X-Request-Id`/`traceparent` handling specified).
 - **Metrics**: no metrics endpoint or instrumentation is currently defined in this service.
-- **Tracing (future)**: if needed, introduce structured logging and distributed tracing via `tracing` + a request-id middleware, and define a minimal metrics surface (request counts/latency, DB errors, OTP sends/verify outcomes, order creation counts).
+- **Tracing (future)**: if needed, introduce structured logging and distributed tracing via `tracing` + a request-id middleware, and define a minimal metrics surface (request counts/latency, DB errors, order creation counts).
 
 ## Development and Quality Gates
 
@@ -523,7 +568,7 @@ cargo build --all-features --verbose
 
 ## Testing Strategy (Existing)
 
-- Unit tests exist for service-layer rules (including store OTP + pricing logic) using mock repositories (`src/repository/mock.rs`).
+- Unit tests exist for service-layer rules (including pricing and vendor-scoping logic) using mock repositories (`src/repository/mock.rs`).
 - Integration tests in `tests/` run against a temporary SQLite DB with migrations applied (see `tests/common/mod.rs`).
 
 ## Rollout And Rollback

@@ -1,6 +1,6 @@
 use crate::domain::category::CategoryTreeNode;
 
-/// Data required to render the categories index template.
+/// Hierarchical category data returned by the categories resource API.
 pub struct CategoryTreeData {
     /// Hierarchical representation of the categories.
     pub tree: Vec<CategoryTreeNode>,

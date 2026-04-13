@@ -1,44 +1,38 @@
-use actix_web::{HttpResponse, Responder, get, web};
-use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
+use actix_web::{HttpRequest, HttpResponse, get, web};
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::models::config::CommonServerConfig;
-use pushkind_common::routes::{base_context, redirect, render_template};
-use tera::Tera;
+use pushkind_common::routes::redirect;
 
-use crate::dto::main::IndexQuery;
+use crate::frontend::{
+    FRONTEND_INDEX_DOCUMENT, FrontendAssetError, frontend_document_path, open_frontend_html,
+};
 use crate::repository::DieselRepository;
-use crate::services::{ServiceError, main as main_service};
+use crate::services::{ServiceError, resolve_hub_access};
 
 #[get("/")]
-/// Render the main orders dashboard with pagination, search, and filters.
-///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
+/// Serve the React-backed orders dashboard shell after a lightweight access check.
 pub async fn show_index(
-    params: web::Query<IndexQuery>,
+    request: HttpRequest,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
-    flash_messages: IncomingFlashMessages,
-    server_config: web::Data<CommonServerConfig>,
-    tera: web::Data<Tera>,
-) -> impl Responder {
-    match main_service::load_index_page(params.0, &user, repo.get_ref()) {
-        Ok(data) => {
-            let mut context = base_context(
-                &flash_messages,
-                &user,
-                "index",
-                &server_config.auth_service_url,
-            );
-            context.insert("orders", &data.orders);
-            context.insert("search", &data.search);
-            render_template(&tera, "main/index.html", &context)
-        }
-        Err(ServiceError::Unauthorized) => {
-            FlashMessage::error("Недостаточно прав.").send();
-            redirect("/na")
-        }
-        Err(err) => {
-            log::error!("Failed to list orders: {err}");
+) -> HttpResponse {
+    match resolve_hub_access(&user, repo.get_ref()) {
+        Ok(_) => match open_frontend_html(frontend_document_path(FRONTEND_INDEX_DOCUMENT)).await {
+            Ok(file) => file.into_response(&request),
+            Err(FrontendAssetError::Read(error))
+                if error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                HttpResponse::ServiceUnavailable().body(
+                    "Orders frontend assets are not built yet. Run `cd frontend && npm run build`.",
+                )
+            }
+            Err(error) => {
+                log::error!("Failed to open orders index frontend document: {error}");
+                HttpResponse::InternalServerError().finish()
+            }
+        },
+        Err(ServiceError::Unauthorized) => redirect("/na"),
+        Err(error) => {
+            log::error!("Failed to authorize access to the orders dashboard: {error}");
             HttpResponse::InternalServerError().finish()
         }
     }

@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::domain::store_session::STORE_SESSION_COOKIE_NAME;
 use crate::dto::store::{StoreCategoryFilters, StoreOrder, StoreProductFilters};
 use crate::forms::store::{StoreOrderLinePayload, StoreOrderUpdatePayload};
-use crate::models::config::ServerConfig;
+use crate::models::config::AppConfig;
 use crate::repository::DieselRepository;
 use crate::services::ServiceError;
 use crate::services::store::{
@@ -79,7 +79,7 @@ pub async fn list_store_products(
     params: Option<web::Query<StoreProductsQuery>>,
     repo: web::Data<DieselRepository>,
     req: HttpRequest,
-    server_config: web::Data<ServerConfig>,
+    app_config: web::Data<AppConfig>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
@@ -89,7 +89,7 @@ pub async fn list_store_products(
         .map(|query| StoreProductFilters::from(query.into_inner()))
         .unwrap_or_default();
     let store_customer =
-        match read_optional_store_customer(&req, hub_id, repo.get_ref(), &server_config.secret) {
+        match read_optional_store_customer(&req, hub_id, repo.get_ref(), &app_config.secret) {
             Ok(customer) => customer,
             Err(err) => {
                 error!("Failed to resolve optional store customer for hub {hub_id}: {err}");
@@ -114,7 +114,7 @@ pub async fn get_store_product(
     path: web::Path<StoreProductPath>,
     repo: web::Data<DieselRepository>,
     req: HttpRequest,
-    server_config: web::Data<ServerConfig>,
+    app_config: web::Data<AppConfig>,
 ) -> impl Responder {
     let path = path.into_inner();
     let hub_id = match path.hub_id.parse::<i32>() {
@@ -127,7 +127,7 @@ pub async fn get_store_product(
     };
 
     let store_customer =
-        match read_optional_store_customer(&req, hub_id, repo.get_ref(), &server_config.secret) {
+        match read_optional_store_customer(&req, hub_id, repo.get_ref(), &app_config.secret) {
             Ok(customer) => customer,
             Err(err) => {
                 error!("Failed to resolve optional store customer for hub {hub_id}: {err}");
@@ -217,14 +217,14 @@ pub async fn create_store_order_handler(
     payload: web::Json<Vec<StoreOrderLinePayload>>,
     repo: web::Data<DieselRepository>,
     req: HttpRequest,
-    server_config: web::Data<ServerConfig>,
+    app_config: web::Data<AppConfig>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let claims = match require_store_session_claims(&req, hub_id, &server_config.secret) {
+    let claims = match require_store_session_claims(&req, hub_id, &app_config.secret) {
         Ok(claims) => claims,
         Err(ServiceError::Unauthorized) => return HttpResponse::Unauthorized().finish(),
         Err(err) => {
@@ -270,14 +270,14 @@ pub async fn list_store_orders_handler(
     params: Option<web::Query<StoreOrdersQuery>>,
     repo: web::Data<DieselRepository>,
     req: HttpRequest,
-    server_config: web::Data<ServerConfig>,
+    app_config: web::Data<AppConfig>,
 ) -> impl Responder {
     let hub_id = match path.into_inner().hub_id.parse::<i32>() {
         Ok(value) => value,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let claims = match require_store_session_claims(&req, hub_id, &server_config.secret) {
+    let claims = match require_store_session_claims(&req, hub_id, &app_config.secret) {
         Ok(claims) => claims,
         Err(ServiceError::Unauthorized) => return HttpResponse::Unauthorized().finish(),
         Err(err) => {
@@ -315,7 +315,7 @@ pub async fn update_store_order_handler(
     payload: web::Json<StoreOrderUpdatePayload>,
     repo: web::Data<DieselRepository>,
     req: HttpRequest,
-    server_config: web::Data<ServerConfig>,
+    app_config: web::Data<AppConfig>,
 ) -> impl Responder {
     let path = path.into_inner();
 
@@ -329,7 +329,7 @@ pub async fn update_store_order_handler(
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let claims = match require_store_session_claims(&req, hub_id, &server_config.secret) {
+    let claims = match require_store_session_claims(&req, hub_id, &app_config.secret) {
         Ok(claims) => claims,
         Err(ServiceError::Unauthorized) => return HttpResponse::Unauthorized().finish(),
         Err(err) => {

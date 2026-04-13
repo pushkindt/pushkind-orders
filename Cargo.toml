@@ -11,7 +11,6 @@ actix-identity = "0.9.0"
 actix-multipart = "0.7.2"
 actix-session = { version = "0.11.0", features = ["cookie-session"] }
 actix-web = "4.13.0"
-actix-web-flash-messages = { version = "0.5.0", features = ["cookies"] }
 chrono = { version = "0.4.44", features = ["serde"] }
 csv = "1.4.0"
 diesel = { version = "2.3.7", features = [
@@ -25,11 +24,9 @@ env_logger = "0.11.9"
 log = "0.4.29"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tera = { version = "1.20.1", features = ["builtins"] }
 pushkind-common = { git = "https://github.com/pushkindt/pushkind-common.git", branch = "main", features = [
     "db",
     "actix",
-    "zeromq",
 ], default-features = false }
 validator = { version = "0.20.0", features = ["derive"] }
 actix-cors = "0.7.1"
@@ -42,9 +39,6 @@ pushkind-crm = { git = "https://github.com/pushkindt/pushkind-crm.git", version 
     "data",
 ], default-features = false }
 serde_html_form = { version = "0.4.0" }
-pushkind-sms = { git = "https://github.com/pushkindt/pushkind-sms.git", version = "0.1.0", features = [
-    "data",
-], default-features = false }
 jsonwebtoken = "10.3.0"
 
 [dev-dependencies]

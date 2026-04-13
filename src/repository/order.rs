@@ -58,6 +58,8 @@ impl OrderReader for DieselRepository {
             customer_id,
             vendor_id,
             search,
+            updated_after,
+            updated_before,
             pagination,
         } = query;
 
@@ -94,6 +96,14 @@ impl OrderReader for DieselRepository {
             );
         }
 
+        if let Some(updated_after) = updated_after {
+            count_query = count_query.filter(orders::updated_at.ge(updated_after));
+        }
+
+        if let Some(updated_before) = updated_before {
+            count_query = count_query.filter(orders::updated_at.le(updated_before));
+        }
+
         let total = count_query.count().get_result::<i64>(&mut conn)? as usize;
 
         let mut items = orders::table
@@ -124,6 +134,14 @@ impl OrderReader for DieselRepository {
                     .like(pattern.clone())
                     .or(orders::notes.like(pattern.clone())),
             );
+        }
+
+        if let Some(updated_after) = updated_after {
+            items = items.filter(orders::updated_at.ge(updated_after));
+        }
+
+        if let Some(updated_before) = updated_before {
+            items = items.filter(orders::updated_at.le(updated_before));
         }
 
         items = items.order(orders::created_at.desc());

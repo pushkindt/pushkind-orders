@@ -54,6 +54,11 @@ where
     })
 }
 
+/// Ensures the price levels page can be opened without preloading the full dataset.
+pub fn ensure_price_levels_page_access(user: &AuthenticatedUser) -> ServiceResult<()> {
+    ensure_catalog_read_access(user)
+}
+
 /// Loads a single price level for the authenticated user's hub.
 pub fn load_price_level_for_edit<R>(
     price_level_id: i32,
@@ -118,8 +123,22 @@ where
 {
     ensure_admin(user)?;
 
-    let hub_id = HubId::new(user.hub_id)?;
     let payload: AddPriceLevelPayload = form.try_into()?;
+    create_price_level_from_payload(payload, user, repo)
+}
+
+/// Creates a new price level for the authenticated user's hub from a normalized payload.
+pub fn create_price_level_from_payload<R>(
+    payload: AddPriceLevelPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<PriceLevel>
+where
+    R: PriceLevelWriter + ProductReader + ProductWriter + ?Sized,
+{
+    ensure_admin(user)?;
+
+    let hub_id = HubId::new(user.hub_id)?;
     let new_price_level = NewPriceLevel::new(hub_id, payload.name, payload.default);
     let modifier_input = payload.modifier_input;
 
@@ -218,6 +237,21 @@ where
     ensure_admin(user)?;
 
     let payload: EditPriceLevelPayload = form.try_into()?;
+    update_price_level_from_payload(price_level_id, payload, user, repo)
+}
+
+/// Updates an existing price level for the authenticated user's hub from a normalized payload.
+pub fn update_price_level_from_payload<R>(
+    price_level_id: i32,
+    payload: EditPriceLevelPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<PriceLevel>
+where
+    R: PriceLevelWriter + ?Sized,
+{
+    ensure_admin(user)?;
+
     let updates = UpdatePriceLevel::new(payload.name, payload.default);
 
     let hub_id = HubId::new(user.hub_id)?;
@@ -255,6 +289,19 @@ where
     ensure_admin(user)?;
 
     let assignment: AssignClientPriceLevelPayload = payload.try_into()?;
+    assign_price_level_to_client_from_payload(assignment, user, repo)
+}
+
+/// Persists a price level assignment for a single customer from a normalized payload.
+pub fn assign_price_level_to_client_from_payload<R>(
+    assignment: AssignClientPriceLevelPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<()>
+where
+    R: CustomerReader + CustomerWriter + ?Sized,
+{
+    ensure_admin(user)?;
 
     let hub_id = HubId::new(user.hub_id)?;
 
@@ -873,7 +920,7 @@ mod tests {
         match result {
             Err(ServiceError::Form(message)) => {
                 assert!(
-                    message.contains("cannot be empty"),
+                    message.contains("Название уровня цен"),
                     "unexpected message: {message}"
                 );
             }
@@ -1159,7 +1206,7 @@ mod tests {
         match result {
             Err(ServiceError::Form(message)) => {
                 assert!(
-                    message.contains("cannot be empty"),
+                    message.contains("Название уровня цен"),
                     "unexpected message: {message}"
                 );
             }
@@ -1493,11 +1540,11 @@ mod tests {
 
         match result {
             Err(ServiceError::Form(message)) => {
-                assert!(message.contains("validation failed:"));
-                assert!(message.contains("price_level_id: Validation error: range"));
-                assert!(message.contains("phone: Validation error: length"));
-                assert!(message.contains("name: Validation error: length"));
-                assert!(message.contains("public_id: Validation error: length"));
+                assert!(message.contains("Ошибка валидации формы"));
+                assert!(message.contains("Уровень цен указан неверно."));
+                assert!(message.contains("Телефон клиента обязателен."));
+                assert!(message.contains("Имя клиента обязательно."));
+                assert!(message.contains("Публичный идентификатор клиента обязателен."));
             }
             other => panic!("expected form error, got {other:?}"),
         }

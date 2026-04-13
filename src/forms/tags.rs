@@ -1,31 +1,17 @@
 use serde::Deserialize;
-use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 use crate::domain::types::{TagId, TagName};
+use crate::forms::FormError;
 
 /// Result type returned by the tag form helpers.
-pub type TagFormResult<T> = Result<T, TagFormError>;
-
-/// Errors that can occur while processing tag forms.
-#[derive(Debug, Error)]
-pub enum TagFormError {
-    /// Validation failures from the `validator` crate.
-    #[error("validation failed: {0}")]
-    Validation(#[from] ValidationErrors),
-    /// The provided tag id is invalid.
-    #[error("tag id is invalid")]
-    InvalidTagId,
-    /// The provided name is invalid.
-    #[error("tag name is invalid")]
-    InvalidTagName,
-}
+pub type TagFormResult<T> = Result<T, FormError>;
 
 /// Form payload emitted when submitting the "Add tag" form.
 #[derive(Debug, Deserialize, Validate)]
 pub struct AddTagForm {
     /// Name entered by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название тега обязательно."))]
     pub name: String,
 }
 
@@ -36,14 +22,14 @@ pub struct AddTagPayload {
 }
 
 impl TryFrom<AddTagForm> for AddTagPayload {
-    type Error = TagFormError;
+    type Error = FormError;
 
     fn try_from(value: AddTagForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
         TagName::new(value.name)
             .map(|name| Self { name })
-            .map_err(|_| TagFormError::InvalidTagName)
+            .map_err(|_| FormError::InvalidTagName)
     }
 }
 
@@ -51,10 +37,10 @@ impl TryFrom<AddTagForm> for AddTagPayload {
 #[derive(Debug, Deserialize, Validate)]
 pub struct EditTagForm {
     /// Identifier of the tag to update.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, message = "Идентификатор тега указан неверно."))]
     pub tag_id: i32,
     /// Updated name supplied by the user.
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "Название тега обязательно."))]
     pub name: String,
 }
 
@@ -66,13 +52,13 @@ pub struct EditTagPayload {
 }
 
 impl TryFrom<EditTagForm> for EditTagPayload {
-    type Error = TagFormError;
+    type Error = FormError;
 
     fn try_from(value: EditTagForm) -> Result<Self, Self::Error> {
         value.validate()?;
 
-        let tag_id = TagId::new(value.tag_id).map_err(|_| TagFormError::InvalidTagId)?;
-        let name = TagName::new(value.name).map_err(|_| TagFormError::InvalidTagName)?;
+        let tag_id = TagId::new(value.tag_id).map_err(|_| FormError::InvalidTagId)?;
+        let name = TagName::new(value.name).map_err(|_| FormError::InvalidTagName)?;
 
         Ok(Self { tag_id, name })
     }
@@ -101,7 +87,7 @@ mod tests {
 
         let result: TagFormResult<AddTagPayload> = form.try_into();
 
-        assert!(matches!(result, Err(TagFormError::InvalidTagName)));
+        assert!(matches!(result, Err(FormError::InvalidTagName)));
     }
 
     #[test]
@@ -128,6 +114,6 @@ mod tests {
 
         let result: TagFormResult<EditTagPayload> = form.try_into();
 
-        assert!(matches!(result, Err(TagFormError::InvalidTagName)));
+        assert!(matches!(result, Err(FormError::InvalidTagName)));
     }
 }

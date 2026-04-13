@@ -1,178 +1,37 @@
-use actix_web::{HttpResponse, Responder, get, post, web};
-use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages};
+use actix_web::{HttpRequest, HttpResponse, Responder, get};
 use pushkind_common::domain::auth::AuthenticatedUser;
-use pushkind_common::models::config::CommonServerConfig;
-use pushkind_common::routes::{base_context, redirect, render_template};
-use tera::{Context, Tera};
+use pushkind_common::routes::redirect;
 
-use crate::ADMIN_ACCESS_ROLE;
-use crate::dto::tags::TagQuery;
-use crate::forms::tags::{AddTagForm, EditTagForm};
-use crate::repository::DieselRepository;
+use crate::frontend::{
+    FRONTEND_TAGS_DOCUMENT, FrontendAssetError, frontend_document_path, open_frontend_html,
+};
 use crate::services::ServiceError;
-use crate::services::tags::{create_tag, load_tag_for_edit, load_tags, modify_tag, remove_tag};
+use crate::services::tags::ensure_tags_page_access;
 
 #[get("/tags")]
 /// Render the tags management page with search and pagination.
 ///
-/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a `401 Unauthorized` response.
-pub async fn show_tags(
-    params: web::Query<TagQuery>,
-    user: AuthenticatedUser,
-    repo: web::Data<DieselRepository>,
-    flash_messages: IncomingFlashMessages,
-    server_config: web::Data<CommonServerConfig>,
-    tera: web::Data<Tera>,
-) -> impl Responder {
-    match load_tags(params.0, &user, repo.get_ref()) {
-        Ok(data) => {
-            let mut context = base_context(
-                &flash_messages,
-                &user,
-                "tags",
-                &server_config.auth_service_url,
-            );
-            let is_admin = user.roles.iter().any(|role| role == ADMIN_ACCESS_ROLE);
-            context.insert("tags", &data.tags);
-            context.insert("search", &data.search);
-            context.insert("search_action", "/tags");
-            context.insert("is_admin", &is_admin);
-            render_template(&tera, "tags/index.html", &context)
-        }
-        Err(ServiceError::Unauthorized) => {
-            FlashMessage::error("Недостаточно прав.").send();
-            redirect("/na")
-        }
+/// Users without the role stored in `crate::SERVICE_ACCESS_ROLE` receive a redirect to `/na`.
+pub async fn show_tags(request: HttpRequest, user: AuthenticatedUser) -> impl Responder {
+    match ensure_tags_page_access(&user) {
+        Ok(()) => match open_frontend_html(frontend_document_path(FRONTEND_TAGS_DOCUMENT)).await {
+            Ok(file) => file.into_response(&request),
+            Err(FrontendAssetError::Read(error))
+                if error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                HttpResponse::ServiceUnavailable().body(
+                    "Orders frontend assets are not built yet. Run `cd frontend && npm run build`.",
+                )
+            }
+            Err(error) => {
+                log::error!("Failed to open orders tags frontend document: {error}");
+                HttpResponse::InternalServerError().finish()
+            }
+        },
+        Err(ServiceError::Unauthorized) => redirect("/na"),
         Err(err) => {
-            log::error!("Failed to list tags: {err}");
+            log::error!("Failed to authorize access to the tags page: {err}");
             HttpResponse::InternalServerError().finish()
-        }
-    }
-}
-
-#[post("/tags/add")]
-/// Create a new product tag.
-///
-/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
-pub async fn add_tag(
-    user: AuthenticatedUser,
-    repo: web::Data<DieselRepository>,
-    form: web::Form<AddTagForm>,
-) -> impl Responder {
-    match create_tag(form.into_inner(), &user, repo.get_ref()) {
-        Ok(tag) => {
-            FlashMessage::success(format!("Тег «{}» добавлен.", tag.name)).send();
-            redirect("/tags")
-        }
-        Err(ServiceError::Unauthorized) => {
-            FlashMessage::error("Недостаточно прав.").send();
-            redirect("/na")
-        }
-        Err(ServiceError::Form(message)) => {
-            FlashMessage::error(message).send();
-            redirect("/tags")
-        }
-        Err(ServiceError::Conflict) => {
-            FlashMessage::error("Тег с таким названием уже существует.").send();
-            redirect("/tags")
-        }
-        Err(err) => {
-            log::error!("Failed to create tag: {err}");
-            FlashMessage::error("Не удалось создать тег.").send();
-            redirect("/tags")
-        }
-    }
-}
-
-#[post("/tags/edit")]
-/// Update an existing product tag.
-///
-/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
-pub async fn edit_tag(
-    user: AuthenticatedUser,
-    repo: web::Data<DieselRepository>,
-    form: web::Form<EditTagForm>,
-) -> impl Responder {
-    match modify_tag(form.into_inner(), &user, repo.get_ref()) {
-        Ok(tag) => {
-            FlashMessage::success(format!("Тег «{}» изменен.", tag.name)).send();
-            redirect("/tags")
-        }
-        Err(ServiceError::Unauthorized) => {
-            FlashMessage::error("Недостаточно прав.").send();
-            redirect("/na")
-        }
-        Err(ServiceError::Form(message)) => {
-            FlashMessage::error(message).send();
-            redirect("/tags")
-        }
-        Err(ServiceError::Conflict) => {
-            FlashMessage::error("Тег с таким названием уже существует.").send();
-            redirect("/tags")
-        }
-        Err(err) => {
-            log::error!("Failed to modify tag: {err}");
-            FlashMessage::error("Не удалось изменить тег.").send();
-            redirect("/tags")
-        }
-    }
-}
-
-#[get("/tag/{tag_id}/modal")]
-/// Render the edit tag modal for a specific tag.
-///
-/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
-pub async fn show_edit_tag_modal(
-    path: web::Path<i32>,
-    user: AuthenticatedUser,
-    repo: web::Data<DieselRepository>,
-    tera: web::Data<Tera>,
-) -> impl Responder {
-    let tag_id = path.into_inner();
-
-    match load_tag_for_edit(tag_id, &user, repo.get_ref()) {
-        Ok(tag) => {
-            let mut context = Context::new();
-            context.insert("tag", &tag);
-            render_template(&tera, "tags/edit_tags_modal.html", &context)
-        }
-        Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
-        Err(ServiceError::NotFound) => HttpResponse::NotFound().finish(),
-        Err(err) => {
-            log::error!("Failed to load tag {tag_id} modal: {err}");
-            HttpResponse::InternalServerError().finish()
-        }
-    }
-}
-
-#[post("/tags/{tag_id}/delete")]
-/// Delete a product tag by ID.
-///
-/// Users without the role stored in `crate::ADMIN_ACCESS_ROLE` receive a `401 Unauthorized` response.
-pub async fn delete_tag(
-    path: web::Path<i32>,
-    user: AuthenticatedUser,
-    repo: web::Data<DieselRepository>,
-) -> impl Responder {
-    let tag_id = path.into_inner();
-
-    match remove_tag(tag_id, &user, repo.get_ref()) {
-        Ok(()) => {
-            FlashMessage::success("Тег удален.").send();
-            redirect("/tags")
-        }
-        Err(ServiceError::Unauthorized) => {
-            FlashMessage::error("Недостаточно прав.").send();
-            redirect("/na")
-        }
-        Err(ServiceError::NotFound) => {
-            FlashMessage::error("Тег не найден или уже удален.").send();
-            redirect("/tags")
-        }
-        Err(err) => {
-            log::error!("Failed to delete tag {tag_id}: {err}");
-            FlashMessage::error("Не удалось удалить тег.").send();
-            redirect("/tags")
         }
     }
 }

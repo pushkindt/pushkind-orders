@@ -37,6 +37,11 @@ where
     Ok(TagsPageData { tags, search })
 }
 
+/// Ensures the tags page can be opened without preloading search results.
+pub fn ensure_tags_page_access(user: &AuthenticatedUser) -> ServiceResult<()> {
+    ensure_catalog_read_access(user)
+}
+
 /// Fetches a single tag for the authenticated user's hub.
 pub fn load_tag_for_edit<R>(tag_id: i32, user: &AuthenticatedUser, repo: &R) -> ServiceResult<Tag>
 where
@@ -61,6 +66,20 @@ where
     ensure_admin(user)?;
 
     let payload: AddTagPayload = form.try_into()?;
+    create_tag_from_payload(payload, user, repo)
+}
+
+/// Creates a new tag for the authenticated user's hub from a normalized payload.
+pub fn create_tag_from_payload<R>(
+    payload: AddTagPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<Tag>
+where
+    R: TagWriter + ?Sized,
+{
+    ensure_admin(user)?;
+
     let hub_id = HubId::new(user.hub_id)?;
     let new_tag = NewTag::new(hub_id, payload.name);
 
@@ -75,6 +94,20 @@ where
     ensure_admin(user)?;
 
     let payload: EditTagPayload = form.try_into()?;
+    modify_tag_from_payload(payload, user, repo)
+}
+
+/// Updates an existing tag for the authenticated user's hub from a normalized payload.
+pub fn modify_tag_from_payload<R>(
+    payload: EditTagPayload,
+    user: &AuthenticatedUser,
+    repo: &R,
+) -> ServiceResult<Tag>
+where
+    R: TagWriter + ?Sized,
+{
+    ensure_admin(user)?;
+
     let hub_id = HubId::new(user.hub_id)?;
     let update = UpdateTag::new(payload.name);
 

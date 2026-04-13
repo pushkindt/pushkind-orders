@@ -13,10 +13,10 @@ pub struct TagQuery {
     pub page: Option<usize>,
 }
 
-/// Data required to render the tags index template.
+/// Data required to build the tags collection resource payload.
 pub struct TagsPageData {
     /// Paginated list of tags displayed in the table.
     pub tags: Paginated<Tag>,
-    /// Search query echoed back to the template when present.
+    /// Search query echoed back to the client when present.
     pub search: Option<String>,
 }
