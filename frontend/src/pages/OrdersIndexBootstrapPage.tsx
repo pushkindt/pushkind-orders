@@ -105,6 +105,16 @@ function formatMoney(totalCents: number, currency: string) {
     : `${total.toFixed(2)} ${currency}`;
 }
 
+function hasActiveFilters(filters: {
+  status: string | null;
+  updatedAfter: string | null;
+  updatedBefore: string | null;
+}) {
+  return Boolean(
+    filters.status || filters.updatedAfter || filters.updatedBefore,
+  );
+}
+
 function renderOrderRow(item: OrderListItem) {
   return (
     <a
@@ -218,6 +228,14 @@ export function OrdersIndexBootstrapPage() {
   const [ordersState, setOrdersState] = useState<OrdersCollectionState>({
     status: "loading",
   });
+  const activeFilters =
+    ordersState.status === "ready"
+      ? hasActiveFilters({
+          status: ordersState.data.activeFilters.status,
+          updatedAfter: ordersState.data.activeFilters.updatedAfter,
+          updatedBefore: ordersState.data.activeFilters.updatedBefore,
+        })
+      : hasActiveFilters(query);
 
   useEffect(() => {
     let active = true;
@@ -327,7 +345,10 @@ export function OrdersIndexBootstrapPage() {
                 data-bs-target="#filtersModal"
               >
                 <i className="bi bi-funnel" />
-                <span id="activeFiltersBadge" className="badge text-bg-primary">
+                <span
+                  id="activeFiltersBadge"
+                  className={`badge text-bg-primary ${activeFilters ? "" : "d-none"}`}
+                >
                   •
                 </span>
               </button>

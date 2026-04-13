@@ -32,7 +32,7 @@ validator = { version = "0.20.0", features = ["derive"] }
 actix-cors = "0.7.1"
 serde_qs = { version = "1.0.0" }
 phonenumber = "0.3"
-rand = "0.10.0"
+rand = "0.10.1"
 ammonia = "4.1.2"
 config = { version = "0.15.22", default-features = false, features = ["yaml"] }
 pushkind-crm = { git = "https://github.com/pushkindt/pushkind-crm.git", version = "0.1.0", features = [
