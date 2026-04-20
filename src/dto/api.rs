@@ -1,7 +1,6 @@
 //! DTOs exposed by React-owned orders API endpoints.
 
 use chrono::NaiveDateTime;
-use pushkind_common::domain::auth::AuthenticatedUser;
 use serde::Serialize;
 
 use crate::domain::{
@@ -77,46 +76,6 @@ pub struct ProductUploadSuccessDto {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct ApiMutationSuccessDto {
     pub message: String,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct CurrentUserDto {
-    pub email: String,
-    pub name: String,
-    pub hub_id: i32,
-    pub roles: Vec<String>,
-}
-
-impl From<&AuthenticatedUser> for CurrentUserDto {
-    fn from(user: &AuthenticatedUser) -> Self {
-        Self {
-            email: user.email.clone(),
-            name: user.name.clone(),
-            hub_id: user.hub_id,
-            roles: user.roles.clone(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct NavigationItemDto {
-    pub name: &'static str,
-    pub url: &'static str,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct IamDto {
-    pub current_user: CurrentUserDto,
-    pub home_url: String,
-    pub navigation: Vec<NavigationItemDto>,
-    pub local_menu_items: Vec<NavigationItemDto>,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct NoAccessPageDto {
-    pub current_user: CurrentUserDto,
-    pub home_url: String,
-    pub required_role: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -282,6 +241,7 @@ pub struct ProductCollectionDto {
     pub pagination: ProductPaginationDto,
     pub active_filters: ProductCollectionFiltersDto,
     pub editor_options: ProductEditorOptionsDto,
+    pub files_service_url: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -301,6 +261,7 @@ pub struct ProductDetailsDto {
     pub price_levels: Vec<ProductPriceLevelRateDto>,
     pub updated_at: String,
     pub editor_options: ProductEditorOptionsDto,
+    pub files_service_url: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -635,6 +596,7 @@ impl ProductCollectionDto {
         total_items: usize,
         active_filters: ProductCollectionFiltersDto,
         editor_options: ProductEditorOptionsDto,
+        files_service_url: &str,
     ) -> Self {
         let total_pages = total_items.div_ceil(per_page);
 
@@ -650,6 +612,7 @@ impl ProductCollectionDto {
             },
             active_filters,
             editor_options,
+            files_service_url: files_service_url.to_string(),
         }
     }
 }
@@ -661,6 +624,7 @@ impl ProductDetailsDto {
         tags: &[Tag],
         price_levels: &[PriceLevel],
         vendors: &[Vendor],
+        files_service_url: &str,
     ) -> Self {
         let editor_options =
             ProductEditorOptionsDto::from_parts(categories, tags, price_levels, vendors);
@@ -694,6 +658,7 @@ impl ProductDetailsDto {
                 .collect(),
             updated_at: format_datetime(product.updated_at),
             editor_options,
+            files_service_url: files_service_url.to_string(),
         }
     }
 }
@@ -939,25 +904,6 @@ mod tests {
             price_level_id: None,
             public_id: Some(PublicId::new("customer-public-id").expect("valid public id")),
         }
-    }
-
-    #[test]
-    fn current_user_dto_can_be_built_from_authenticated_user() {
-        let user = AuthenticatedUser {
-            sub: "user-1".into(),
-            email: "user@example.com".into(),
-            hub_id: 42,
-            name: "User".into(),
-            roles: vec!["orders".into()],
-            exp: 0,
-        };
-
-        let dto = CurrentUserDto::from(&user);
-
-        assert_eq!(dto.email, "user@example.com");
-        assert_eq!(dto.name, "User");
-        assert_eq!(dto.hub_id, 42);
-        assert_eq!(dto.roles, vec!["orders".to_string()]);
     }
 
     #[test]

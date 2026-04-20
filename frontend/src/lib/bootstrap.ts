@@ -4,20 +4,6 @@ export type BootstrapModalInstance = {
   dispose?: () => void;
 };
 
-declare global {
-  interface Window {
-    bootstrap?: {
-      Modal: {
-        getOrCreateInstance: (
-          element: string | Element,
-          options?: object,
-        ) => BootstrapModalInstance;
-      };
-      Popover?: new (element: Element) => { dispose?: () => void };
-    };
-  }
-}
-
 export function getBootstrapModalInstance(
   element: Element | null,
 ): BootstrapModalInstance | null {

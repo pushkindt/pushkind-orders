@@ -6,6 +6,8 @@ import { OrdersShellFatalState } from "../components/OrdersShellFatalState";
 import {
   createTag,
   deleteTag,
+  fetchHubMenuItems,
+  fetchShellData,
   fetchTagDetails,
   fetchTagsCollection,
   isApiMutationError,
@@ -13,8 +15,8 @@ import {
   updateTag,
 } from "../lib/api";
 import { hideBootstrapModal, showBootstrapModal } from "../lib/bootstrap";
-import type { TagCollectionData } from "../lib/models";
-import { useOrdersShell } from "../lib/useOrdersShell";
+import type { ShellData, TagCollectionData, UserMenuItem } from "../lib/models";
+import { useServiceShell } from "@pushkind/frontend-shell/useServiceShell";
 
 type CollectionState =
   | { status: "loading" }
@@ -78,7 +80,13 @@ function buildUrl(query: TagsQuery) {
 }
 
 export function TagsPage() {
-  const shellState = useOrdersShell("Не удалось загрузить оболочку Orders.");
+  const shellState = useServiceShell<ShellData, UserMenuItem>({
+    errorMessage: "Не удалось загрузить оболочку Orders.",
+    menuLoadWarning:
+      "Failed to load auth navigation menu. Falling back to local Orders menu only.",
+    fetchShellData,
+    fetchHubMenuItems,
+  });
   const [query, setQuery] = useState<TagsQuery>(readQuery);
   const [searchDraft, setSearchDraft] = useState<string>(
     () => readQuery().search ?? "",

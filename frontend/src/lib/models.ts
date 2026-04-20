@@ -1,41 +1,25 @@
-export type NavigationItem = {
-  name: string;
-  url: string;
-};
+import type {
+  FrontendNoAccessData,
+  FrontendShellCurrentUser,
+  FrontendShellData,
+  FrontendShellNavigationItem,
+  FrontendShellUserMenuItem,
+} from "@pushkind/frontend-shell/types";
 
-export type ApiFieldError = {
-  field: string;
-  message: string;
-};
+export type NavigationItem = FrontendShellNavigationItem;
+import type {
+  ApiFieldError,
+  ApiMutationError,
+} from "@pushkind/frontend-shell/mutations";
 
-export type ApiMutationError = {
-  message: string;
-  field_errors: ApiFieldError[];
-};
-
-export type UserMenuItem = {
-  name: string;
-  url: string;
-  iconClass?: string;
-};
-
-export type CurrentUser = {
-  email: string;
-  name: string;
-  hubId: number;
-  roles: string[];
-};
-
-export type ShellData = {
-  currentUser: CurrentUser;
-  homeUrl: string;
-  navigation: NavigationItem[];
-  localMenuItems: UserMenuItem[];
-};
-
-export type NoAccessData = {
-  currentUser: CurrentUser;
-  homeUrl: string;
+export type { ApiFieldError, ApiMutationError };
+export type UserMenuItem = FrontendShellUserMenuItem;
+export type CurrentUser = FrontendShellCurrentUser;
+export type ShellData = FrontendShellData;
+export type NoAccessData = Omit<
+  FrontendNoAccessData<CurrentUser>,
+  "requiredRole"
+> & {
   requiredRole: string;
 };
 
@@ -188,6 +172,7 @@ export type ProductCollectionData = {
   pagination: ProductPagination;
   activeFilters: ProductCollectionFilters;
   editorOptions: ProductEditorOptions;
+  filesServiceUrl: string;
 };
 
 export type ProductDetailsData = {
@@ -206,6 +191,7 @@ export type ProductDetailsData = {
   priceLevels: ProductPriceLevelRate[];
   updatedAt: string;
   editorOptions: ProductEditorOptions;
+  filesServiceUrl: string;
 };
 
 export type ProductPriceLevelInput = {

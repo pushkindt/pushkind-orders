@@ -3,9 +3,18 @@ import { useEffect, useState } from "react";
 import { OrderStatusBadge } from "../components/OrderStatusBadge";
 import { OrdersShell } from "../components/OrdersShell";
 import { OrdersShellFatalState } from "../components/OrdersShellFatalState";
-import { fetchOrdersCollection } from "../lib/api";
-import type { OrderCollectionData, OrderListItem } from "../lib/models";
-import { useOrdersShell } from "../lib/useOrdersShell";
+import {
+  fetchHubMenuItems,
+  fetchOrdersCollection,
+  fetchShellData,
+} from "../lib/api";
+import type {
+  OrderCollectionData,
+  OrderListItem,
+  ShellData,
+  UserMenuItem,
+} from "../lib/models";
+import { useServiceShell } from "@pushkind/frontend-shell/useServiceShell";
 
 type OrdersCollectionState =
   | { status: "loading" }
@@ -223,7 +232,13 @@ function OrdersPagination({
 }
 
 export function OrdersIndexBootstrapPage() {
-  const shellState = useOrdersShell("Не удалось загрузить оболочку Orders.");
+  const shellState = useServiceShell<ShellData, UserMenuItem>({
+    errorMessage: "Не удалось загрузить оболочку Orders.",
+    menuLoadWarning:
+      "Failed to load auth navigation menu. Falling back to local Orders menu only.",
+    fetchShellData,
+    fetchHubMenuItems,
+  });
   const query = readIndexQueryFromLocation();
   const [ordersState, setOrdersState] = useState<OrdersCollectionState>({
     status: "loading",

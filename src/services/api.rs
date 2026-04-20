@@ -2,6 +2,7 @@
 
 use chrono::{NaiveDate, NaiveDateTime};
 use pushkind_common::domain::auth::AuthenticatedUser;
+use pushkind_common::dto::shell::{CurrentUserDto, IamDto, NavigationItemDto, NoAccessPageDto};
 use pushkind_common::models::config::CommonServerConfig;
 use pushkind_common::pagination::DEFAULT_ITEMS_PER_PAGE;
 use pushkind_common::routes::check_role;
@@ -10,13 +11,12 @@ use crate::domain::order::OrderListQuery;
 use crate::domain::tag::TagListQuery;
 use crate::domain::types::HubId;
 use crate::dto::api::{
-    CategoryCollectionDto, CategoryDetailsDto, CategoryTreeNodeDto, CurrentUserDto, IamDto,
-    LocalUserCollectionDto, NavigationItemDto, NoAccessPageDto, OrderCollectionDto,
-    OrderCollectionFiltersDto, OrderDetailsDto, OrderListItemDto, PriceLevelCollectionDto,
-    PriceLevelDetailsDto, PriceLevelEditorOptionsDto, PriceLevelListItemDto, ProductCollectionDto,
-    ProductCollectionFiltersDto, ProductDetailsDto, ProductEditorOptionsDto, ProductListItemDto,
-    TagCollectionDto, TagDetailsDto, TagListItemDto, VendorCollectionDto, VendorDetailsDto,
-    VendorListItemDto, VendorUserListItemDto,
+    CategoryCollectionDto, CategoryDetailsDto, CategoryTreeNodeDto, LocalUserCollectionDto,
+    OrderCollectionDto, OrderCollectionFiltersDto, OrderDetailsDto, OrderListItemDto,
+    PriceLevelCollectionDto, PriceLevelDetailsDto, PriceLevelEditorOptionsDto,
+    PriceLevelListItemDto, ProductCollectionDto, ProductCollectionFiltersDto, ProductDetailsDto,
+    ProductEditorOptionsDto, ProductListItemDto, TagCollectionDto, TagDetailsDto, TagListItemDto,
+    VendorCollectionDto, VendorDetailsDto, VendorListItemDto, VendorUserListItemDto,
 };
 use crate::dto::main::IndexQuery;
 use crate::dto::price_levels::PriceLevelsQuery;
@@ -40,31 +40,31 @@ fn build_navigation(user: &AuthenticatedUser) -> Vec<NavigationItemDto> {
 
     let mut navigation = vec![
         NavigationItemDto {
-            name: "Заказы",
-            url: "/",
+            name: "Заказы".to_string(),
+            url: "/".to_string(),
         },
         NavigationItemDto {
-            name: "Товары",
-            url: "/products",
+            name: "Товары".to_string(),
+            url: "/products".to_string(),
         },
         NavigationItemDto {
-            name: "Категории",
-            url: "/categories",
+            name: "Категории".to_string(),
+            url: "/categories".to_string(),
         },
         NavigationItemDto {
-            name: "Цены",
-            url: "/price-levels",
+            name: "Цены".to_string(),
+            url: "/price-levels".to_string(),
         },
         NavigationItemDto {
-            name: "Теги",
-            url: "/tags",
+            name: "Теги".to_string(),
+            url: "/tags".to_string(),
         },
     ];
 
     if check_role(ADMIN_ACCESS_ROLE, &user.roles) {
         navigation.push(NavigationItemDto {
-            name: "Поставщики",
-            url: "/vendors",
+            name: "Поставщики".to_string(),
+            url: "/vendors".to_string(),
         });
     }
 
@@ -164,8 +164,9 @@ pub fn get_shell_data(
     common_config: &CommonServerConfig,
 ) -> ServiceResult<IamDto> {
     Ok(IamDto {
-        current_user: CurrentUserDto::from(user),
+        current_user: CurrentUserDto::from(user.clone()),
         home_url: common_config.auth_service_url.clone(),
+        hub_name: "Orders".to_string(),
         navigation: build_navigation(user),
         local_menu_items: Vec::new(),
     })
@@ -177,9 +178,9 @@ pub fn get_no_access_data(
     common_config: &CommonServerConfig,
 ) -> NoAccessPageDto {
     NoAccessPageDto {
-        current_user: CurrentUserDto::from(user),
+        current_user: CurrentUserDto::from(user.clone()),
         home_url: common_config.auth_service_url.clone(),
-        required_role: SERVICE_ACCESS_ROLE,
+        required_role: Some(SERVICE_ACCESS_ROLE.to_string()),
     }
 }
 
@@ -241,6 +242,7 @@ pub fn get_product_collection_data<R>(
     query: ProductsQuery,
     user: &AuthenticatedUser,
     repo: &R,
+    files_service_url: &str,
 ) -> ServiceResult<ProductCollectionDto>
 where
     R: ProductReader
@@ -282,6 +284,7 @@ where
             &data.price_levels,
             &data.vendors,
         ),
+        files_service_url,
     ))
 }
 
@@ -289,6 +292,7 @@ pub fn get_product_details_data<R>(
     product_id: i32,
     user: &AuthenticatedUser,
     repo: &R,
+    files_service_url: &str,
 ) -> ServiceResult<ProductDetailsDto>
 where
     R: ProductReader
@@ -307,6 +311,7 @@ where
         &details.tags,
         &details.price_levels,
         &details.vendors,
+        files_service_url,
     ))
 }
 
@@ -527,7 +532,7 @@ mod tests {
         let navigation_names = response
             .navigation
             .iter()
-            .map(|item| item.name)
+            .map(|item| item.name.as_str())
             .collect::<Vec<_>>();
 
         assert_eq!(response.current_user.email, "user@example.com");
@@ -546,7 +551,7 @@ mod tests {
         let navigation_names = response
             .navigation
             .iter()
-            .map(|item| item.name)
+            .map(|item| item.name.as_str())
             .collect::<Vec<_>>();
 
         assert!(navigation_names.contains(&"Поставщики"));
@@ -567,6 +572,6 @@ mod tests {
 
         assert_eq!(response.current_user.name, "Tester");
         assert_eq!(response.home_url, "https://auth.example.com");
-        assert_eq!(response.required_role, "orders");
+        assert_eq!(response.required_role.as_deref(), Some("orders"));
     }
 }

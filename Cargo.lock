@@ -2419,8 +2419,9 @@ dependencies = [
 [[package]]
 name = "pushkind-common"
 version = "0.1.0"
-source = "git+https://github.com/pushkindt/pushkind-common.git?branch=main#4ecbcbcd59d9a0187eb98ab9a6855358f7c19279"
+source = "git+https://github.com/pushkindt/pushkind-common.git?branch=main#8db69a9f3e67eba0c150b6c78ec625e11656b091"
 dependencies = [
+ "actix-files",
  "actix-identity",
  "actix-web",
  "actix-web-flash-messages",

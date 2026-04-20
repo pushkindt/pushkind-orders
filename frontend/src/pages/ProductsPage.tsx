@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, RefObject } from "react";
 
-import { DropdownMultiSelect } from "../components/DropdownMultiSelect";
+import { DropdownMultiSelect } from "@pushkind/frontend-shell/DropdownMultiSelect";
+import {
+  MarkdownComposer,
+  renderMarkdownToHtml,
+} from "@pushkind/frontend-shell/markdown";
 import { OrdersShell } from "../components/OrdersShell";
 import { OrdersShellFatalState } from "../components/OrdersShellFatalState";
 import {
   createProduct,
+  fetchHubMenuItems,
   fetchProductDetails,
   fetchProductsCollection,
+  fetchShellData,
   isApiMutationError,
   toFieldErrorMap,
   updateProduct,
@@ -26,8 +32,10 @@ import type {
   ProductMutationSuccess,
   ProductNamedOption,
   ProductPriceLevelInput,
+  ShellData,
+  UserMenuItem,
 } from "../lib/models";
-import { useOrdersShell } from "../lib/useOrdersShell";
+import { useServiceShell } from "@pushkind/frontend-shell/useServiceShell";
 
 type ProductsCollectionState =
   | { status: "loading" }
@@ -62,14 +70,6 @@ type ProductFormState = {
 };
 
 const formatterCache = new Map<string, Intl.NumberFormat | null>();
-
-declare global {
-  interface Window {
-    marked?: {
-      parse: (source: string) => string;
-    };
-  }
-}
 
 function readProductsQueryFromLocation(): ProductsQuery {
   if (typeof window === "undefined") {
@@ -166,22 +166,6 @@ function formatMoney(totalCents: number, currency: string) {
 function normalizeOptionalText(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function renderMarkdownToHtml(source: string): string {
-  const trimmed = source.trim();
-  if (trimmed.length === 0) {
-    return "";
-  }
-
-  if (
-    typeof window !== "undefined" &&
-    typeof window.marked?.parse === "function"
-  ) {
-    return window.marked.parse(trimmed);
-  }
-
-  return trimmed;
 }
 
 function createPriceLevelDrafts(
@@ -328,64 +312,37 @@ function ProductMarkdownEditor({
   value,
   onChange,
   disabled,
+  filesServiceUrl,
 }: {
   idPrefix: string;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
+  filesServiceUrl: string;
 }) {
-  const [activeTab, setActiveTab] = useState<"editor" | "preview">("editor");
-  const rendered = renderMarkdownToHtml(value);
-
   return (
-    <>
-      <ul className="nav nav-tabs" role="tablist">
-        <li className="nav-item" role="presentation">
-          <button
-            type="button"
-            className={`nav-link ${activeTab === "editor" ? "active" : ""}`}
-            onClick={() => setActiveTab("editor")}
-            aria-selected={activeTab === "editor"}
-          >
-            Маркдаун
-          </button>
-        </li>
-        <li className="nav-item" role="presentation">
-          <button
-            type="button"
-            className={`nav-link ${activeTab === "preview" ? "active" : ""}`}
-            onClick={() => setActiveTab("preview")}
-            aria-selected={activeTab === "preview"}
-          >
-            Превью
-          </button>
-        </li>
-      </ul>
-      <div className="tab-content mb-1">
-        <div
-          className={`tab-pane fade ${activeTab === "editor" ? "show active" : ""}`}
-        >
-          <textarea
-            id={`${idPrefix}-markdown`}
-            className="form-control border-top-0 rounded-top-0"
-            rows={10}
-            value={value}
-            onChange={(event) => onChange(event.currentTarget.value)}
-            placeholder="Описание в формате markdown"
-            disabled={disabled}
-          />
-        </div>
-        <div
-          className={`tab-pane fade ${activeTab === "preview" ? "show active" : ""}`}
-        >
-          <div
-            className="border border-top-0 rounded rounded-top-0 p-2 orders-markdown-preview"
-            style={{ minHeight: 240 }}
-            dangerouslySetInnerHTML={{ __html: rendered }}
-          />
-        </div>
-      </div>
-    </>
+    <MarkdownComposer
+      id={`${idPrefix}-markdown`}
+      value={value}
+      onChange={onChange}
+      rows={10}
+      disabled={disabled}
+      placeholder="Описание в формате markdown"
+      editorLabel="Маркдаун"
+      previewLabel="Превью"
+      fileBrowserLabel="Файлы"
+      previewClassName="orders-markdown-preview"
+      emptyPreviewLabel="Введите markdown, чтобы увидеть превью."
+      fileBrowser={
+        filesServiceUrl
+          ? {
+              baseUrl: filesServiceUrl,
+              helpText:
+                "Загрузите или найдите файл, скопируйте ссылку и вставьте её в markdown.",
+            }
+          : undefined
+      }
+    />
   );
 }
 
@@ -396,6 +353,7 @@ function ProductFormFields({
   fieldErrors,
   isSubmitting,
   showArchived,
+  filesServiceUrl,
   onFieldChange,
   onTagIdsChange,
 }: {
@@ -405,6 +363,7 @@ function ProductFormFields({
   fieldErrors: Record<string, string>;
   isSubmitting: boolean;
   showArchived: boolean;
+  filesServiceUrl: string;
   onFieldChange: <K extends keyof ProductFormState>(
     field: K,
     value: ProductFormState[K],
@@ -585,7 +544,7 @@ function ProductFormFields({
                 placeholder="Выберите теги"
                 searchPlaceholder="Поиск тегов"
                 emptyResultsLabel="Теги не найдены"
-                menuHeightClassName="auth-dropdown-multiselect-options-md"
+                menuHeightClassName="shell-dropdown-multiselect-options-md"
                 clearable
               />
               <div className="form-text">
@@ -736,6 +695,7 @@ function ProductFormFields({
           value={form.descriptionSource}
           onChange={(value) => onFieldChange("descriptionSource", value)}
           disabled={isSubmitting}
+          filesServiceUrl={filesServiceUrl}
         />
         {fieldErrors.description ? (
           <div className="invalid-feedback d-block">
@@ -845,11 +805,13 @@ function ProductsFiltersModal({ query }: { query: ProductsQuery }) {
 function ProductCreateModal({
   modalRef,
   editorOptions,
+  filesServiceUrl,
   onCreated,
   onUploaded,
 }: {
   modalRef: RefObject<HTMLDivElement | null>;
   editorOptions: ProductEditorOptions;
+  filesServiceUrl: string;
   onCreated: (result: ProductMutationSuccess) => void;
   onUploaded: (message: string) => void;
 }) {
@@ -992,6 +954,7 @@ function ProductCreateModal({
                 fieldErrors={fieldErrors}
                 isSubmitting={isSubmitting}
                 showArchived={false}
+                filesServiceUrl={filesServiceUrl}
                 onFieldChange={updateField}
                 onTagIdsChange={(value) => updateField("tagIds", value)}
               />
@@ -1194,6 +1157,7 @@ function ProductEditModal({
                     fieldErrors={fieldErrors}
                     isSubmitting={isSubmitting}
                     showArchived
+                    filesServiceUrl={productState.data.filesServiceUrl}
                     onFieldChange={updateField}
                     onTagIdsChange={(value) => updateField("tagIds", value)}
                   />
@@ -1282,7 +1246,13 @@ export function ProductsEmptyState() {
 }
 
 export function ProductsPage() {
-  const shellState = useOrdersShell("Не удалось загрузить оболочку Orders.");
+  const shellState = useServiceShell<ShellData, UserMenuItem>({
+    errorMessage: "Не удалось загрузить оболочку Orders.",
+    menuLoadWarning:
+      "Failed to load auth navigation menu. Falling back to local Orders menu only.",
+    fetchShellData,
+    fetchHubMenuItems,
+  });
   const query = readProductsQueryFromLocation();
   const addModalRef = useRef<HTMLDivElement | null>(null);
   const editModalRef = useRef<HTMLDivElement | null>(null);
@@ -1398,6 +1368,8 @@ export function ProductsPage() {
           priceLevels: [],
           vendors: [],
         };
+  const filesServiceUrl =
+    productsState.status === "ready" ? productsState.data.filesServiceUrl : "";
 
   const searchForm = (
     <form className="d-flex w-100" role="search" action="/products">
@@ -1603,6 +1575,7 @@ export function ProductsPage() {
       <ProductCreateModal
         modalRef={addModalRef}
         editorOptions={editorOptions}
+        filesServiceUrl={filesServiceUrl}
         onCreated={handleCreateSuccess}
         onUploaded={handleUploadSuccess}
       />

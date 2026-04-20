@@ -106,7 +106,6 @@ pub fn build_server(listener: TcpListener, app_config: AppConfig) -> std::io::Re
             )
             .service(
                 web::scope("/api")
-                    .wrap(RedirectUnauthorized)
                     .service(api_v1_iam)
                     .service(api_v1_no_access)
                     .service(api_v1_categories)

@@ -108,6 +108,7 @@ fn order_mutation_success(
 fn product_mutation_success(
     message: impl Into<String>,
     product: &product_service::ProductDetailsPageData,
+    app_config: &AppConfig,
 ) -> ProductMutationSuccessDto {
     ProductMutationSuccessDto {
         message: message.into(),
@@ -117,6 +118,7 @@ fn product_mutation_success(
             &product.tags,
             &product.price_levels,
             &product.vendors,
+            &app_config.files_service_url,
         ),
     }
 }
@@ -838,8 +840,14 @@ pub async fn api_v1_products(
     params: web::Query<ProductsQuery>,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
+    app_config: web::Data<AppConfig>,
 ) -> impl Responder {
-    match api_service::get_product_collection_data(params.0, &user, repo.get_ref()) {
+    match api_service::get_product_collection_data(
+        params.0,
+        &user,
+        repo.get_ref(),
+        &app_config.files_service_url,
+    ) {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
         Err(err) => {
@@ -855,10 +863,16 @@ pub async fn api_v1_product(
     path: web::Path<i32>,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
+    app_config: web::Data<AppConfig>,
 ) -> impl Responder {
     let product_id = path.into_inner();
 
-    match api_service::get_product_details_data(product_id, &user, repo.get_ref()) {
+    match api_service::get_product_details_data(
+        product_id,
+        &user,
+        repo.get_ref(),
+        &app_config.files_service_url,
+    ) {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(ServiceError::Unauthorized) => HttpResponse::Unauthorized().finish(),
         Err(ServiceError::NotFound | ServiceError::TypeConstraint(_)) => {
@@ -877,6 +891,7 @@ pub async fn api_v1_create_product(
     payload: web::Json<AddProductForm>,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
+    app_config: web::Data<AppConfig>,
 ) -> impl Responder {
     let price_levels =
         match product_service::load_available_price_levels(user.hub_id, repo.get_ref()) {
@@ -898,9 +913,11 @@ pub async fn api_v1_create_product(
     match product_service::create_product_from_payload(payload, &user, repo.get_ref()) {
         Ok(product) => {
             match product_service::load_product_details(product.id.get(), &user, repo.get_ref()) {
-                Ok(details) => {
-                    HttpResponse::Ok().json(product_mutation_success("Товар добавлен.", &details))
-                }
+                Ok(details) => HttpResponse::Ok().json(product_mutation_success(
+                    "Товар добавлен.",
+                    &details,
+                    app_config.get_ref(),
+                )),
                 Err(err) => {
                     log::error!(
                         "Failed to reload product {} after creation: {err}",
@@ -924,6 +941,7 @@ pub async fn api_v1_update_product(
     payload: web::Json<EditProductDataForm>,
     user: AuthenticatedUser,
     repo: web::Data<DieselRepository>,
+    app_config: web::Data<AppConfig>,
 ) -> impl Responder {
     let product_id = path.into_inner();
     let form = payload.into_inner();
@@ -954,9 +972,11 @@ pub async fn api_v1_update_product(
     match product_service::update_product_from_payload(product_id, payload, &user, repo.get_ref()) {
         Ok(product) => {
             match product_service::load_product_details(product.id.get(), &user, repo.get_ref()) {
-                Ok(details) => {
-                    HttpResponse::Ok().json(product_mutation_success("Товар обновлён.", &details))
-                }
+                Ok(details) => HttpResponse::Ok().json(product_mutation_success(
+                    "Товар обновлён.",
+                    &details,
+                    app_config.get_ref(),
+                )),
                 Err(err) => {
                     log::error!("Failed to reload product {product_id} after update: {err}");
                     mutation_error_response(&err, "Товар не найден.")

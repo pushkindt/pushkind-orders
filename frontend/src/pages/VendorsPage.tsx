@@ -10,7 +10,9 @@ import {
   createVendor,
   deleteVendor,
   fetchAuthVendorUsers,
+  fetchHubMenuItems,
   fetchLocalUsers,
+  fetchShellData,
   fetchVendorDetails,
   fetchVendorsCollection,
   isApiMutationError,
@@ -21,9 +23,11 @@ import { hideBootstrapModal, showBootstrapModal } from "../lib/bootstrap";
 import type {
   AuthUserSearchItem,
   LocalUserCollectionData,
+  ShellData,
+  UserMenuItem,
   VendorCollectionData,
 } from "../lib/models";
-import { useOrdersShell } from "../lib/useOrdersShell";
+import { useServiceShell } from "@pushkind/frontend-shell/useServiceShell";
 
 type VendorsQuery = {
   search: string | null;
@@ -96,7 +100,13 @@ function buildUrl(query: VendorsQuery) {
 }
 
 export function VendorsPage() {
-  const shellState = useOrdersShell("Не удалось загрузить оболочку Orders.");
+  const shellState = useServiceShell<ShellData, UserMenuItem>({
+    errorMessage: "Не удалось загрузить оболочку Orders.",
+    menuLoadWarning:
+      "Failed to load auth navigation menu. Falling back to local Orders menu only.",
+    fetchShellData,
+    fetchHubMenuItems,
+  });
   const [query, setQuery] = useState<VendorsQuery>(readQuery);
   const [searchDraft, setSearchDraft] = useState<string>(
     () => readQuery().search ?? "",

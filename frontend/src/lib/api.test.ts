@@ -403,6 +403,7 @@ describe("orders api helpers", () => {
             price_levels: [{ id: 1, name: "Retail" }],
             vendors: [{ id: 7, name: "Поставщик" }],
           },
+          files_service_url: "https://files.example.com",
         }),
         {
           status: 200,
@@ -437,6 +438,7 @@ describe("orders api helpers", () => {
       showArchived: true,
     });
     expect(result.editorOptions.tags[0].name).toBe("Сезон");
+    expect(result.filesServiceUrl).toBe("https://files.example.com");
     expect(fetch).toHaveBeenCalledWith(
       "/api/v1/products?search=coffee&page=2&show_archived=true",
       {
@@ -482,6 +484,7 @@ describe("orders api helpers", () => {
             price_levels: [{ id: 1, name: "Retail" }],
             vendors: [{ id: 7, name: "Поставщик" }],
           },
+          files_service_url: "https://files.example.com",
         }),
         {
           status: 200,
@@ -501,6 +504,7 @@ describe("orders api helpers", () => {
       tagIds: [3, 5],
     });
     expect(result.editorOptions.vendors[0].name).toBe("Поставщик");
+    expect(result.filesServiceUrl).toBe("https://files.example.com");
   });
 
   it("parses product mutation success payloads", async () => {
@@ -533,6 +537,7 @@ describe("orders api helpers", () => {
           price_levels: [{ id: 1, name: "Retail" }],
           vendors: [{ id: 7, name: "Поставщик" }],
         },
+        files_service_url: "https://files.example.com",
       },
     };
 

@@ -5,7 +5,9 @@ import { OrderStatusBadge } from "../components/OrderStatusBadge";
 import { OrdersShell } from "../components/OrdersShell";
 import { OrdersShellFatalState } from "../components/OrdersShellFatalState";
 import {
+  fetchHubMenuItems,
   fetchOrderDetails,
+  fetchShellData,
   isApiMutationError,
   updateOrderProductApprovals,
 } from "../lib/api";
@@ -15,8 +17,10 @@ import type {
   OrderDetailsData,
   OrderMutationSuccess,
   OrderProductItem,
+  ShellData,
+  UserMenuItem,
 } from "../lib/models";
-import { useOrdersShell } from "../lib/useOrdersShell";
+import { useServiceShell } from "@pushkind/frontend-shell/useServiceShell";
 
 type OrderDetailsState =
   | { status: "loading" }
@@ -77,7 +81,13 @@ function productUnitPrice(product: OrderProductItem): string {
 }
 
 export function OrderDetailsPage() {
-  const shellState = useOrdersShell("Не удалось загрузить оболочку Orders.");
+  const shellState = useServiceShell<ShellData, UserMenuItem>({
+    errorMessage: "Не удалось загрузить оболочку Orders.",
+    menuLoadWarning:
+      "Failed to load auth navigation menu. Falling back to local Orders menu only.",
+    fetchShellData,
+    fetchHubMenuItems,
+  });
   const orderId =
     typeof window === "undefined"
       ? null
