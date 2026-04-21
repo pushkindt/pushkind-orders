@@ -5,6 +5,7 @@ import {
   fetchJson as fetchSharedJson,
   fetchNoAccessData as fetchSharedNoAccessData,
   fetchShellData as fetchSharedShellData,
+  isJsonResponse,
   parseMenuItems,
   readJsonResponse,
 } from "@pushkind/frontend-shell/shellApi";
@@ -160,6 +161,46 @@ function parseApiMutationError(payload: unknown): ApiMutationError {
     message: readString(payload, "message"),
     field_errors: parseApiFieldErrors(payload.field_errors),
   };
+}
+
+function statusMutationError(response: Response): ApiMutationError {
+  if (response.status === 401) {
+    return {
+      message: "Сессия истекла. Войдите снова и повторите действие.",
+      field_errors: [],
+    };
+  }
+
+  if (response.status === 403) {
+    return {
+      message: "Недостаточно прав для выполнения действия.",
+      field_errors: [],
+    };
+  }
+
+  return {
+    message: `Запрос не выполнен. Статус: ${response.status}.`,
+    field_errors: [],
+  };
+}
+
+async function readMutationPayload(
+  response: Response,
+  endpoint: string,
+): Promise<unknown> {
+  ensureResponseIsNotAuthRedirect(response);
+
+  if (!response.ok && !isJsonResponse(response)) {
+    throw statusMutationError(response);
+  }
+
+  const payload = await readJsonResponse<unknown>(response, endpoint);
+
+  if (!response.ok) {
+    throw parseApiMutationError(payload);
+  }
+
+  return payload;
 }
 
 function parseOrderListItems(payload: unknown): OrderListItem[] {
@@ -873,14 +914,7 @@ async function putJson(
     body: JSON.stringify(body),
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   return parseOrderMutationSuccess(payload);
 }
 
@@ -899,14 +933,7 @@ async function postJson<T>(
     body: JSON.stringify(body),
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   return parseSuccess(payload);
 }
 
@@ -925,14 +952,7 @@ async function putJsonWithParser<T>(
     body: JSON.stringify(body),
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   return parseSuccess(payload);
 }
 
@@ -950,14 +970,7 @@ async function postFormData<T>(
     body,
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   return parseSuccess(payload);
 }
 
@@ -970,14 +983,7 @@ async function deleteJson(endpoint: string): Promise<{ message: string }> {
     credentials: "include",
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   if (!isRecord(payload)) {
     throw new Error("Invalid delete mutation payload.");
   }

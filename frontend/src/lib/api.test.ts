@@ -357,6 +357,37 @@ describe("orders api helpers", () => {
     expect(assignSpy).toHaveBeenCalledWith("/auth/signin");
   });
 
+  it("returns a mutation error for raw unauthorized mutation responses", async () => {
+    const assignSpy = vi
+      .spyOn(browserLocation, "assign")
+      .mockImplementation(() => undefined);
+
+    vi.mocked(fetch).mockResolvedValue(
+      new Response("unauthorized", {
+        status: 401,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    );
+
+    await expect(
+      updateOrder(101, {
+        orderId: 101,
+        status: "Processing",
+        reference: null,
+        notes: null,
+        shippingAddress: null,
+        consignee: null,
+        deliveryNotes: null,
+        payer: null,
+      }),
+    ).rejects.toEqual({
+      message: "Сессия истекла. Войдите снова и повторите действие.",
+      field_errors: [],
+    });
+
+    expect(assignSpy).not.toHaveBeenCalled();
+  });
+
   it("parses the products collection payload", async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
