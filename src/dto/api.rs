@@ -1,6 +1,7 @@
 //! DTOs exposed by React-owned orders API endpoints.
 
 use chrono::NaiveDateTime;
+use pushkind_common::dto::mutation::{ApiFieldErrorDto, ApiMutationErrorDto};
 use serde::Serialize;
 
 use crate::domain::{
@@ -10,35 +11,12 @@ use crate::domain::{
 use crate::dto::products::ProductView;
 use crate::forms::FormError;
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct ApiFieldErrorDto {
-    pub field: String,
-    pub message: String,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct ApiMutationErrorDto {
-    pub message: String,
-    pub field_errors: Vec<ApiFieldErrorDto>,
-}
-
-impl Default for ApiMutationErrorDto {
-    fn default() -> Self {
+impl From<&FormError> for ApiMutationErrorDto {
+    fn from(error: &FormError) -> Self {
         Self {
-            message: "Ошибка валидации формы.".to_string(),
-            field_errors: Vec::new(),
-        }
-    }
-}
-
-impl ApiMutationErrorDto {
-    fn from_field_errors(
-        message: impl Into<String>,
-        field_errors: impl IntoIterator<Item = crate::forms::FormFieldError>,
-    ) -> Self {
-        Self {
-            message: message.into(),
-            field_errors: field_errors
+            message: error.to_string(),
+            field_errors: error
+                .field_errors()
                 .into_iter()
                 .map(|error| ApiFieldErrorDto {
                     field: error.field.into_owned(),
@@ -46,12 +24,6 @@ impl ApiMutationErrorDto {
                 })
                 .collect(),
         }
-    }
-}
-
-impl From<&FormError> for ApiMutationErrorDto {
-    fn from(error: &FormError) -> Self {
-        Self::from_field_errors(error.to_string(), error.field_errors())
     }
 }
 
@@ -71,11 +43,6 @@ pub struct ProductMutationSuccessDto {
 pub struct ProductUploadSuccessDto {
     pub message: String,
     pub created_count: usize,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct ApiMutationSuccessDto {
-    pub message: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

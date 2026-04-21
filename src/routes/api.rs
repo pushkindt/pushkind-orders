@@ -5,13 +5,16 @@ use std::error::Error;
 use actix_multipart::form::MultipartForm;
 use actix_web::{HttpResponse, Responder, delete, get, http::StatusCode, post, put, web};
 use pushkind_common::domain::auth::AuthenticatedUser;
+use pushkind_common::dto::mutation::{
+    ApiFieldErrorDto, ApiMutationErrorDto, ApiMutationSuccessDto,
+};
 use pushkind_common::models::config::CommonServerConfig;
 
 use crate::dto::api::{
-    ApiMutationErrorDto, ApiMutationSuccessDto, CategoryDetailsDto, CategoryMutationSuccessDto,
-    OrderDetailsDto, OrderMutationSuccessDto, PriceLevelDetailsDto, PriceLevelMutationSuccessDto,
-    ProductDetailsDto, ProductMutationSuccessDto, ProductUploadSuccessDto, TagDetailsDto,
-    TagMutationSuccessDto, VendorDetailsDto, VendorMutationSuccessDto,
+    CategoryDetailsDto, CategoryMutationSuccessDto, OrderDetailsDto, OrderMutationSuccessDto,
+    PriceLevelDetailsDto, PriceLevelMutationSuccessDto, ProductDetailsDto,
+    ProductMutationSuccessDto, ProductUploadSuccessDto, TagDetailsDto, TagMutationSuccessDto,
+    VendorDetailsDto, VendorMutationSuccessDto,
 };
 use crate::dto::main::IndexQuery;
 use crate::dto::price_levels::PriceLevelsQuery;
@@ -292,6 +295,7 @@ pub async fn api_v1_delete_category(
     match category_service::remove_category(category_id, &user, repo.get_ref()) {
         Ok(()) => HttpResponse::Ok().json(ApiMutationSuccessDto {
             message: "Категория удалена.".to_string(),
+            redirect_to: None,
         }),
         Err(err) => {
             log::error!("Failed to delete category {category_id}: {err}");
@@ -401,6 +405,7 @@ pub async fn api_v1_delete_tag(
     match tag_service::remove_tag(tag_id, &user, repo.get_ref()) {
         Ok(()) => HttpResponse::Ok().json(ApiMutationSuccessDto {
             message: "Тег удалён.".to_string(),
+            redirect_to: None,
         }),
         Err(err) => {
             log::error!("Failed to delete tag {tag_id}: {err}");
@@ -515,6 +520,7 @@ pub async fn api_v1_delete_price_level(
     match remove_price_level(price_level_id, &user, repo.get_ref()) {
         Ok(()) => HttpResponse::Ok().json(ApiMutationSuccessDto {
             message: "Уровень цен удалён.".to_string(),
+            redirect_to: None,
         }),
         Err(err) => {
             log::error!("Failed to delete price level {price_level_id}: {err}");
@@ -621,6 +627,7 @@ pub async fn api_v1_delete_vendor(
     match vendor_service::remove_vendor(vendor_id, &user, repo.get_ref()) {
         Ok(()) => HttpResponse::Ok().json(ApiMutationSuccessDto {
             message: "Поставщик удалён.".to_string(),
+            redirect_to: None,
         }),
         Err(err) => {
             log::error!("Failed to delete vendor {vendor_id}: {err}");
@@ -660,6 +667,7 @@ pub async fn api_v1_create_local_user(
     match vendor_service::add_user_from_payload(payload, &user, repo.get_ref()) {
         Ok(created_user) => HttpResponse::Ok().json(ApiMutationSuccessDto {
             message: format!("Пользователь «{}» добавлен.", created_user.email.as_str()),
+            redirect_to: None,
         }),
         Err(err) => {
             log::error!("Failed to create local user: {err}");
@@ -684,6 +692,7 @@ pub async fn api_v1_assign_vendor_user(
     match vendor_service::assign_user_to_vendor_from_payload(payload, &user, repo.get_ref()) {
         Ok(()) => HttpResponse::Ok().json(ApiMutationSuccessDto {
             message: "Пользователь привязан к поставщику.".to_string(),
+            redirect_to: None,
         }),
         Err(err) => {
             log::error!("Failed to assign vendor user: {err}");
@@ -712,6 +721,7 @@ pub async fn api_v1_clear_vendor_user(
     match vendor_service::clear_vendor_for_user_from_payload(payload, &user, repo.get_ref()) {
         Ok(()) => HttpResponse::Ok().json(ApiMutationSuccessDto {
             message: "Привязка пользователя удалена.".to_string(),
+            redirect_to: None,
         }),
         Err(err) => {
             log::error!("Failed to clear vendor user {user_id}: {err}");
@@ -1002,7 +1012,7 @@ pub async fn api_v1_upload_products(
         Err(err) => {
             return HttpResponse::BadRequest().json(ApiMutationErrorDto {
                 message: format!("Ошибка при обработке формы: {err}"),
-                field_errors: vec![crate::dto::api::ApiFieldErrorDto {
+                field_errors: vec![ApiFieldErrorDto {
                     field: "csv".to_string(),
                     message: format!("Ошибка при обработке формы: {err}"),
                 }],
@@ -1077,6 +1087,7 @@ pub async fn api_v1_update_client_price_level(
     match assign_price_level_to_client_from_payload(payload, &user, repo.get_ref()) {
         Ok(()) => HttpResponse::Ok().json(ApiMutationSuccessDto {
             message: "Уровень цен клиента обновлён.".to_string(),
+            redirect_to: None,
         }),
         Err(err) => {
             log::error!("Failed to assign price level to client {log_phone}: {err}");
