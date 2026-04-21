@@ -20,4 +20,5 @@ pub struct AppConfig {
     pub secret: String,
     pub auth_service_url: String,
     pub crm_service_url: String,
+    pub files_service_url: String,
 }

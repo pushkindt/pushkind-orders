@@ -37,6 +37,7 @@ fn test_app_config() -> web::Data<AppConfig> {
         secret: "orders-test-secret".to_string(),
         auth_service_url: "http://localhost".to_string(),
         crm_service_url: "http://localhost".to_string(),
+        files_service_url: "http://localhost".to_string(),
     })
 }
 

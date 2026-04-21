@@ -1,3 +1,16 @@
+import {
+  browserLocation,
+  ensureResponseIsNotAuthRedirect,
+  fetchHubMenuItems as fetchSharedHubMenuItems,
+  fetchJson as fetchSharedJson,
+  fetchNoAccessData as fetchSharedNoAccessData,
+  fetchShellData as fetchSharedShellData,
+  isJsonResponse,
+  parseMenuItems,
+  readJsonResponse,
+} from "@pushkind/frontend-shell/shellApi";
+
+export { browserLocation };
 import type {
   ApiFieldError,
   ApiMutationError,
@@ -12,8 +25,6 @@ import type {
   ClientPriceLevelAssignmentInput,
   ClientPriceLevelAssignments,
   CrmClientListItem,
-  CurrentUser,
-  NavigationItem,
   NoAccessData,
   OrderApprovalUpdateInput,
   OrderCollectionData,
@@ -124,40 +135,6 @@ function readStringArray(record: Record<string, unknown>, key: string) {
   return value;
 }
 
-function parseNavigationItems(payload: unknown): NavigationItem[] {
-  if (!Array.isArray(payload)) {
-    throw new Error("Invalid navigation payload.");
-  }
-
-  return payload.map((item) => {
-    if (!isRecord(item)) {
-      throw new Error("Invalid navigation item payload.");
-    }
-
-    return {
-      name: readString(item, "name"),
-      url: readString(item, "url"),
-    };
-  });
-}
-
-function parseMenuItems(payload: unknown): UserMenuItem[] {
-  if (!Array.isArray(payload)) {
-    throw new Error("Invalid menu item payload.");
-  }
-
-  return payload.map((item) => {
-    if (!isRecord(item)) {
-      throw new Error("Invalid menu item payload.");
-    }
-
-    return {
-      name: readString(item, "name"),
-      url: readString(item, "url"),
-    };
-  });
-}
-
 function parseApiFieldErrors(payload: unknown): ApiFieldError[] {
   if (!Array.isArray(payload)) {
     throw new Error("Invalid mutation field errors payload.");
@@ -186,42 +163,44 @@ function parseApiMutationError(payload: unknown): ApiMutationError {
   };
 }
 
-function parseCurrentUser(payload: unknown): CurrentUser {
-  if (!isRecord(payload)) {
-    throw new Error("Invalid current user payload.");
+function statusMutationError(response: Response): ApiMutationError {
+  if (response.status === 401) {
+    return {
+      message: "Сессия истекла. Войдите снова и повторите действие.",
+      field_errors: [],
+    };
+  }
+
+  if (response.status === 403) {
+    return {
+      message: "Недостаточно прав для выполнения действия.",
+      field_errors: [],
+    };
   }
 
   return {
-    email: readString(payload, "email"),
-    name: readString(payload, "name"),
-    hubId: readNumber(payload, "hub_id"),
-    roles: readStringArray(payload, "roles"),
+    message: `Запрос не выполнен. Статус: ${response.status}.`,
+    field_errors: [],
   };
 }
 
-function parseShellData(payload: unknown): ShellData {
-  if (!isRecord(payload)) {
-    throw new Error("Invalid shell payload.");
+async function readMutationPayload(
+  response: Response,
+  endpoint: string,
+): Promise<unknown> {
+  ensureResponseIsNotAuthRedirect(response);
+
+  if (!response.ok && !isJsonResponse(response)) {
+    throw statusMutationError(response);
   }
 
-  return {
-    currentUser: parseCurrentUser(payload.current_user),
-    homeUrl: readString(payload, "home_url"),
-    navigation: parseNavigationItems(payload.navigation),
-    localMenuItems: parseMenuItems(payload.local_menu_items),
-  };
-}
+  const payload = await readJsonResponse<unknown>(response, endpoint);
 
-function parseNoAccessData(payload: unknown): NoAccessData {
-  if (!isRecord(payload)) {
-    throw new Error("Invalid no-access payload.");
+  if (!response.ok) {
+    throw parseApiMutationError(payload);
   }
 
-  return {
-    currentUser: parseCurrentUser(payload.current_user),
-    homeUrl: readString(payload, "home_url"),
-    requiredRole: readString(payload, "required_role"),
-  };
+  return payload;
 }
 
 function parseOrderListItems(payload: unknown): OrderListItem[] {
@@ -492,6 +471,7 @@ function parseProductCollectionData(payload: unknown): ProductCollectionData {
     pagination: parseProductPagination(payload.pagination),
     activeFilters: parseProductCollectionFilters(payload.active_filters),
     editorOptions: parseProductEditorOptions(payload.editor_options),
+    filesServiceUrl: readString(payload, "files_service_url"),
   };
 }
 
@@ -525,6 +505,7 @@ function parseProductDetailsData(payload: unknown): ProductDetailsData {
     priceLevels: parseProductPriceLevelRates(payload.price_levels),
     updatedAt: readString(payload, "updated_at"),
     editorOptions: parseProductEditorOptions(payload.editor_options),
+    filesServiceUrl: readString(payload, "files_service_url"),
   };
 }
 
@@ -878,39 +859,6 @@ function withBaseUrl(baseUrl: string, path: string) {
   return new URL(path, baseUrl).toString();
 }
 
-function isJsonResponse(response: Response): boolean {
-  return (
-    response.headers.get("content-type")?.includes("application/json") ?? false
-  );
-}
-
-export const browserLocation = {
-  assign(url: string) {
-    window.location.assign(url);
-  },
-};
-
-function handleAuthRedirectResponse(response: Response): never {
-  browserLocation.assign(response.url);
-  throw new Error("Сессия истекла. Выполняется переход на страницу входа.");
-}
-
-function ensureResponseIsNotAuthRedirect(response: Response) {
-  if (response.redirected && !isJsonResponse(response)) {
-    handleAuthRedirectResponse(response);
-  }
-}
-
-async function readJsonResponse<T>(response: Response, endpoint: string) {
-  if (!isJsonResponse(response)) {
-    throw new Error(
-      `Expected JSON response from ${endpoint} with status ${response.status}.`,
-    );
-  }
-
-  return (await response.json()) as T;
-}
-
 export function toFieldErrorMap(
   error: ApiMutationError,
 ): Record<string, string> {
@@ -946,28 +894,10 @@ async function fetchJson(
     notFoundMessage?: string;
   },
 ) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-    },
-    cache: "no-store",
-    credentials: "include",
+  return fetchSharedJson(url, {
+    unauthorizedMessage: "Недостаточно прав для доступа к Orders.",
+    notFoundMessage: options?.notFoundMessage,
   });
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error("Недостаточно прав для доступа к Orders.");
-    }
-
-    if (response.status === 404 && options?.notFoundMessage) {
-      throw new Error(options.notFoundMessage);
-    }
-
-    throw new Error(`Request failed with status ${response.status}.`);
-  }
-
-  ensureResponseIsNotAuthRedirect(response);
-  return readJsonResponse(response, url);
 }
 
 async function putJson(
@@ -984,14 +914,7 @@ async function putJson(
     body: JSON.stringify(body),
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   return parseOrderMutationSuccess(payload);
 }
 
@@ -1010,14 +933,7 @@ async function postJson<T>(
     body: JSON.stringify(body),
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   return parseSuccess(payload);
 }
 
@@ -1036,14 +952,7 @@ async function putJsonWithParser<T>(
     body: JSON.stringify(body),
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   return parseSuccess(payload);
 }
 
@@ -1061,14 +970,7 @@ async function postFormData<T>(
     body,
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   return parseSuccess(payload);
 }
 
@@ -1081,14 +983,7 @@ async function deleteJson(endpoint: string): Promise<{ message: string }> {
     credentials: "include",
   });
 
-  ensureResponseIsNotAuthRedirect(response);
-
-  const payload = await readJsonResponse<unknown>(response, endpoint);
-
-  if (!response.ok) {
-    throw parseApiMutationError(payload);
-  }
-
+  const payload = await readMutationPayload(response, endpoint);
   if (!isRecord(payload)) {
     throw new Error("Invalid delete mutation payload.");
   }
@@ -1097,13 +992,21 @@ async function deleteJson(endpoint: string): Promise<{ message: string }> {
 }
 
 export async function fetchShellData(): Promise<ShellData> {
-  const payload = await fetchJson("/api/v1/iam");
-  return parseShellData(payload);
+  return fetchSharedShellData<ShellData>(
+    "/api/v1/iam",
+    "Недостаточно прав для доступа к Orders.",
+  );
 }
 
 export async function fetchNoAccessData(): Promise<NoAccessData> {
-  const payload = await fetchJson("/api/v1/no-access");
-  return parseNoAccessData(payload);
+  const payload = await fetchSharedNoAccessData<NoAccessData>(
+    "/api/v1/no-access",
+    "Недостаточно прав для доступа к Orders.",
+  );
+  return {
+    ...payload,
+    requiredRole: payload.requiredRole ?? "",
+  };
 }
 
 export async function fetchOrdersCollection(params?: {
@@ -1604,8 +1507,8 @@ export async function fetchHubMenuItems(
   authBaseUrl: string,
   hubId: number,
 ): Promise<UserMenuItem[]> {
-  const payload = await fetchJson(
+  return fetchSharedHubMenuItems<UserMenuItem>(
     withBaseUrl(authBaseUrl, `/api/v1/hubs/${hubId}/menu-items`),
+    "Недостаточно прав для доступа к Orders.",
   );
-  return parseMenuItems(payload);
 }

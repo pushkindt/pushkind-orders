@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
-import { DropdownMultiSelect } from "../components/DropdownMultiSelect";
+import { DropdownMultiSelect } from "@pushkind/frontend-shell/DropdownMultiSelect";
 import { OrdersShell } from "../components/OrdersShell";
 import { OrdersShellFatalState } from "../components/OrdersShellFatalState";
 import {
@@ -9,9 +9,11 @@ import {
   deletePriceLevel,
   fetchClientPriceLevelAssignments,
   fetchCrmClients,
+  fetchHubMenuItems,
   fetchPriceLevelDetails,
   fetchPriceLevelsCollection,
   fetchProductsCollection,
+  fetchShellData,
   isApiMutationError,
   toFieldErrorMap,
   updateClientPriceLevel,
@@ -25,8 +27,10 @@ import type {
   PriceLevelMutationInput,
   ProductListItem,
   ProductNamedOption,
+  ShellData,
+  UserMenuItem,
 } from "../lib/models";
-import { useOrdersShell } from "../lib/useOrdersShell";
+import { useServiceShell } from "@pushkind/frontend-shell/useServiceShell";
 
 type CollectionState =
   | { status: "loading" }
@@ -171,7 +175,13 @@ function ProductSearchPicker({
 }
 
 export function PriceLevelsPage() {
-  const shellState = useOrdersShell("Не удалось загрузить оболочку Orders.");
+  const shellState = useServiceShell<ShellData, UserMenuItem>({
+    errorMessage: "Не удалось загрузить оболочку Orders.",
+    menuLoadWarning:
+      "Failed to load auth navigation menu. Falling back to local Orders menu only.",
+    fetchShellData,
+    fetchHubMenuItems,
+  });
   const [collectionState, setCollectionState] = useState<CollectionState>({
     status: "loading",
   });

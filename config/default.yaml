@@ -7,3 +7,4 @@ app:
   secret: env::APP_SECRET
   auth_service_url: ""
   crm_service_url: ""
+  files_service_url: ""

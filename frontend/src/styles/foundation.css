@@ -104,7 +104,7 @@ body {
   margin-bottom: 0;
 }
 
-.auth-multiselect-chip {
+.shell-multiselect-chip {
   display: inline-flex;
   align-items: center;
   max-width: 100%;
@@ -117,16 +117,16 @@ body {
   line-height: 1.4;
 }
 
-.auth-multiselect-placeholder {
+.shell-multiselect-placeholder {
   color: #6c757d;
   font-size: 0.875rem;
 }
 
-.auth-dropdown-multiselect {
+.shell-dropdown-multiselect {
   position: relative;
 }
 
-.auth-dropdown-multiselect-surface {
+.shell-dropdown-multiselect-surface {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -135,13 +135,13 @@ body {
   background: #fff;
 }
 
-.auth-dropdown-multiselect-surface:focus-within {
+.shell-dropdown-multiselect-surface:focus-within {
   border-color: #86b7fe;
   outline: 0;
   box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
 }
 
-.auth-dropdown-multiselect-toggle {
+.shell-dropdown-multiselect-toggle {
   display: flex;
   align-items: flex-start;
   flex: 1 1 auto;
@@ -153,21 +153,21 @@ body {
   outline: 0;
 }
 
-.auth-dropdown-multiselect-value {
+.shell-dropdown-multiselect-value {
   display: flex;
   flex: 1;
   flex-wrap: wrap;
   gap: 0.35rem;
 }
 
-.auth-dropdown-multiselect-actions {
+.shell-dropdown-multiselect-actions {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   flex-shrink: 0;
 }
 
-.auth-dropdown-multiselect-clear {
+.shell-dropdown-multiselect-clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -180,41 +180,41 @@ body {
   color: #6c757d;
 }
 
-.auth-dropdown-multiselect-clear:hover {
+.shell-dropdown-multiselect-clear:hover {
   background: #f1f3f5;
   color: #212529;
 }
 
-.auth-dropdown-multiselect-clear:focus-visible {
+.shell-dropdown-multiselect-clear:focus-visible {
   outline: 0;
   box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
 }
 
-.auth-dropdown-multiselect-chevron {
+.shell-dropdown-multiselect-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 1rem;
 }
 
-.auth-dropdown-multiselect-menu {
+.shell-dropdown-multiselect-menu {
   max-width: 100%;
 }
 
-.auth-dropdown-multiselect-options {
+.shell-dropdown-multiselect-options {
   overflow-y: auto;
 }
 
-.auth-dropdown-multiselect-options-md {
+.shell-dropdown-multiselect-options-md {
   max-height: 16rem;
 }
 
-.auth-dropdown-multiselect-option {
+.shell-dropdown-multiselect-option {
   white-space: normal;
 }
 
-.auth-dropdown-multiselect-option.active,
-.auth-dropdown-multiselect-option:active {
+.shell-dropdown-multiselect-option.active,
+.shell-dropdown-multiselect-option:active {
   background: #e7f1ff;
   color: #212529;
 }

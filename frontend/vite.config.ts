@@ -6,6 +6,16 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   base: "/assets/dist/",
   plugins: [react()],
+  resolve: {
+    dedupe: ["react", "react-dom"],
+    alias: [
+      { find: "react", replacement: resolve(__dirname, "node_modules/react") },
+      {
+        find: "react-dom",
+        replacement: resolve(__dirname, "node_modules/react-dom"),
+      },
+    ],
+  },
   test: {
     environment: "jsdom",
     environmentOptions: {

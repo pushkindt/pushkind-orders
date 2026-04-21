@@ -83,6 +83,7 @@ fn app_config() -> AppConfig {
         secret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
         auth_service_url: "https://auth.example.com".to_string(),
         crm_service_url: "https://crm.example.com".to_string(),
+        files_service_url: "https://files.example.com".to_string(),
     }
 }
 

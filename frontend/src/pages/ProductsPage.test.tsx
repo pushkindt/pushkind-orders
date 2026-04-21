@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../lib/useOrdersShell", () => ({
-  useOrdersShell: () => ({
+vi.mock("@pushkind/frontend-shell/useServiceShell", () => ({
+  useServiceShell: () => ({
     status: "error" as const,
     message: "Shell failed",
   }),
